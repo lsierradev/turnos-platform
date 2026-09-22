@@ -1,9 +1,13 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { Bahia } from '../../entities/bahia.entity';
-import { Turno } from '../../entities/turno.entity';
+import { EstadoTurno, Turno } from '../../entities/turno.entity';
 import {
   CategoriaServicio,
   Servicio,
@@ -59,7 +63,12 @@ describe('AppointmentsService', () => {
         AppointmentsService,
         {
           provide: getRepositoryToken(Turno),
-          useValue: { create: jest.fn(), save: jest.fn(), find: jest.fn() },
+          useValue: {
+            create: jest.fn(),
+            save: jest.fn(),
+            find: jest.fn(),
+            findOne: jest.fn(),
+          },
         },
         {
           provide: getRepositoryToken(Bahia),
@@ -181,5 +190,89 @@ describe('AppointmentsService', () => {
     turnosRepository.save.mockRejectedValue(otroError);
 
     await expect(service.create(dto, 'u-1')).rejects.toBe(otroError);
+  });
+
+  describe('actualizarEstado (RF-04)', () => {
+    function turnoProgramado(): Turno {
+      return {
+        id: 'turno-1',
+        estado: EstadoTurno.PROGRAMADO,
+        atencionInicio: null,
+        atencionFin: null,
+      } as Turno;
+    }
+
+    beforeEach(() => {
+      turnosRepository.save.mockImplementation(async (turno) => turno as Turno);
+    });
+
+    it('marca el turno como atendido y guarda las horas reales', async () => {
+      turnosRepository.findOne.mockResolvedValue(turnoProgramado());
+
+      const resultado = await service.actualizarEstado('turno-1', {
+        estado: EstadoTurno.ATENDIDO,
+        atencionInicio: '2024-01-08T09:05:00.000Z',
+        atencionFin: '2024-01-08T09:47:00.000Z',
+      });
+
+      expect(resultado.estado).toBe(EstadoTurno.ATENDIDO);
+      expect(resultado.atencionInicio).toEqual(
+        new Date('2024-01-08T09:05:00.000Z'),
+      );
+      expect(resultado.atencionFin).toEqual(
+        new Date('2024-01-08T09:47:00.000Z'),
+      );
+    });
+
+    it('permite cerrar como atendido sin haber cronometrado', async () => {
+      turnosRepository.findOne.mockResolvedValue(turnoProgramado());
+
+      const resultado = await service.actualizarEstado('turno-1', {
+        estado: EstadoTurno.ATENDIDO,
+      });
+
+      expect(resultado.estado).toBe(EstadoTurno.ATENDIDO);
+      expect(resultado.atencionInicio).toBeNull();
+    });
+
+    it('limpia las horas de atencion al pasar a no_asistio', async () => {
+      turnosRepository.findOne.mockResolvedValue({
+        ...turnoProgramado(),
+        estado: EstadoTurno.ATENDIDO,
+        atencionInicio: new Date('2024-01-08T09:05:00.000Z'),
+        atencionFin: new Date('2024-01-08T09:47:00.000Z'),
+      } as Turno);
+
+      const resultado = await service.actualizarEstado('turno-1', {
+        estado: EstadoTurno.NO_ASISTIO,
+      });
+
+      // Si quedaran, esos 42 minutos de una marcacion corregida seguirian
+      // pesando en el promedio del dashboard pese a que el cliente no vino.
+      expect(resultado.atencionInicio).toBeNull();
+      expect(resultado.atencionFin).toBeNull();
+    });
+
+    it('rechaza un fin anterior al inicio con 400 y no 500', async () => {
+      turnosRepository.findOne.mockResolvedValue(turnoProgramado());
+
+      await expect(
+        service.actualizarEstado('turno-1', {
+          estado: EstadoTurno.ATENDIDO,
+          atencionInicio: '2024-01-08T09:47:00.000Z',
+          atencionFin: '2024-01-08T09:05:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(turnosRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('devuelve 404 si el turno no existe', async () => {
+      turnosRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.actualizarEstado('turno-1', { estado: EstadoTurno.ATENDIDO }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 });

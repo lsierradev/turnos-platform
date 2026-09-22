@@ -37,13 +37,21 @@ export function HomeView() {
 
           <Separator />
 
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => navigate('/admin')}
-          >
-            Panel administrativo
-          </Button>
+          <div className="space-y-2">
+            <Button
+              className="w-full"
+              onClick={() => navigate('/dashboard')}
+            >
+              Dashboard de indicadores
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => navigate('/admin')}
+            >
+              Panel administrativo
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

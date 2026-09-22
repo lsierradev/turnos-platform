@@ -67,3 +67,39 @@ export function getAgenda(
   const query = fecha ? `?date=${encodeURIComponent(fecha)}` : '';
   return apiFetch<TurnoAgenda[]>(`/technicians/${tecnicoId}/agenda${query}`);
 }
+
+export interface KpiDia {
+  fecha: string;
+  atendidos: number;
+  noAsistio: number;
+  cancelados: number;
+  programados: number;
+  turnosMedidos: number;
+  // null y 0 no son lo mismo: null es "todavia no hay turnos cerrados ese
+  // dia", 0 es "no fue nadie". Los graficos cortan la linea en null en vez
+  // de dibujar un 0 -- ver DashboardView.
+  tasaAsistencia: number | null;
+  minutosPromedioServicio: number | null;
+}
+
+export interface KpisResumen {
+  turnosTotales: number;
+  turnosAtendidos: number;
+  turnosNoAsistio: number;
+  turnosCancelados: number;
+  turnosProgramados: number;
+  turnosMedidos: number;
+  tasaAsistencia: number | null;
+  minutosPromedioServicio: number | null;
+}
+
+export interface KpisResponse {
+  rango: { from: string; to: string };
+  resumen: KpisResumen;
+  serie: KpiDia[];
+}
+
+export function getKpis(from: string, to: string): Promise<KpisResponse> {
+  const query = new URLSearchParams({ from, to }).toString();
+  return apiFetch<KpisResponse>(`/dashboard/kpis?${query}`);
+}

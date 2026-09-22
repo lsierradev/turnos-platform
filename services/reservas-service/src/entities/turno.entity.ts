@@ -15,6 +15,13 @@ export interface RangoTiempo {
   fin: Date;
 }
 
+export enum EstadoTurno {
+  PROGRAMADO = 'programado',
+  ATENDIDO = 'atendido',
+  NO_ASISTIO = 'no_asistio',
+  CANCELADO = 'cancelado',
+}
+
 // Postgres representa un tstzrange como "[2024-01-01 10:00:00+00,2024-01-01 11:00:00+00)".
 // TypeORM no tiene un ColumnType nativo para range types, asi que se mapea
 // como texto y se convierte a/desde { inicio, fin } aca. Confirmado (Sprint 5)
@@ -64,6 +71,27 @@ export class Turno {
   // nivel de aplicacion via CreateAppointmentDto.
   @Column({ name: 'tecnico_id', nullable: true })
   tecnicoId?: string;
+
+  // Estado y horas reales de atencion (RF-04, ver
+  // 009_add_estado_y_atencion_a_turnos.sql). `rangoTiempo` es lo AGENDADO;
+  // atencionInicio/atencionFin es lo que realmente paso, y la diferencia
+  // entre esos dos es lo que mide el KPI de tiempo promedio de servicio.
+  // Nullable: un turno puede cerrarse como 'atendido' sin que nadie haya
+  // cronometrado la atencion -- esas filas cuentan para la tasa de
+  // asistencia pero quedan fuera del promedio de duracion.
+  @Column({
+    type: 'enum',
+    enum: EstadoTurno,
+    enumName: 'estado_turno',
+    default: EstadoTurno.PROGRAMADO,
+  })
+  estado: EstadoTurno;
+
+  @Column({ name: 'atencion_inicio', type: 'timestamptz', nullable: true })
+  atencionInicio?: Date | null;
+
+  @Column({ name: 'atencion_fin', type: 'timestamptz', nullable: true })
+  atencionFin?: Date | null;
 
   @Column({
     name: 'rango_tiempo',

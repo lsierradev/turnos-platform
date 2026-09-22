@@ -16,3 +16,7 @@ export function sumarDiasISO(fechaISO: string, dias: number): string {
 export function formatearHora(iso: string): string {
   return new Date(iso).toISOString().slice(11, 16);
 }
+
+export function formatearDiaMes(fechaISO: string): string {
+  return `${fechaISO.slice(8, 10)}/${fechaISO.slice(5, 7)}`;
+}

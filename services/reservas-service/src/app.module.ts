@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'path';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ReservasModule } from './modules/reservas/reservas.module';
 import { ServiciosModule } from './modules/servicios/servicios.module';
@@ -36,6 +37,7 @@ import { TechniciansModule } from './modules/technicians/technicians.module';
     AppointmentsModule,
     TechniciansModule,
     NotificationsModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

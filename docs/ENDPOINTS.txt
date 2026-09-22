@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 6 (RF-03 recordatorio 24h)
+Actualizado: Sprint 8 (RF-04 dashboard de indicadores)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -84,6 +84,81 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
   Query       : ?date=2024-06-10 (opcional, ISO 8601; default: hoy)
   Response 200: Turno[] (incluye bahia y servicio embebidos)
   Response 404: :id no es un usuario existente con rol "tecnico".
+
+[PATCH] /appointments/:id/estado  (requiere Authorization: Bearer <accessToken>)
+  Descripcion : Cierra un turno (RF-04, Sprint 8). Es lo que alimenta los
+                KPIs del dashboard: sin esto las columnas estado /
+                atencion_inicio / atencion_fin nunca se llenan.
+  Body        :
+    {
+      "estado": "atendido",
+      "atencionInicio": "2024-06-10T09:05:00.000Z",
+      "atencionFin": "2024-06-10T09:47:00.000Z"
+    }
+    estado: programado | atendido | no_asistio | cancelado
+    atencionInicio/atencionFin son OPCIONALES incluso con estado=atendido
+    (no todos los talleres cronometran). Un turno atendido sin esas fechas
+    cuenta para la tasa de asistencia y queda fuera del promedio de
+    duracion. Si el estado no es "atendido", ambas se limpian.
+  Response 200: Turno actualizado.
+  Response 400: atencionFin <= atencionInicio.
+  Response 404: el turno no existe.
+
+[GET] /dashboard/kpis  (requiere Authorization: Bearer <accessToken>)
+  Descripcion : KPIs operativos del periodo (RF-04, Sprint 8).
+  Query       : ?from=2024-06-01&to=2024-06-30
+                Formato YYYY-MM-DD, ambos inclusive y en UTC. Los dos son
+                opcionales (default: hoy); si va solo uno, se usa para
+                ambos extremos.
+  Response 200:
+    {
+      "rango": { "from": "2024-06-01", "to": "2024-06-30" },
+      "resumen": {
+        "turnosTotales": 120,
+        "turnosAtendidos": 90,
+        "turnosNoAsistio": 10,
+        "turnosCancelados": 15,
+        "turnosProgramados": 5,
+        "turnosMedidos": 84,
+        "tasaAsistencia": 0.9,
+        "minutosPromedioServicio": 42.3
+      },
+      "serie": [
+        {
+          "fecha": "2024-06-01",
+          "atendidos": 4, "noAsistio": 1,
+          "cancelados": 0, "programados": 0,
+          "turnosMedidos": 4,
+          "tasaAsistencia": 0.8,
+          "minutosPromedioServicio": 38.5
+        }
+      ]
+    }
+  Response 400: from posterior a to, fecha inexistente, o rango mayor a
+                92 dias (tope para acotar el costo de la consulta).
+
+  Definicion de los KPIs:
+    tasaAsistencia          = atendidos / (atendidos + no_asistio).
+                              Cancelados y programados NO entran en el
+                              denominador: cancelar avisando no es una
+                              inasistencia, y un turno sin cerrar todavia
+                              no aporta informacion.
+    minutosPromedioServicio = promedio de (atencion_fin - atencion_inicio)
+                              sobre los turnos atendidos QUE TIENEN esas
+                              dos fechas. `turnosMedidos` dice sobre
+                              cuantas filas se calculo.
+    null != 0               : ambos KPIs devuelven null cuando no hay filas
+                              para calcularlos ("sin datos"), no 0.
+    serie                   : una entrada por dia del rango, incluidos los
+                              dias sin ningun turno (en cero).
+
+  Nota de rendimiento (tarea 3 de RF-04):
+    La consulta es UNA sola agregacion (no N consultas ni traer filas al
+    proceso), filtra por lower(rango_tiempo) para apoyarse en el indice
+    idx_turnos_kpi_inicio de la migracion 009, y corre con un
+    statement_timeout propio de 5s para no retener una conexion del pool
+    que comparte con el motor de reservas. Ver los comentarios en
+    dashboard.service.ts y en 009_add_estado_y_atencion_a_turnos.sql.
 
 --- Proceso en background (no es un endpoint HTTP) ---
 

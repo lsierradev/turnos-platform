@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -7,8 +8,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { buscarTecnico, esRolTecnico } from '../../common/tecnicos.util';
 import { Bahia } from '../../entities/bahia.entity';
-import { Turno } from '../../entities/turno.entity';
+import { EstadoTurno, Turno } from '../../entities/turno.entity';
 import { ServiciosService } from '../servicios/servicios.service';
+import { ActualizarEstadoDto } from './dto/actualizar-estado.dto';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { sugerirHorarios } from './sugerencias-horarios.util';
 
@@ -99,6 +101,45 @@ export class AppointmentsService {
       }
       throw error;
     }
+  }
+
+  // Cierre del turno (RF-04): es lo que convierte un turno agendado en un
+  // dato medible. Sin este endpoint las columnas de 009 nunca se llenan y
+  // GET /dashboard/kpis devuelve un dashboard vacio para siempre.
+  async actualizarEstado(id: string, dto: ActualizarEstadoDto): Promise<Turno> {
+    const turno = await this.turnosRepository.findOne({ where: { id } });
+    if (!turno) {
+      throw new NotFoundException(`Turno ${id} no encontrado`);
+    }
+
+    const atencionInicio = dto.atencionInicio
+      ? new Date(dto.atencionInicio)
+      : (turno.atencionInicio ?? null);
+    const atencionFin = dto.atencionFin
+      ? new Date(dto.atencionFin)
+      : (turno.atencionFin ?? null);
+
+    // Se valida aca ademas de en turnos_atencion_rango_check (009) para
+    // devolver un 400 con mensaje util en vez del 500 crudo que saldria de
+    // la violacion de CHECK. La constraint igual se queda: es la que cubre
+    // cualquier otra ruta de escritura hacia la tabla.
+    if (atencionInicio && atencionFin && atencionFin <= atencionInicio) {
+      throw new BadRequestException(
+        'atencionFin debe ser posterior a atencionInicio',
+      );
+    }
+
+    // Las horas de atencion solo tienen sentido en un turno atendido. Si el
+    // turno se cierra como no_asistio o cancelado se limpian, para que un
+    // cambio de estado no deje colgada una duracion de una marcacion previa
+    // que despues se cuele en el promedio del dashboard.
+    const esAtendido = dto.estado === EstadoTurno.ATENDIDO;
+
+    turno.estado = dto.estado;
+    turno.atencionInicio = esAtendido ? atencionInicio : null;
+    turno.atencionFin = esAtendido ? atencionFin : null;
+
+    return this.turnosRepository.save(turno);
   }
 
   private async buscarSugerencias(

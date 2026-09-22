@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 4 (agenda tecnica + validacion de tecnico)
+Actualizado: Sprint 6 (RF-03 recordatorio 24h)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -84,6 +84,27 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
   Query       : ?date=2024-06-10 (opcional, ISO 8601; default: hoy)
   Response 200: Turno[] (incluye bahia y servicio embebidos)
   Response 404: :id no es un usuario existente con rol "tecnico".
+
+--- Proceso en background (no es un endpoint HTTP) ---
+
+RF-03 — Recordatorio 24h antes del turno (Sprint 6)
+  Donde      : reservas-service, NotificationsModule.
+  Disparador : cron cada 15 min (NotificationsSchedulerService), busca
+               turnos que empiezan dentro de ~24h (banda de +/-15 min).
+  Que hace   : inserta una fila en `notificaciones` por canal disponible
+               (email siempre; whatsapp solo si el usuario tiene telefono)
+               y encola un job de Bull/Redis por cada una.
+  Envio      : NotificationsProcessor resuelve el provider segun el canal
+               (SendGrid para email, Twilio para WhatsApp) detras de la
+               interfaz comun NotificationProvider.
+  Reintentos : 3 intentos con backoff exponencial (configurable con
+               NOTIFICACIONES_INTENTOS / NOTIFICACIONES_BACKOFF_MS).
+  Estado     : tabla `notificaciones` (pendiente | enviado | fallido), con
+               `intentos` y `error`. La constraint UNIQUE
+               (turno_id, tipo, canal) garantiza que no se mande dos veces
+               el mismo recordatorio por el mismo canal.
+  Config     : REDIS_URL, ENCRYPTION_KEY, TWILIO_*, SENDGRID_* -- ver
+               services/reservas-service/.env.example
 
 ----------------------------------------
 MODULO: usuarios-service

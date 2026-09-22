@@ -49,9 +49,20 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/turnos_platform
+      REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-test-secret
+      ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     steps:
       - name: Checkout
         uses: actions/checkout@v4

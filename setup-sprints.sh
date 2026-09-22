@@ -45,6 +45,33 @@ create_issue() {
     || gh issue create --title "$title" --body "$body" --milestone "$milestone" >/dev/null
 }
 
+create_label() {
+  local name="$1" color="$2" description="$3"
+  gh label create "$name" --color "$color" --description "$description" --force >/dev/null 2>&1 \
+    && echo "   ✓ label: $name" \
+    || echo "   ⚠ label: $name (no se pudo crear/actualizar)"
+}
+
+# ---------- Labels ----------
+# Se crean (o actualizan) antes de los issues para que ninguno quede sin
+# etiquetar: gh issue create falla en silencio si la label no existe todavia.
+echo "Creando labels..."
+create_label "infra"       "5319e7" "Infraestructura, despliegue, CI/CD"
+create_label "backend"     "1d76db" "NestJS / API"
+create_label "db"          "006b75" "Esquema y consultas de base de datos"
+create_label "ux"          "d876e3" "Diseno de experiencia de usuario"
+create_label "security"    "b60205" "Autenticacion, autorizacion, seguridad"
+create_label "testing"     "fbca04" "Tests unitarios, integracion o e2e"
+create_label "frontend"    "0052cc" "React / UI"
+create_label "feature"     "0e8a16" "Historia de usuario / funcionalidad"
+create_label "chore"       "c5def5" "Mantenimiento y tareas internas"
+create_label "integration" "bfdadc" "Integraciones con terceros (Twilio, Stripe, etc.)"
+create_label "docs"        "0075ca" "Documentacion"
+create_label "perf"        "e99695" "Rendimiento"
+create_label "qa"          "fef2c0" "Calidad / criterios de aceptacion"
+create_label "launch"      "f9d0c4" "Go-live y lanzamiento"
+echo
+
 # ---------- Sprint 1 ----------
 create_milestone 1 "Sprint 1 - Discovery" "Semanas 1-2. Arquitectura y base del proyecto definidas."
 create_issue "Sprint 1 - Discovery" "Definir arquitectura de microservicios NestJS (reservas/usuarios)" "Proponer organización de carpetas para módulos de reservas y usuarios." "infra"

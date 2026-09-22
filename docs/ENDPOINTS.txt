@@ -1,0 +1,111 @@
+TURNOS-PLATFORM — ENDPOINTS POR MODULO
+========================================
+Actualizado: Sprint 2 (RNF-01 — Auth JWT + entidades + CRUD Servicio)
+Uso: referencia rapida para armar la coleccion de Postman.
+
+----------------------------------------
+MODULO: reservas-service
+----------------------------------------
+Base URL (dev): http://localhost:3001
+Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
+
+[GET] /reservas/health
+  Descripcion : Health-check del servicio de reservas.
+  Body        : (ninguno)
+  Response 200:
+    {
+      "status": "ok",
+      "module": "reservas"
+    }
+
+[POST] /servicios  (requiere Authorization: Bearer <accessToken>)
+  Descripcion : Crea un servicio (Mecanica/Electrica/Latoneria).
+  Body        :
+    {
+      "nombre": "Cambio de aceite",
+      "categoria": "mecanica",
+      "duracionMinutos": 30,
+      "precio": 25000,
+      "activo": true
+    }
+  Response 201: Servicio creado.
+
+[GET] /servicios  (requiere Authorization: Bearer <accessToken>)
+  Descripcion : Lista todos los servicios.
+  Response 200: Servicio[]
+
+[GET] /servicios/:id  (requiere Authorization: Bearer <accessToken>)
+  Descripcion : Obtiene un servicio por id.
+  Response 200: Servicio
+  Response 404: si no existe.
+
+[PATCH] /servicios/:id  (requiere Authorization: Bearer <accessToken>)
+  Descripcion : Actualiza campos parciales de un servicio.
+  Body        : subconjunto de los campos de creacion.
+  Response 200: Servicio actualizado.
+
+[DELETE] /servicios/:id  (requiere Authorization: Bearer <accessToken>)
+  Descripcion : Elimina un servicio.
+  Response 204: sin contenido.
+
+Pendiente (Sprint 3+):
+  POST   /appointments                    -> crear turno (RF-01)
+  GET    /technicians/:id/agenda          -> agenda diaria de un tecnico (Sprint 4)
+
+----------------------------------------
+MODULO: usuarios-service
+----------------------------------------
+Base URL (dev): http://localhost:3002
+Dominio: usuarios, tenants, autenticacion
+
+[GET] /usuarios/health
+  Descripcion : Health-check del servicio de usuarios.
+  Body        : (ninguno)
+  Response 200:
+    {
+      "status": "ok",
+      "module": "usuarios"
+    }
+
+[POST] /auth/login
+  Descripcion : Valida credenciales y emite access + refresh token.
+  Body        :
+    {
+      "email": "ana@turnos.dev",
+      "password": "password123"
+    }
+  Response 200:
+    {
+      "accessToken": "...",
+      "refreshToken": "..."
+    }
+  Response 401: credenciales invalidas.
+
+[POST] /auth/refresh
+  Descripcion : Emite un nuevo access token a partir de un refresh token valido.
+  Body        :
+    {
+      "refreshToken": "..."
+    }
+  Response 200:
+    {
+      "accessToken": "..."
+    }
+  Response 401: refresh token invalido o expirado.
+
+Pendiente:
+  No hay endpoint de registro/CRUD de usuarios todavia — la creacion de
+  usuarios (UsuariosService.create) solo existe como metodo interno, sin
+  controller expuesto (no fue parte del alcance de Sprint 2).
+
+----------------------------------------
+Convenciones generales
+----------------------------------------
+- Sin prefijo global todavia (ej. /api/v1) — pendiente de definir.
+- Auth: Bearer JWT (access token de vida corta, 15m por defecto) validado por
+  un guard reutilizable (@turnos-platform/auth). El refresh token dura 7 dias
+  y solo se valida en /auth/refresh, nunca contra el guard.
+- Ambos servicios validan el body con class-validator (ValidationPipe global,
+  whitelist activado) — campos no declarados en el DTO se descartan.
+- Formato de error estandar — pendiente de definir (probable: filtro global
+  de excepciones NestJS). Por ahora son los errores default de Nest.

@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 8 (RF-04 dashboard de indicadores)
+Actualizado: Sprint 9 (QA y Beta cerrado)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -238,3 +238,7 @@ Convenciones generales
   whitelist activado) — campos no declarados en el DTO se descartan.
 - Formato de error estandar — pendiente de definir (probable: filtro global
   de excepciones NestJS). Por ahora son los errores default de Nest.
+- Autorizacion por ROL: no implementada. El guard solo valida que el token
+  sea valido, no quien es: cualquier usuario autenticado puede hoy operar
+  cualquier endpoint, incluidos /servicios y /dashboard/kpis. Ver el
+  hallazgo 1 de docs/AUDITORIA-ENDPOINTS.md.

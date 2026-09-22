@@ -97,22 +97,28 @@ function TooltipKpi({
   );
 }
 
+// testId: gancho estable para la suite E2E (e2e/tests/hu4-*). Sin el, los
+// tests tendrian que localizar los KPIs por su texto visible, y cualquier
+// retoque de copy los romperia sin que nada haya dejado de funcionar.
 function StatTile({
   titulo,
   valor,
   detalle,
   destacado,
+  testId,
 }: {
   titulo: string;
   valor: string;
   detalle: string;
   destacado?: boolean;
+  testId: string;
 }) {
   return (
-    <Card>
+    <Card data-testid={testId}>
       <CardContent>
         <p className="text-sm text-muted-foreground">{titulo}</p>
         <p
+          data-testid={`${testId}-valor`}
           className={`font-heading text-3xl font-semibold ${
             destacado ? 'text-accent' : 'text-foreground'
           }`}
@@ -278,6 +284,7 @@ export function DashboardView() {
           <div className="grid gap-4 sm:grid-cols-3">
             <StatTile
               titulo="Tasa de asistencia"
+              testId="kpi-tasa-asistencia"
               valor={formatearPorcentaje(resumen?.tasaAsistencia ?? null)}
               detalle={`${resumen?.turnosAtendidos ?? 0} atendidos · ${
                 resumen?.turnosNoAsistio ?? 0
@@ -285,6 +292,7 @@ export function DashboardView() {
             />
             <StatTile
               titulo="Tiempo prom. servicio"
+              testId="kpi-tiempo-promedio"
               valor={formatearMinutos(
                 resumen?.minutosPromedioServicio ?? null,
               )}
@@ -293,6 +301,7 @@ export function DashboardView() {
             />
             <StatTile
               titulo="Turnos en el periodo"
+              testId="kpi-turnos-totales"
               valor={String(resumen?.turnosTotales ?? 0)}
               detalle={`${resumen?.turnosProgramados ?? 0} sin cerrar · ${
                 resumen?.turnosCancelados ?? 0

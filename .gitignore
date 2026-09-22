@@ -21,6 +21,12 @@ pnpm-debug.log*
 .k6-env.sh
 .k6-seed.json
 
+# Playwright (reportes y trazas de corridas E2E)
+e2e/playwright-report/
+e2e/test-results/
+e2e/blob-report/
+playwright/.cache/
+
 # Editor/OS
 .DS_Store
 .vscode/

@@ -1,6 +1,10 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { JwtPayload } from '@turnos-platform/auth';
+import {
+  JWT_REFRESH_SECRET_FALLBACK_DEV,
+  JwtPayload,
+  secretoRequerido,
+} from '@turnos-platform/auth';
 import * as bcrypt from 'bcryptjs';
 import { Usuario } from '../usuarios/entities/usuario.entity';
 import { UsuariosService } from '../usuarios/usuarios.service';
@@ -41,8 +45,10 @@ export class AuthService {
     return {
       accessToken: this.jwtService.sign(payload),
       refreshToken: this.jwtService.sign(payload, {
-        secret:
-          process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret-change-me',
+        secret: secretoRequerido(
+          'JWT_REFRESH_SECRET',
+          JWT_REFRESH_SECRET_FALLBACK_DEV,
+        ),
         expiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
       }),
     };
@@ -54,8 +60,10 @@ export class AuthService {
     let payload: JwtPayload;
     try {
       payload = this.jwtService.verify<JwtPayload>(refreshToken, {
-        secret:
-          process.env.JWT_REFRESH_SECRET ?? 'dev-refresh-secret-change-me',
+        secret: secretoRequerido(
+          'JWT_REFRESH_SECRET',
+          JWT_REFRESH_SECRET_FALLBACK_DEV,
+        ),
       });
     } catch {
       throw new UnauthorizedException('Refresh token invalido o expirado');

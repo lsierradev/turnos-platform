@@ -11,7 +11,11 @@ de datos que existan dos turnos superpuestos en la misma bahia (prevencion de
 double-booking sin depender de locking aplicativo). Requiere las extensiones
 `btree_gist` (para el operador de igualdad en `EXCLUDE USING gist`) y `pgcrypto`
 (para `gen_random_uuid()`). Las siguientes (`002`-`005`) agregan `usuarios`,
-`bahias`, `servicios` y las FKs de `turnos` hacia esas tablas.
+`bahias`, `servicios` y las FKs de `turnos` hacia esas tablas; `006` agrega
+`tecnico_id` (+ su propia constraint EXCLUDE). `007` corrige `rango_tiempo`
+de `TSRANGE` a `TSTZRANGE` — la versión original perdía la zona horaria al
+guardar, corrompiendo silenciosamente el horario en cualquier servidor que
+no corra en UTC (encontrado en el code review de Sprint 5).
 
 ### Aplicarlas
 

@@ -17,6 +17,10 @@ build/
 npm-debug.log*
 pnpm-debug.log*
 
+# Load test artifacts (local-run only, contain tokens)
+.k6-env.sh
+.k6-seed.json
+
 # Editor/OS
 .DS_Store
 .vscode/

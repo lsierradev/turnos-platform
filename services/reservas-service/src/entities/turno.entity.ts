@@ -15,9 +15,16 @@ export interface RangoTiempo {
   fin: Date;
 }
 
-// Postgres representa un tsrange como "[2024-01-01 10:00:00+00,2024-01-01 11:00:00+00)".
+// Postgres representa un tstzrange como "[2024-01-01 10:00:00+00,2024-01-01 11:00:00+00)".
 // TypeORM no tiene un ColumnType nativo para range types, asi que se mapea
-// como texto y se convierte a/desde { inicio, fin } aca. Se valida contra
+// como texto y se convierte a/desde { inicio, fin } aca. Confirmado (Sprint 5)
+// que Node parsea correctamente ese formato con offset via new Date(...).
+//
+// La columna es TSTZRANGE (timestamp CON zona horaria), no TSRANGE -- ver
+// 007_turnos_rango_tiempo_tstzrange.sql. Con TSRANGE, Postgres descarta el
+// offset al guardar y el texto de vuelta no trae zona, asi que new Date(...)
+// lo interpretaba como hora LOCAL del proceso en vez de UTC: los horarios se
+// corrian silenciosamente en cualquier servidor no-UTC. Se valida contra
 // Postgres real via el job integration-tests de CI (no hay Docker en el
 // entorno de desarrollo donde se escribio esto).
 const rangoTiempoTransformer = {
@@ -60,7 +67,7 @@ export class Turno {
 
   @Column({
     name: 'rango_tiempo',
-    type: 'tsrange' as 'text',
+    type: 'tstzrange' as 'text',
     transformer: rangoTiempoTransformer,
   })
   rangoTiempo: RangoTiempo;

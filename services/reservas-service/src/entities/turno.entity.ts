@@ -17,9 +17,9 @@ export interface RangoTiempo {
 
 // Postgres representa un tsrange como "[2024-01-01 10:00:00+00,2024-01-01 11:00:00+00)".
 // TypeORM no tiene un ColumnType nativo para range types, asi que se mapea
-// como texto y se convierte a/desde { inicio, fin } aca. Sin una Postgres
-// real para probar contra el operador EXCLUDE USING gist, este transformer
-// se valida en Sprint 3 cuando se construya el endpoint de reservas.
+// como texto y se convierte a/desde { inicio, fin } aca. Se valida contra
+// Postgres real via el job integration-tests de CI (no hay Docker en el
+// entorno de desarrollo donde se escribio esto).
 const rangoTiempoTransformer = {
   to: (value?: RangoTiempo): string | undefined =>
     value
@@ -50,6 +50,13 @@ export class Turno {
 
   @Column({ name: 'usuario_id', nullable: true })
   usuarioId?: string;
+
+  // Igual que usuarioId: el tecnico es un Usuario, pero esa entidad
+  // pertenece a usuarios-service, asi que aca solo vive el id, sin relacion
+  // ORM. Nullable en la DB (ver 006_add_tecnico_a_turnos.sql); obligatorio a
+  // nivel de aplicacion via CreateAppointmentDto.
+  @Column({ name: 'tecnico_id', nullable: true })
+  tecnicoId?: string;
 
   @Column({
     name: 'rango_tiempo',

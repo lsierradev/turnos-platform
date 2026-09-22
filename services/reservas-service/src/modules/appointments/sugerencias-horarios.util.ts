@@ -4,9 +4,9 @@ export interface SugerirHorariosParams {
   inicioSolicitado: Date;
   duracionMinutos: number;
   turnosOcupados: RangoTiempo[];
-  /** Hora de apertura (0-23), horario local, sin timezone. Default 8. */
+  /** Hora de apertura (0-23), en UTC. Default 8. */
   horaApertura?: number;
-  /** Hora de cierre (0-23), horario local, sin timezone. Default 18. */
+  /** Hora de cierre (0-23), en UTC. Default 18. */
   horaCierre?: number;
   /** Granularidad de busqueda de candidatos, en minutos. Default 15. */
   pasoMinutos?: number;
@@ -26,9 +26,13 @@ function seSolapan(a: RangoTiempo, b: RangoTiempo): boolean {
   return a.inicio < b.fin && b.inicio < a.fin;
 }
 
+// UTC explicito: inicioSolicitado llega de un string ISO del cliente (con
+// sufijo Z o similar), asi que la ventana laboral no puede depender de la
+// hora local del proceso que corre esto (mismo bug que se corrigio en
+// TechniciansService.inicioDelDia).
 function inicioDelDia(fecha: Date): Date {
   const dia = new Date(fecha);
-  dia.setHours(0, 0, 0, 0);
+  dia.setUTCHours(0, 0, 0, 0);
   return dia;
 }
 
@@ -57,13 +61,13 @@ export function sugerirHorarios(params: SugerirHorariosParams): RangoTiempo[] {
 
   for (let dia = 0; dia < diasBusqueda; dia += 1) {
     const diaBase = inicioDelDia(inicioSolicitado);
-    diaBase.setDate(diaBase.getDate() + dia);
+    diaBase.setUTCDate(diaBase.getUTCDate() + dia);
 
     const aperturaDia = new Date(diaBase);
-    aperturaDia.setHours(horaApertura, 0, 0, 0);
+    aperturaDia.setUTCHours(horaApertura, 0, 0, 0);
 
     const cierreDia = new Date(diaBase);
-    cierreDia.setHours(horaCierre, 0, 0, 0);
+    cierreDia.setUTCHours(horaCierre, 0, 0, 0);
 
     for (
       let inicioCandidato = new Date(aperturaDia);

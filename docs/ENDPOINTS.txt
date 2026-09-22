@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 3 (motor de reservas — HU1/HU2, RF-01/RF-02)
+Actualizado: Sprint 4 (agenda tecnica + validacion de tecnico)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -56,11 +56,14 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
     {
       "bahiaId": "uuid",
       "servicioId": "uuid",
+      "tecnicoId": "uuid",
       "inicio": "2024-06-10T09:00:00.000Z"
     }
+    tecnicoId debe ser un usuario existente con rol "tecnico".
   Response 201: Turno creado (incluye rangoTiempo { inicio, fin }).
-  Response 404: bahia o servicio inexistente.
-  Response 409 (HU2 — conflicto de double-booking, RF-02):
+  Response 404: bahia, servicio o tecnico inexistente (o el usuario referido
+                por tecnicoId no tiene rol "tecnico").
+  Response 409 (double-booking, RF-02 — HU2 bahia, Sprint 4 tecnico):
     {
       "message": "La bahia ya tiene un turno reservado en ese horario.",
       "sugerencias": [
@@ -69,11 +72,18 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
         { "inicio": "...", "fin": "..." }
       ]
     }
-    Las sugerencias son los 3 horarios libres mas cercanos para esa bahia
-    (horario laboral 08:00-18:00, ventana de busqueda de 3 dias).
+    El mensaje es "La bahia ya tiene..." o "El tecnico ya tiene un turno
+    asignado en ese horario." segun cual de las dos constraints EXCLUDE se
+    haya violado. Las sugerencias son los 3 horarios libres mas cercanos
+    para ese mismo recurso (bahia o tecnico) — horario laboral 08:00-18:00,
+    ventana de busqueda de 3 dias.
 
-Pendiente (Sprint 4+):
-  GET    /technicians/:id/agenda          -> agenda diaria de un tecnico (Sprint 4)
+[GET] /technicians/:id/agenda  (requiere Authorization: Bearer <accessToken>)
+  Descripcion : Turnos del dia para un tecnico (Sprint 4), ordenados por
+                hora, con bahia y servicio ya incluidos.
+  Query       : ?date=2024-06-10 (opcional, ISO 8601; default: hoy)
+  Response 200: Turno[] (incluye bahia y servicio embebidos)
+  Response 404: :id no es un usuario existente con rol "tecnico".
 
 ----------------------------------------
 MODULO: usuarios-service

@@ -4,17 +4,19 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { buscarTecnico, esRolTecnico } from '../../common/tecnicos.util';
 import { Bahia } from '../../entities/bahia.entity';
 import { Turno } from '../../entities/turno.entity';
 import { ServiciosService } from '../servicios/servicios.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { sugerirHorarios } from './sugerencias-horarios.util';
 
-// Codigo de error de Postgres para exclusion_violation, disparado por la
-// constraint `turnos_bahia_rango_excl EXCLUDE USING gist` de
-// 001_init_turnos.sql cuando dos turnos se solapan en la misma bahia.
+// Codigo de error de Postgres para exclusion_violation, disparado por
+// cualquiera de las dos constraints EXCLUDE USING gist de turnos (bahia o
+// tecnico). El nombre de la constraint especifica cual fue.
 const CODIGO_EXCLUSION_VIOLATION = '23P01';
+const CONSTRAINT_TECNICO = 'turnos_tecnico_rango_excl';
 
 function esErrorDeSolapamiento(error: unknown): boolean {
   if (!(error instanceof QueryFailedError)) {
@@ -26,6 +28,14 @@ function esErrorDeSolapamiento(error: unknown): boolean {
   return codigo === CODIGO_EXCLUSION_VIOLATION;
 }
 
+function nombreConstraintViolada(error: unknown): string | undefined {
+  return (
+    (error as unknown as { constraint?: string }).constraint ??
+    (error as unknown as { driverError?: { constraint?: string } }).driverError
+      ?.constraint
+  );
+}
+
 @Injectable()
 export class AppointmentsService {
   constructor(
@@ -34,6 +44,7 @@ export class AppointmentsService {
     @InjectRepository(Bahia)
     private readonly bahiasRepository: Repository<Bahia>,
     private readonly serviciosService: ServiciosService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(dto: CreateAppointmentDto, usuarioId: string): Promise<Turno> {
@@ -46,12 +57,20 @@ export class AppointmentsService {
 
     const servicio = await this.serviciosService.findOne(dto.servicioId);
 
+    const tecnico = await buscarTecnico(this.dataSource, dto.tecnicoId);
+    if (!tecnico || !esRolTecnico(tecnico.rol)) {
+      throw new NotFoundException(
+        `Tecnico ${dto.tecnicoId} no encontrado o no tiene rol de tecnico`,
+      );
+    }
+
     const inicio = new Date(dto.inicio);
     const fin = new Date(inicio.getTime() + servicio.duracionMinutos * 60_000);
 
     const turno = this.turnosRepository.create({
       bahiaId: dto.bahiaId,
       servicioId: dto.servicioId,
+      tecnicoId: dto.tecnicoId,
       usuarioId,
       rangoTiempo: { inicio, fin },
     });
@@ -60,13 +79,21 @@ export class AppointmentsService {
       return await this.turnosRepository.save(turno);
     } catch (error) {
       if (esErrorDeSolapamiento(error)) {
+        const esConflictoDeTecnico =
+          nombreConstraintViolada(error) === CONSTRAINT_TECNICO;
+
         const sugerencias = await this.buscarSugerencias(
-          dto.bahiaId,
+          esConflictoDeTecnico
+            ? { tecnicoId: dto.tecnicoId }
+            : { bahiaId: dto.bahiaId },
           servicio.duracionMinutos,
           inicio,
         );
+
         throw new ConflictException({
-          message: 'La bahia ya tiene un turno reservado en ese horario.',
+          message: esConflictoDeTecnico
+            ? 'El tecnico ya tiene un turno asignado en ese horario.'
+            : 'La bahia ya tiene un turno reservado en ese horario.',
           sugerencias,
         });
       }
@@ -75,18 +102,18 @@ export class AppointmentsService {
   }
 
   private async buscarSugerencias(
-    bahiaId: string,
+    filtro: { bahiaId: string } | { tecnicoId: string },
     duracionMinutos: number,
     inicioSolicitado: Date,
   ) {
-    const turnosDeLaBahia = await this.turnosRepository.find({
-      where: { bahiaId },
+    const turnosOcupados = await this.turnosRepository.find({
+      where: filtro,
     });
 
     return sugerirHorarios({
       inicioSolicitado,
       duracionMinutos,
-      turnosOcupados: turnosDeLaBahia.map((turno) => turno.rangoTiempo),
+      turnosOcupados: turnosOcupados.map((turno) => turno.rangoTiempo),
     });
   }
 }

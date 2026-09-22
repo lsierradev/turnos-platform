@@ -1,7 +1,8 @@
 import { sugerirHorarios } from './sugerencias-horarios.util';
 
-// Lunes fijo, para que los tests no dependan del dia en que corren.
-const LUNES_9AM = new Date('2024-01-08T09:00:00');
+// Lunes fijo en UTC, para que los tests no dependan del dia ni del
+// timezone en que corren (el horario laboral de sugerirHorarios es UTC).
+const LUNES_9AM = new Date('2024-01-08T09:00:00.000Z');
 
 describe('sugerirHorarios', () => {
   it('sugiere exactamente el horario solicitado cuando esta libre', () => {
@@ -13,31 +14,31 @@ describe('sugerirHorarios', () => {
 
     expect(sugerencias[0]).toEqual({
       inicio: LUNES_9AM,
-      fin: new Date('2024-01-08T09:30:00'),
+      fin: new Date('2024-01-08T09:30:00.000Z'),
     });
   });
 
-  it('no sugiere horarios fuera del horario laboral (8-18 por defecto)', () => {
+  it('no sugiere horarios fuera del horario laboral (8-18 UTC por defecto)', () => {
     const sugerencias = sugerirHorarios({
-      inicioSolicitado: new Date('2024-01-08T17:50:00'),
+      inicioSolicitado: new Date('2024-01-08T17:50:00.000Z'),
       duracionMinutos: 60,
       turnosOcupados: [],
       diasBusqueda: 1,
     });
 
     for (const { inicio, fin } of sugerencias) {
-      expect(inicio.getHours()).toBeGreaterThanOrEqual(8);
+      expect(inicio.getUTCHours()).toBeGreaterThanOrEqual(8);
       expect(
-        fin.getHours() < 18 ||
-          (fin.getHours() === 18 && fin.getMinutes() === 0),
+        fin.getUTCHours() < 18 ||
+          (fin.getUTCHours() === 18 && fin.getUTCMinutes() === 0),
       ).toBe(true);
     }
   });
 
   it('no sugiere horarios que se solapen con turnos ocupados', () => {
     const ocupado = {
-      inicio: new Date('2024-01-08T09:00:00'),
-      fin: new Date('2024-01-08T09:30:00'),
+      inicio: new Date('2024-01-08T09:00:00.000Z'),
+      fin: new Date('2024-01-08T09:30:00.000Z'),
     };
 
     const sugerencias = sugerirHorarios({
@@ -55,8 +56,8 @@ describe('sugerirHorarios', () => {
 
   it('ordena por cercania al horario solicitado', () => {
     const ocupado = {
-      inicio: new Date('2024-01-08T09:00:00'),
-      fin: new Date('2024-01-08T09:30:00'),
+      inicio: new Date('2024-01-08T09:00:00.000Z'),
+      fin: new Date('2024-01-08T09:30:00.000Z'),
     };
 
     const [primera, segunda] = sugerirHorarios({
@@ -85,8 +86,8 @@ describe('sugerirHorarios', () => {
 
   it('devuelve arreglo vacio si no hay huecos libres en toda la ventana', () => {
     const ocupadoTodoElDia = {
-      inicio: new Date('2024-01-08T00:00:00'),
-      fin: new Date('2024-01-11T00:00:00'),
+      inicio: new Date('2024-01-08T00:00:00.000Z'),
+      fin: new Date('2024-01-11T00:00:00.000Z'),
     };
 
     const sugerencias = sugerirHorarios({

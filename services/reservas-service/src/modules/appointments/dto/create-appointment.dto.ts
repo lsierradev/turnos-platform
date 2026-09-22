@@ -7,6 +7,9 @@ export class CreateAppointmentDto {
   @IsUUID()
   servicioId: string;
 
+  @IsUUID()
+  tecnicoId: string;
+
   @IsISO8601()
   inicio: string;
 }

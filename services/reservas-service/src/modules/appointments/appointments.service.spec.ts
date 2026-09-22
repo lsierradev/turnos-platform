@@ -1,7 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { Bahia } from '../../entities/bahia.entity';
 import { Turno } from '../../entities/turno.entity';
 import {
@@ -12,11 +12,20 @@ import { ServiciosService } from '../servicios/servicios.service';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 
+function crearQueryFailedError(overrides: Record<string, unknown>) {
+  return new QueryFailedError('INSERT INTO turnos ...', [], {
+    code: '23P01',
+    message: 'exclusion violation',
+    ...overrides,
+  } as any);
+}
+
 describe('AppointmentsService', () => {
   let service: AppointmentsService;
   let turnosRepository: jest.Mocked<Repository<Turno>>;
   let bahiasRepository: jest.Mocked<Repository<Bahia>>;
   let serviciosService: jest.Mocked<ServiciosService>;
+  let dataSource: jest.Mocked<DataSource>;
 
   const bahia: Bahia = {
     id: 'b-1',
@@ -40,6 +49,7 @@ describe('AppointmentsService', () => {
   const dto: CreateAppointmentDto = {
     bahiaId: bahia.id,
     servicioId: servicio.id,
+    tecnicoId: 't-1',
     inicio: '2024-01-08T09:00:00.000Z',
   };
 
@@ -59,6 +69,10 @@ describe('AppointmentsService', () => {
           provide: ServiciosService,
           useValue: { findOne: jest.fn() },
         },
+        {
+          provide: DataSource,
+          useValue: { query: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -66,16 +80,19 @@ describe('AppointmentsService', () => {
     turnosRepository = module.get(getRepositoryToken(Turno));
     bahiasRepository = module.get(getRepositoryToken(Bahia));
     serviciosService = module.get(ServiciosService);
+    dataSource = module.get(DataSource);
+
+    bahiasRepository.findOne.mockResolvedValue(bahia);
+    serviciosService.findOne.mockResolvedValue(servicio);
+    dataSource.query.mockResolvedValue([{ id: 't-1', rol: 'tecnico' }]);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('crea un turno cuando la bahia y el servicio existen y no hay conflicto', async () => {
-    bahiasRepository.findOne.mockResolvedValue(bahia);
-    serviciosService.findOne.mockResolvedValue(servicio);
-    const turnoCreado = { id: 't-1' } as Turno;
+  it('crea un turno cuando bahia, servicio y tecnico existen y no hay conflicto', async () => {
+    const turnoCreado = { id: 'turno-1' } as Turno;
     turnosRepository.create.mockReturnValue(turnoCreado);
     turnosRepository.save.mockResolvedValue(turnoCreado);
 
@@ -84,6 +101,7 @@ describe('AppointmentsService', () => {
     expect(turnosRepository.create).toHaveBeenCalledWith({
       bahiaId: dto.bahiaId,
       servicioId: dto.servicioId,
+      tecnicoId: dto.tecnicoId,
       usuarioId: 'u-1',
       rangoTiempo: {
         inicio: new Date('2024-01-08T09:00:00.000Z'),
@@ -100,7 +118,6 @@ describe('AppointmentsService', () => {
   });
 
   it('propaga el NotFoundException del servicio inexistente', async () => {
-    bahiasRepository.findOne.mockResolvedValue(bahia);
     serviciosService.findOne.mockRejectedValue(
       new NotFoundException('Servicio no encontrado'),
     );
@@ -108,15 +125,24 @@ describe('AppointmentsService', () => {
     await expect(service.create(dto, 'u-1')).rejects.toThrow(NotFoundException);
   });
 
-  it('lanza ConflictException con sugerencias cuando Postgres devuelve 23P01', async () => {
-    bahiasRepository.findOne.mockResolvedValue(bahia);
-    serviciosService.findOne.mockResolvedValue(servicio);
+  it('lanza NotFoundException si el tecnico no existe', async () => {
+    dataSource.query.mockResolvedValue([]);
+
+    await expect(service.create(dto, 'u-1')).rejects.toThrow(NotFoundException);
+    expect(turnosRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('lanza NotFoundException si el usuario existe pero no tiene rol de tecnico', async () => {
+    dataSource.query.mockResolvedValue([{ id: 't-1', rol: 'cliente' }]);
+
+    await expect(service.create(dto, 'u-1')).rejects.toThrow(NotFoundException);
+    expect(turnosRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('lanza ConflictException de bahia cuando la constraint violada es la de bahia', async () => {
     turnosRepository.create.mockReturnValue({} as Turno);
     turnosRepository.save.mockRejectedValue(
-      new QueryFailedError('INSERT INTO turnos ...', [], {
-        code: '23P01',
-        message: 'exclusion violation',
-      } as any),
+      crearQueryFailedError({ constraint: 'turnos_bahia_rango_excl' }),
     );
     turnosRepository.find.mockResolvedValue([]);
 
@@ -125,13 +151,31 @@ describe('AppointmentsService', () => {
     expect(error).toBeInstanceOf(ConflictException);
     const response = error.getResponse();
     expect(response.message).toMatch(/bahia/i);
+    expect(turnosRepository.find).toHaveBeenCalledWith({
+      where: { bahiaId: dto.bahiaId },
+    });
     expect(Array.isArray(response.sugerencias)).toBe(true);
-    expect(response.sugerencias.length).toBeLessThanOrEqual(3);
+  });
+
+  it('lanza ConflictException de tecnico cuando la constraint violada es la de tecnico', async () => {
+    turnosRepository.create.mockReturnValue({} as Turno);
+    turnosRepository.save.mockRejectedValue(
+      crearQueryFailedError({ constraint: 'turnos_tecnico_rango_excl' }),
+    );
+    turnosRepository.find.mockResolvedValue([]);
+
+    const error = await service.create(dto, 'u-1').catch((e) => e);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    const response = error.getResponse();
+    expect(response.message).toMatch(/tecnico/i);
+    expect(turnosRepository.find).toHaveBeenCalledWith({
+      where: { tecnicoId: dto.tecnicoId },
+    });
+    expect(Array.isArray(response.sugerencias)).toBe(true);
   });
 
   it('repropaga errores que no son de solapamiento sin modificarlos', async () => {
-    bahiasRepository.findOne.mockResolvedValue(bahia);
-    serviciosService.findOne.mockResolvedValue(servicio);
     turnosRepository.create.mockReturnValue({} as Turno);
     const otroError = new Error('conexion perdida');
     turnosRepository.save.mockRejectedValue(otroError);

@@ -213,6 +213,12 @@ importers:
         specifier: ^5.5.4
         version: 5.9.3
 
+  packages/database:
+    dependencies:
+      pg:
+        specifier: ^8.12.0
+        version: 8.23.0
+
   services/reservas-service:
     dependencies:
       '@nestjs/common':
@@ -270,6 +276,9 @@ importers:
       '@types/jest':
         specifier: ^29.5.12
         version: 29.5.14
+      '@types/jsonwebtoken':
+        specifier: ^9.0.6
+        version: 9.0.10
       '@types/node':
         specifier: ^20.14.10
         version: 20.19.43
@@ -294,6 +303,9 @@ importers:
       jest:
         specifier: ^29.7.0
         version: 29.7.0(@types/node@20.19.43)(supports-color@8.1.1)(ts-node@10.9.2(@types/node@20.19.43)(typescript@5.9.3))
+      jsonwebtoken:
+        specifier: ^9.0.2
+        version: 9.0.3
       prettier:
         specifier: ^3.3.3
         version: 3.9.8

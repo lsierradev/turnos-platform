@@ -1,0 +1,12 @@
+{
+  "name": "@turnos-platform/database",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Migraciones SQL compartidas por los servicios de la plataforma.",
+  "scripts": {
+    "migrate": "node scripts/migrate.js"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  }
+}

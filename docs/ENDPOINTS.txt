@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 2 (RNF-01 — Auth JWT + entidades + CRUD Servicio)
+Actualizado: Sprint 3 (motor de reservas — HU1/HU2, RF-01/RF-02)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -48,8 +48,31 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
   Descripcion : Elimina un servicio.
   Response 204: sin contenido.
 
-Pendiente (Sprint 3+):
-  POST   /appointments                    -> crear turno (RF-01)
+[POST] /appointments  (requiere Authorization: Bearer <accessToken>)
+  Descripcion : Reserva un turno (HU1). El usuario autenticado se toma del
+                JWT (sub); `fin` se calcula server-side a partir de la
+                duracion del servicio.
+  Body        :
+    {
+      "bahiaId": "uuid",
+      "servicioId": "uuid",
+      "inicio": "2024-06-10T09:00:00.000Z"
+    }
+  Response 201: Turno creado (incluye rangoTiempo { inicio, fin }).
+  Response 404: bahia o servicio inexistente.
+  Response 409 (HU2 — conflicto de double-booking, RF-02):
+    {
+      "message": "La bahia ya tiene un turno reservado en ese horario.",
+      "sugerencias": [
+        { "inicio": "...", "fin": "..." },
+        { "inicio": "...", "fin": "..." },
+        { "inicio": "...", "fin": "..." }
+      ]
+    }
+    Las sugerencias son los 3 horarios libres mas cercanos para esa bahia
+    (horario laboral 08:00-18:00, ventana de busqueda de 3 dias).
+
+Pendiente (Sprint 4+):
   GET    /technicians/:id/agenda          -> agenda diaria de un tecnico (Sprint 4)
 
 ----------------------------------------

@@ -9,5 +9,6 @@ import { ServiciosService } from './servicios.service';
   imports: [TypeOrmModule.forFeature([Servicio]), JwtAuthModule],
   controllers: [ServiciosController],
   providers: [ServiciosService],
+  exports: [ServiciosService],
 })
 export class ServiciosModule {}

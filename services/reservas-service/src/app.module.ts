@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'path';
+import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { ReservasModule } from './modules/reservas/reservas.module';
 import { ServiciosModule } from './modules/servicios/servicios.module';
 
@@ -20,6 +21,7 @@ import { ServiciosModule } from './modules/servicios/servicios.module';
     }),
     ReservasModule,
     ServiciosModule,
+    AppointmentsModule,
   ],
 })
 export class AppModule {}

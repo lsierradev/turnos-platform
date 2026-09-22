@@ -1,3 +1,4 @@
+export * from './current-user.decorator';
 export * from './jwt-payload.interface';
 export * from './jwt.strategy';
 export * from './jwt-auth.guard';

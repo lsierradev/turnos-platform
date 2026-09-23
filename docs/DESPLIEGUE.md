@@ -48,6 +48,7 @@ docker build -f services/reservas-service/Dockerfile -t "$ECR/reservas-service:$
 docker build -f services/usuarios-service/Dockerfile -t "$ECR/usuarios-service:$TAG" .
 docker build -f apps/admin-web/Dockerfile \
   --build-arg VITE_API_URL=https://api.ejemplo.com \
+  --build-arg VITE_AUTH_URL=https://auth.ejemplo.com \
   -t "$ECR/admin-web:$TAG" .
 
 docker push "$ECR/reservas-service:$TAG"
@@ -70,9 +71,9 @@ hay que tener presentes:
 2. **Nada que se pase por ahí es secreto.** Cualquiera que abra las
    devtools lo ve.
 
-Por eso el Dockerfile **rechaza** `VITE_DEV_TOKEN` como build-arg: es un JWT,
-y hornearlo en un bundle público sería repartir ese token a todo el que abra
-la página. Ver el bloqueante de login en [GO-LIVE.md](GO-LIVE.md).
+Las dos variables que se hornean son URLs, no secretos. Desde Sprint 10 el
+panel tiene login propio, así que **no se hornea ningún token**: la sesión se
+obtiene en runtime contra `usuarios-service`.
 
 ## 3. Prerequisitos de AWS
 
@@ -90,6 +91,20 @@ Nada de esto lo crean los manifiestos; se asume existente (issue #40):
 - **AWS Load Balancer Controller** instalado en el cluster, con su rol IAM
   vía IRSA. No viene con EKS. Sin él los Ingress se crean pero no
   provisionan nada, y el síntoma es un Ingress sin `ADDRESS` y ningún error.
+
+### CORS
+
+`CORS_ORIGINS` es **obligatoria en producción**: si falta, los servicios no
+arrancan. Tiene que listar el origen del panel, con esquema y sin barra
+final:
+
+```
+CORS_ORIGINS=https://turnos.ejemplo.com
+```
+
+Si no coincide exactamente, el panel carga pero **todas** las llamadas
+fallan, y el error solo aparece en la consola del navegador — no en los logs
+del backend, porque el request nunca llega.
 
 ### Security groups
 

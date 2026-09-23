@@ -11,13 +11,15 @@ TanStack Query + recharts).
 
 | Ruta | Vista | Backend |
 |---|---|---|
-| `/` | Selector de técnico | — |
+| `/login` | Inicio de sesión | `POST /auth/login` |
+| `/` | Inicio, con las opciones que permita tu rol | — |
 | `/agenda/:tecnicoId` | Agenda diaria del técnico | `GET /technicians/:id/agenda` |
 | `/admin` | Panel administrativo v1 (carga por bahía) | ⚠️ datos mock — no existe el endpoint |
 | `/dashboard` | KPIs operativos con gráficos y filtro de rango | `GET /dashboard/kpis` |
 
-**Todavía no hay flujo de reserva ni login**: la sesión es un token de
-desarrollo inyectado por `VITE_DEV_TOKEN`. Ver
+Desde Sprint 10 tiene **login propio** contra `usuarios-service`, con guardas
+de ruta, renovación automática del token y cierre de sesión. **Todavía no hay
+flujo de reserva**: reservar es una llamada a la API, no una pantalla. Ver
 [`UX-NOTES.md`](admin-web/UX-NOTES.md) para los huecos conocidos de UX y
 [`docs/QA-CHECKLIST.md`](../docs/QA-CHECKLIST.md) para el estado de `/admin`
 frente a los criterios de aceptación.

@@ -1,32 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
-import * as jwt from 'jsonwebtoken';
 
 const URL_WEB = process.env.E2E_WEB_URL ?? 'http://localhost:5173';
 const URL_RESERVAS = process.env.E2E_RESERVAS_URL ?? 'http://localhost:3001';
 const URL_USUARIOS = process.env.E2E_USUARIOS_URL ?? 'http://localhost:3002';
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-me';
-
-// admin-web todavia no tiene login: la sesion del navegador es un token
-// inyectado por env (VITE_DEV_TOKEN, ver apps/admin-web/.env.example). Vite
-// lo lee del entorno del proceso al arrancar, asi que hay que firmarlo aca
-// -- antes de levantar el server -- y no dentro de un test.
-//
-// Las dos HU que se prueban por navegador (agenda del tecnico y dashboard)
-// no usan el `sub` del token para nada: toman el id del tecnico de la URL y
-// el rango de fechas del filtro. Por eso alcanza con un token sintetico y no
-// hace falta que exista ese usuario en la DB. Las HU de reserva, en cambio,
-// SI hacen login real contra usuarios-service, porque POST /appointments
-// guarda el `sub` como usuario_id y tiene FK contra usuarios.
-const TOKEN_NAVEGADOR = jwt.sign(
-  {
-    sub: '00000000-0000-4000-8000-000000000001',
-    email: 'e2e-browser@turnos.dev',
-    rol: 'admin',
-  },
-  JWT_SECRET,
-  { expiresIn: '2h' },
-);
+// Desde Sprint 10 admin-web tiene login propio, asi que NO se inyecta
+// ningun token: los tests de navegador se loguean por la pantalla de login
+// como lo haria una persona (ver fixtures/ui.ts). Eso hace que la sesion, la
+// renovacion del token y las guardas de ruta queden cubiertas por el mismo
+// recorrido, en vez de saltearse con un token fabricado.
 
 export default defineConfig({
   testDir: './tests',
@@ -88,7 +70,7 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         VITE_API_URL: URL_RESERVAS,
-        VITE_DEV_TOKEN: TOKEN_NAVEGADOR,
+        VITE_AUTH_URL: URL_USUARIOS,
       },
     },
   ],

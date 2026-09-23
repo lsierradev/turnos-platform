@@ -30,7 +30,18 @@ export class Usuario {
   @Column({ type: 'enum', enum: RolUsuario, default: RolUsuario.CLIENTE })
   rol: RolUsuario;
 
-  @Column({ nullable: true, transformer: encryptedColumnTransformer })
+  // El `type` explicito NO es decorativo: sin el, TypeORM deduce el tipo de
+  // columna del metadato que emite TypeScript, y para una union como
+  // `string | null` ese metadato es `Object`. TypeORM no sabe mapear Object a
+  // Postgres y aborta en DataSource.initialize() con
+  // DataTypeNotSupportedError -- o sea que el servicio NO ARRANCA, no es que
+  // falle una consulta. Los tests unitarios no lo ven porque mockean el
+  // DataSource; lo detecta solo un test que conecte de verdad.
+  @Column({
+    type: 'text',
+    nullable: true,
+    transformer: encryptedColumnTransformer,
+  })
   telefono?: string | null;
 
   @CreateDateColumn({ name: 'creado_en' })

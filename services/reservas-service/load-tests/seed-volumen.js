@@ -62,7 +62,10 @@ async function main() {
     let insertados = 0;
     let indice = 0;
 
-    for (let dia = DIAS_HISTORIA; dia > 0; dia -= 1) {
+    // Hasta dia = 0 inclusive, o sea incluyendo HOY: latencia-lectura.k6.js
+    // consulta la agenda del dia de hoy, y si hoy quedara vacio esa medicion
+    // no estaria midiendo nada.
+    for (let dia = DIAS_HISTORIA; dia >= 0; dia -= 1) {
       for (let n = 0; n < TURNOS_POR_DIA; n += 1) {
         const inicio = new Date();
         inicio.setUTCDate(inicio.getUTCDate() - dia);

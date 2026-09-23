@@ -2,11 +2,12 @@ import { expect, test } from '@playwright/test';
 import {
   DatosSembrados,
   limpiar,
+  PASSWORD_DE_PRUEBA,
   sembrar,
   sembrarTurnos,
 } from '../fixtures/datos-de-prueba';
 import { encabezados, iniciarSesion } from '../fixtures/sesion';
-import { tituloDeTarjeta } from '../fixtures/ui';
+import { iniciarSesionEnPanel, tituloDeTarjeta } from '../fixtures/ui';
 import { URL_RESERVAS } from '../playwright.config';
 
 /**
@@ -52,6 +53,9 @@ test.describe('HU4 - Dashboard de indicadores', () => {
   });
 
   async function abrirConRango(page: import('@playwright/test').Page) {
+    // El dashboard exige rol admin (RolesGuard): un tecnico o un cliente
+    // que llegue aca recibe 403.
+    await iniciarSesionEnPanel(page, datos.adminEmail, PASSWORD_DE_PRUEBA);
     await page.goto('/dashboard');
     // "Hasta" primero: el input de "Desde" tiene max={to}, asi que poner un
     // desde de 2018 mientras el hasta sigue en hoy es valido, pero al reves
@@ -119,6 +123,7 @@ test.describe('HU4 - Dashboard de indicadores', () => {
   });
 
   test('un rango invertido se avisa sin llamar al backend', async ({ page }) => {
+    await iniciarSesionEnPanel(page, datos.adminEmail, PASSWORD_DE_PRUEBA);
     await page.goto('/dashboard');
     await page.getByLabel('Desde').fill(DIA_A);
 

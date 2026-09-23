@@ -14,6 +14,12 @@ data:
   # OJO: DATABASE_URL trae la contrasenia, asi que NO va aca -- se arma
   # entera en el Secret. Este ConfigMap solo lleva lo que se puede mostrar.
   NODE_ENV: 'production'
+  # Origenes desde los que se acepta al panel. En produccion es OBLIGATORIA:
+  # si falta, el servicio no arranca (packages/http/src/cors.util.ts). Un
+  # comodin en un servicio que recibe el token por header Authorization
+  # dejaria que cualquier sitio hiciera llamadas autenticadas desde el
+  # navegador de un usuario logueado.
+  CORS_ORIGINS: 'https://turnos.REEMPLAZAR.com'
   JWT_EXPIRES_IN: '15m'
   JWT_REFRESH_EXPIRES_IN: '7d'
   NOTIFICACIONES_INTENTOS: '3'

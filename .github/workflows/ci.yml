@@ -88,7 +88,9 @@ jobs:
         run: pnpm --filter "@turnos-platform/reservas-service..." build
 
       - name: Run integration tests
-        run: pnpm --filter @turnos-platform/reservas-service test:integration
+        run: |
+          pnpm --filter @turnos-platform/reservas-service test:integration
+          pnpm --filter @turnos-platform/usuarios-service test:integration
 
   e2e-tests:
     runs-on: ubuntu-latest
@@ -161,3 +163,132 @@ jobs:
           name: playwright-report
           path: e2e/playwright-report/
           retention-days: 7
+
+  # Valida que los Dockerfile efectivamente construyen. No publica nada: el
+  # push a un registry es parte del deploy, no de CI. Es lo maximo que se
+  # puede "validar de la infra" sin un cluster (issue #40).
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build reservas-service
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/reservas-service/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build usuarios-service
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/usuarios-service/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build admin-web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/admin-web/Dockerfile
+          push: false
+          build-args: |
+            VITE_API_URL=http://localhost:3001
+            VITE_AUTH_URL=http://localhost:3002
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Mide el p95 de los endpoints de lectura contra una base con volumen
+  # realista (CA-2 del SRS). Sin el paso de seed-volumen esto pasaria siempre
+  # y no probaria nada: las consultas que costaban caro lo hacian por
+  # recorrer el historico.
+  latencia:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: turnos_platform
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/turnos_platform
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-latencia-secret
+      ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply database migrations
+        run: pnpm --filter @turnos-platform/database migrate
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Install k6
+        run: |
+          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Seed base + volumen historico
+        working-directory: services/reservas-service
+        run: |
+          # seed.js imprime lineas "export K6_X=valor" para pegar en una
+          # shell. GITHUB_ENV espera "K6_X=valor" sin el export, y hay que
+          # APENDER (>>) porque el archivo ya trae lo de pasos anteriores.
+          node load-tests/seed.js | sed 's/^export //' >> "$GITHUB_ENV"
+          node load-tests/seed-volumen.js
+
+      - name: Start reservas-service
+        run: |
+          node services/reservas-service/dist/main.js &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3001/reservas/health/ready && exit 0
+            sleep 2
+          done
+          echo "reservas-service no quedo listo"; exit 1
+
+      - name: Run k6 latency thresholds
+        working-directory: services/reservas-service
+        run: k6 run -e K6_BASE_URL=http://localhost:3001 load-tests/latencia-lectura.k6.js

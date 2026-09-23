@@ -75,6 +75,8 @@ services:
       JWT_SECRET: compose-local-secret
       JWT_REFRESH_SECRET: compose-local-refresh-secret
       ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      # Sin esto el navegador bloquea las llamadas del panel (otro origen).
+      CORS_ORIGINS: http://localhost:8080,http://localhost:5173
     ports:
       - '3001:3001'
     depends_on:
@@ -109,6 +111,7 @@ services:
       JWT_SECRET: compose-local-secret
       JWT_REFRESH_SECRET: compose-local-refresh-secret
       ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      CORS_ORIGINS: http://localhost:8080,http://localhost:5173
     ports:
       - '3002:3002'
     depends_on:
@@ -137,11 +140,13 @@ services:
         # (ver el Dockerfile). Por eso va aca y no en `environment`: ponerlo
         # como variable de entorno del contenedor no tendria ningun efecto.
         VITE_API_URL: http://localhost:3001
+        VITE_AUTH_URL: http://localhost:3002
     restart: unless-stopped
     ports:
       - '8080:8080'
     depends_on:
       - reservas-service
+      - usuarios-service
 
 volumes:
   turnos_platform_postgres_data:

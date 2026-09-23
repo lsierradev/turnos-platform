@@ -32,13 +32,15 @@ COPY apps/admin-web/ apps/admin-web/
 #   2. Nada que se pase por aca es secreto. Cualquiera que abra las
 #      devtools lo ve.
 #
-# Por eso VITE_DEV_TOKEN NO se acepta como build-arg: es un JWT y hornearlo
-# en un bundle publico seria repartir ese token a cualquiera que abra la
-# pagina. Ver docs/GO-LIVE.md -- admin-web todavia no tiene login, y eso es
-# un bloqueante de Go-Live, no algo que la imagen pueda resolver.
+# Desde Sprint 10 el panel tiene login propio, asi que NO se hornea ningun
+# token: la sesion se obtiene en runtime contra usuarios-service. Lo unico
+# que se hornea son las dos URLs, que no son secretas.
 ARG VITE_API_URL
+ARG VITE_AUTH_URL
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_AUTH_URL=$VITE_AUTH_URL
 RUN test -n "$VITE_API_URL" || (echo "ERROR: falta --build-arg VITE_API_URL" && exit 1)
+RUN test -n "$VITE_AUTH_URL" || (echo "ERROR: falta --build-arg VITE_AUTH_URL" && exit 1)
 
 RUN pnpm --filter @turnos-platform/admin-web build
 

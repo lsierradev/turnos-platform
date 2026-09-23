@@ -9,52 +9,85 @@ Este documento es la puerta. El detalle de cada criterio está en
 
 ## Veredicto
 
-**No se puede salir a producción todavía.** Hay un bloqueante duro y tres
-verificaciones que nunca se ejecutaron.
-
 | | Tema | Estado |
 |---|---|---|
-| 🔴 | `admin-web` no tiene login | **Bloqueante duro** |
-| 🟠 | Nada de la infraestructura fue aplicado ni validado | Bloqueante de #40 |
-| 🟠 | p95 nunca se midió | Bloqueante de CA-2 |
-| 🟠 | La suite E2E nunca se ejecutó | Bloqueante |
+| ✅ | `admin-web` no tenía login | **Resuelto** |
+| ✅ | Los servicios no arrancaban contra Postgres | **Resuelto** |
+| ✅ | No había CORS | **Resuelto** |
+| 🟠 | Nada de la infraestructura fue aplicado en un cluster | Bloqueante de #40 |
+| 🟠 | p95, E2E y build de imágenes: automatizados, falta ver el resultado | Bloqueante |
 | ⚪ | Sprint 7 (Pagos) no existe | Fuera de alcance, confirmar |
 
----
-
-## 🔴 Bloqueante duro: el panel no tiene autenticación
-
-`admin-web` **no tiene pantalla de login**. La sesión es un token de
-desarrollo que Vite hornea en el bundle vía `VITE_DEV_TOKEN`
-(`apps/admin-web/src/lib/api-client.ts`).
-
-En desarrollo es una comodidad. En un entorno público es una de dos cosas,
-las dos malas:
-
-- **Si se hornea un token de admin en la imagen:** cualquiera que abra las
-  devtools lo copia y obtiene acceso de administrador completo —KPIs del
-  taller, agenda de todos los técnicos, capacidad de cerrar turnos ajenos—.
-  El token ni siquiera hay que robarlo: viaja en el JavaScript público.
-- **Si no se hornea ninguno** (que es lo que hace el `Dockerfile`, porque
-  rechaza ese build-arg a propósito): el panel construye bien, carga, y
-  **toda llamada a la API devuelve 401**. No sirve para nada.
-
-No hay forma de desplegar el panel con lo que hay hoy. Esto no lo arregla la
-infraestructura.
-
-**Qué falta** (nunca estuvo en el alcance de ningún sprint):
-
-- [ ] Pantalla de login contra `POST /auth/login`
-- [ ] Guardar el token y renovarlo con `POST /auth/refresh` antes de que
-      expire (los access token duran 15 min)
-- [ ] Guardas de ruta y logout
-- [ ] Manejo del 401 y del 403 en `api-client.ts` (hoy un token vencido se ve
-      igual que un "no encontrado" — es el hallazgo 3 de `UX-NOTES.md`)
-
-Mientras tanto, **la API sí es desplegable**: tiene autenticación y
-autorización por rol completas. Lo que no se puede publicar es el panel.
+Las tres verificaciones que faltaban ahora corren **solas en CI** (jobs
+`e2e-tests`, `latencia` y `docker-build`). Lo que queda es mirar que pasen en
+verde y aplicar los manifiestos en un cluster de staging.
 
 ---
+
+## ✅ Resuelto: el panel ya tiene autenticación
+
+Hasta Sprint 10 la sesión era un token de desarrollo horneado en el bundle,
+lo que dejaba dos opciones y las dos malas: repartir acceso de administrador
+a cualquiera que abriera las devtools, o un panel que devolvía 401 en cada
+llamada.
+
+Implementado:
+
+- [x] Pantalla de login contra `POST /auth/login`
+- [x] Renovación automática con `POST /auth/refresh` al vencer el access
+      token, con una sola petición compartida aunque haya varias llamadas en
+      vuelo (el dashboard hace polling cada 2 s)
+- [x] Guardas de ruta, cierre de sesión y menú según el rol
+- [x] 401 y 403 con mensajes distintos (resuelve el hallazgo 3 de
+      `UX-NOTES.md`: antes una sesión vencida se veía igual que un "no
+      encontrado")
+- [x] Cubierto por `e2e/tests/acceso.spec.ts`
+
+**La sesión se guarda en `sessionStorage`**, no en `localStorage`: el panel se
+usa en computadoras compartidas del taller, y así cerrar la pestaña cierra la
+sesión. El límite conocido es que cualquier almacenamiento accesible por
+JavaScript es legible por un XSS; la alternativa robusta es una cookie
+httpOnly, que exige manejo de cookies y CSRF en el backend.
+
+- [ ] Evaluar el paso a cookie httpOnly antes de abrir a usuarios fuera del
+      taller.
+
+---
+
+## ✅ Resuelto: los servicios no arrancaban contra Postgres
+
+Detectado al revisar por qué CI estaba en rojo desde Sprint 6.
+`Notificacion.error` y `Notificacion.enviadoEn` estaban declarados como
+`@Column({ nullable: true })` sobre tipos `string | null` y `Date | null`.
+TypeScript emite `Object` como metadato para una unión, TypeORM no sabe
+mapearlo a Postgres, y **aborta en `DataSource.initialize()`**: el servicio no
+arrancaba, no era que fallara una consulta.
+
+`Usuario.telefono` tenía el mismo defecto, sin detectar: `usuarios-service`
+no tenía ningún test que levantara la aplicación contra una base real.
+
+- [x] Tipos de columna declarados explícitamente en los tres casos
+- [x] `usuarios-service` tiene ahora su propio spec de integración que
+      arranca `AppModule` contra Postgres — el test más barato que cierra
+      esta clase entera de fallas
+- [x] CI corre los dos specs de integración
+
+La suite unitaria estuvo en verde todo el tiempo, porque mockea el
+`DataSource`. Es la lección que deja: hay defectos que solo aparecen al
+conectar de verdad.
+
+## ✅ Resuelto: no había CORS
+
+Ningún servicio llamaba a `enableCors()`. En producción el panel vive en otro
+host que las APIs, así que el navegador habría bloqueado **todas** las
+llamadas antes de que salieran — y el síntoma aparece solo en la consola del
+navegador, no en los logs del backend.
+
+- [x] `CORS_ORIGINS` en ambos servicios, **obligatoria en producción** (sin
+      ella no arrancan). Nada de comodín: reflejar cualquier origen en un
+      servicio que recibe el token por header dejaría que cualquier sitio
+      hiciera llamadas autenticadas desde el navegador de un usuario
+      logueado.
 
 ## Criterios de aceptación (SRS §14)
 
@@ -72,7 +105,9 @@ autorización por rol completas. Lo que no se puede publicar es el panel.
 
 - [x] Las dos consultas que recorrían el histórico completo ahora filtran por
       rango en SQL.
-- [ ] **Correr la medición.** Nunca se ejecutó:
+- [x] Automatizado en CI: el job `latencia` siembra ~5800 turnos, corre
+      `ANALYZE` y ejecuta k6 con thresholds por endpoint.
+- [ ] **Ver el resultado en verde.** También se puede correr a mano:
       ```sh
       node services/reservas-service/load-tests/seed.js > .k6-env.sh && source .k6-env.sh
       node services/reservas-service/load-tests/seed-volumen.js
@@ -130,8 +165,9 @@ empieza a medir. Lo verificable ahora son los prerequisitos.
 
 ## Infraestructura (#40)
 
-- [ ] **Construir las tres imágenes.** Nunca se construyó ninguna; los
-      Dockerfiles no se ejecutaron.
+- [x] El job `docker-build` de CI construye las tres imágenes en cada push.
+      Es lo máximo que se puede validar sin un cluster.
+- [ ] **Ver ese job en verde.**
 - [ ] Verificar local con `docker compose --profile full up -d --build` y
       `./infra/scripts/verificar-salud.sh`.
 - [ ] VPC, EKS, RDS, ElastiCache, ECR y certificado ACM creados.

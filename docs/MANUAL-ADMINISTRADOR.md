@@ -16,6 +16,21 @@ turnos-platform organiza los turnos del taller. Se encarga de tres cosas:
 3. **Mostrarle al administrador** cómo viene el día: cuánta gente asiste y
    cuánto está tardando cada servicio.
 
+## Cómo entrar
+
+Al abrir el panel aparece la pantalla de inicio de sesión. Se entra con el
+correo y la contraseña que te dio el equipo técnico.
+
+Cosas que conviene saber:
+
+- **La sesión se cierra al cerrar la pestaña.** Es a propósito: el panel se
+  usa en computadoras compartidas del taller, y así el próximo que se siente
+  no entra como vos.
+- Mientras lo tengas abierto, el panel **renueva la sesión solo**.
+- El botón **Salir**, arriba a la derecha, la cierra en el momento.
+- Lo que ves depende de tu rol: si no aparece una opción, no es que falte
+  algo, es que tu usuario no la tiene.
+
 ## Quién puede hacer qué
 
 Hay tres tipos de usuario. Cada persona tiene uno solo.
@@ -154,9 +169,9 @@ Estas cosas todavía **no** están y conviene saberlo antes de empezar:
 - **El "Panel administrativo v1"** (la vista de carga por bahía) muestra
   **datos de ejemplo**, no datos reales. La propia pantalla lo avisa. El
   tablero que sí tiene información real es el **Dashboard de indicadores**.
-- **El acceso al panel está en revisión.** Todavía no hay pantalla de
-  usuario y contraseña; el equipo técnico tiene que resolverlo antes de que
-  el panel se pueda usar fuera del taller.
+- **No hay autogestión de usuarios.** Crear una cuenta, cambiar la
+  contraseña o recuperarla tiene que hacerlo el equipo técnico: todavía no
+  hay pantallas para eso.
 
 ---
 

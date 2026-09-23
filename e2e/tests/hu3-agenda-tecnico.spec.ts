@@ -2,11 +2,12 @@ import { expect, test } from '@playwright/test';
 import {
   DatosSembrados,
   limpiar,
+  PASSWORD_DE_PRUEBA,
   sembrar,
   sembrarTurnos,
 } from '../fixtures/datos-de-prueba';
 import { encabezados, iniciarSesion } from '../fixtures/sesion';
-import { tituloDeTarjeta } from '../fixtures/ui';
+import { iniciarSesionEnPanel, tituloDeTarjeta } from '../fixtures/ui';
 import { URL_RESERVAS } from '../playwright.config';
 
 /**
@@ -14,9 +15,9 @@ import { URL_RESERVAS } from '../playwright.config';
  * la bahia y el servicio de cada turno, para saber que me toca atender.
  *
  * Esta si se prueba por navegador: la vista existe (/agenda/:tecnicoId) y es
- * la interfaz que el tecnico usa de verdad. La sesion la aporta el token de
- * desarrollo que inyecta playwright.config.ts (admin-web todavia no tiene
- * login).
+ * la interfaz que el tecnico usa de verdad. Desde Sprint 10 el test se
+ * loguea COMO EL TECNICO por la pantalla de login, que es exactamente el
+ * recorrido de la historia.
  */
 test.describe('HU3 - Agenda del tecnico', () => {
   let datos: DatosSembrados;
@@ -47,6 +48,7 @@ test.describe('HU3 - Agenda del tecnico', () => {
   test('muestra los turnos del dia ordenados por hora, con bahia y servicio', async ({
     page,
   }) => {
+    await iniciarSesionEnPanel(page, datos.tecnicoEmail, PASSWORD_DE_PRUEBA);
     await page.goto(`/agenda/${datos.tecnicoId}`);
 
     await expect(tituloDeTarjeta(page, 'Agenda del tecnico')).toBeVisible();
@@ -68,6 +70,7 @@ test.describe('HU3 - Agenda del tecnico', () => {
   });
 
   test('navegar a otro dia muestra la agenda vacia', async ({ page }) => {
+    await iniciarSesionEnPanel(page, datos.tecnicoEmail, PASSWORD_DE_PRUEBA);
     await page.goto(`/agenda/${datos.tecnicoId}`);
     await expect(page.getByRole('row')).toHaveCount(3);
 
@@ -111,6 +114,8 @@ test.describe('HU3 - Agenda del tecnico', () => {
     // El backend responde 404 para un id que no es un tecnico. La vista
     // tiene que mostrar ese error, no un skeleton eterno (es el hallazgo 1
     // de UX-NOTES.md, que aplica al caso de id vacio).
+    // Como admin: para un tecnico, un id ajeno daria 403 en vez de 404.
+    await iniciarSesionEnPanel(page, datos.adminEmail, PASSWORD_DE_PRUEBA);
     await page.goto('/agenda/00000000-0000-4000-8000-0000000000ff');
 
     await expect(

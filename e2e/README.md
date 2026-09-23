@@ -8,6 +8,10 @@ Suite end-to-end (Playwright) de las 4 Historias de Usuario del SRS.
 | `hu2-conflicto-y-sugerencias.spec.ts` | Cliente recibe alternativas ante un horario ocupado | API, incluida concurrencia |
 | `hu3-agenda-tecnico.spec.ts` | Técnico ve su agenda del día | Navegador (`/agenda/:tecnicoId`) |
 | `hu4-dashboard-kpis.spec.ts` | Admin ve los KPIs operativos | Navegador (`/dashboard`) |
+| `acceso.spec.ts` | *(transversal)* login, guardas de ruta y roles | Navegador |
+
+`acceso.spec.ts` no es una HU: cubre la puerta de entrada de la que dependen
+las otras cuatro. Existe desde que el panel tiene login propio (Sprint 10).
 
 ## Por qué HU1 y HU2 no se prueban por navegador
 
@@ -68,6 +72,14 @@ Que cada corrida use sus propias bahías también es deliberado: las
 constraints `EXCLUDE` de `turnos` son globales, así que compartirlas entre
 corridas las haría fallar entre sí por un conflicto que no es el que se está
 probando.
+
+## Sesión en los tests de navegador
+
+Se loguean **por la pantalla de login**, como una persona
+(`iniciarSesionEnPanel` en `fixtures/ui.ts`). No se inyecta ningún token: el
+panel guarda la sesión en `sessionStorage`, que Playwright no persiste con
+`storageState` (solo cubre cookies y `localStorage`). Pasar por el formulario
+además hace que cada spec ejercite de paso el login y la guarda de rutas.
 
 El admin existe porque desde Sprint 9 el dashboard y la agenda exigen ese rol.
 Las specs verifican las dos caras: que el rol correcto entra y que un cliente

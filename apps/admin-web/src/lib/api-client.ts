@@ -1,3 +1,10 @@
+import {
+  guardarSesion,
+  leerSesion,
+  limpiarSesion,
+  type Tokens,
+} from './sesion';
+
 export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;
@@ -11,22 +18,174 @@ export class ApiError extends Error {
 }
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+// usuarios-service vive en otro host en producción (auth.dominio), así que
+// necesita su propia variable. En local ambos caen en localhost.
+const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? 'http://localhost:3002';
 
-async function apiFetch<T>(path: string): Promise<T> {
-  const token = import.meta.env.VITE_DEV_TOKEN;
+// Copia en memoria de los tokens, para no leer sessionStorage en cada
+// request. `null` = sin sesión.
+let tokens: Tokens | null = leerSesion();
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+// Callback que el AuthProvider registra para enterarse de que la sesión se
+// perdió (refresh vencido) y poder redirigir al login.
+let alCerrarSesion: (() => void) | null = null;
+
+export function registrarCierreDeSesion(cb: (() => void) | null): void {
+  alCerrarSesion = cb;
+}
+
+export function obtenerTokens(): Tokens | null {
+  return tokens;
+}
+
+export function establecerTokens(nuevos: Tokens | null): void {
+  tokens = nuevos;
+  if (nuevos) {
+    guardarSesion(nuevos);
+  } else {
+    limpiarSesion();
+  }
+}
+
+export async function login(
+  email: string,
+  password: string,
+): Promise<Tokens> {
+  const respuesta = await fetch(`${AUTH_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
   });
 
-  const body = await response.json().catch(() => undefined);
+  const body = await respuesta.json().catch(() => undefined);
 
-  if (!response.ok) {
-    const message =
-      (body && typeof body === 'object' && 'message' in body
-        ? String((body as { message: unknown }).message)
-        : undefined) ?? `Error ${response.status} llamando a ${path}`;
-    throw new ApiError(message, response.status, body);
+  if (!respuesta.ok) {
+    throw new ApiError(mensajeDeError(body, respuesta.status), respuesta.status, body);
+  }
+
+  const nuevos = body as Tokens;
+  establecerTokens(nuevos);
+  return nuevos;
+}
+
+export function logout(): void {
+  establecerTokens(null);
+}
+
+/*
+ * Renovación del access token.
+ *
+ * Los access token duran 15 minutos y el dashboard hace polling cada 2
+ * segundos, así que cuando uno vence hay varias llamadas en vuelo que van a
+ * recibir 401 casi a la vez. Si cada una disparara su propio refresh, se
+ * mandarían decenas de refresh simultáneos.
+ *
+ * `refrescoEnCurso` hace que todas compartan la MISMA promesa: la primera
+ * dispara el refresh y el resto espera ese resultado.
+ */
+let refrescoEnCurso: Promise<string | null> | null = null;
+
+async function refrescarToken(): Promise<string | null> {
+  if (refrescoEnCurso) {
+    return refrescoEnCurso;
+  }
+
+  const refreshToken = tokens?.refreshToken;
+  if (!refreshToken) {
+    return null;
+  }
+
+  refrescoEnCurso = (async () => {
+    try {
+      const respuesta = await fetch(`${AUTH_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!respuesta.ok) {
+        // El refresh token también venció (dura 7 días) o es inválido: no
+        // hay forma de recuperar la sesión sin volver a loguearse.
+        establecerTokens(null);
+        alCerrarSesion?.();
+        return null;
+      }
+
+      const { accessToken } = (await respuesta.json()) as {
+        accessToken: string;
+      };
+      establecerTokens({ accessToken, refreshToken });
+      return accessToken;
+    } catch {
+      // Un fallo de red NO cierra la sesión: el token puede seguir siendo
+      // válido y el problema ser la conexión. Cerrar sesión acá echaría al
+      // usuario del panel cada vez que se corta el wifi del taller.
+      return null;
+    } finally {
+      refrescoEnCurso = null;
+    }
+  })();
+
+  return refrescoEnCurso;
+}
+
+function mensajeDeError(body: unknown, status: number): string {
+  const delCuerpo =
+    body && typeof body === 'object' && 'message' in body
+      ? (body as { message: unknown }).message
+      : undefined;
+
+  // El ValidationPipe devuelve un array de mensajes; el filtro global del
+  // backend lo preserva tal cual.
+  if (Array.isArray(delCuerpo)) {
+    return delCuerpo.join('. ');
+  }
+  if (typeof delCuerpo === 'string' && delCuerpo) {
+    return delCuerpo;
+  }
+
+  // Mensajes propios para los dos casos que el backend no puede explicar
+  // mejor que el frontend. Antes un 401 se veía igual que un 404 y quien
+  // probaba el panel creía que el dato no existía, cuando en realidad se le
+  // había vencido la sesión (hallazgo 3 de UX-NOTES.md).
+  if (status === 401) {
+    return 'Tu sesión expiró. Volvé a iniciar sesión.';
+  }
+  if (status === 403) {
+    return 'Tu usuario no tiene permiso para ver esto.';
+  }
+  return `Error ${status}`;
+}
+
+async function apiFetch<T>(path: string, reintentando = false): Promise<T> {
+  const respuesta = await fetch(`${BASE_URL}${path}`, {
+    headers: tokens
+      ? { Authorization: `Bearer ${tokens.accessToken}` }
+      : undefined,
+  });
+
+  // Un 401 con sesión activa significa access token vencido: se renueva una
+  // sola vez y se reintenta. `reintentando` corta la recursión para que un
+  // backend que responde 401 siempre no genere un bucle infinito.
+  if (respuesta.status === 401 && !reintentando && tokens) {
+    const nuevo = await refrescarToken();
+    if (nuevo) {
+      return apiFetch<T>(path, true);
+    }
+  }
+
+  const body = await respuesta.json().catch(() => undefined);
+
+  if (!respuesta.ok) {
+    if (respuesta.status === 401) {
+      establecerTokens(null);
+      alCerrarSesion?.();
+    }
+    throw new ApiError(
+      mensajeDeError(body, respuesta.status),
+      respuesta.status,
+      body,
+    );
   }
 
   return body as T;

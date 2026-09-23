@@ -16,6 +16,15 @@ import { EMAIL_PROVIDER } from '../src/modules/notifications/providers/provider.
 // Este test necesita Postgres Y Redis reales: es el unico que ejercita el
 // reintento de Bull de verdad (con su backoff y su re-encolado), cosa que
 // los unit tests del processor no pueden cubrir porque ahi Bull no existe.
+//
+// AISLAMIENTO: jest-integration.json fija maxWorkers en 1 por culpa de este
+// archivo. Las tres suites de integracion levantan AppModule, y cada
+// AppModule arranca un worker de Bull sobre la MISMA cola de Redis. En
+// paralelo, el job que encola este test lo puede tomar el worker de otra
+// suite -- que usa el provider real, no el simulado de aca -- y entonces
+// providerEmail.llamadas se queda en 0 mientras la fila avanza sola. Peor:
+// al cerrar esa otra suite su app, el reintento en vuelo escribe sobre una
+// conexion cerrada y la tumba con "Driver not Connected".
 // Se salta limpio si falta cualquiera de los dos, igual que
 // appointments.integration-spec.ts.
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -133,7 +142,14 @@ describirSiHayInfra('Notificaciones (integration)', () => {
         tecnicoId,
       ]);
     }
-    await cola?.empty();
+    // obliterate y no empty(): empty() solo saca los jobs en espera y deja
+    // vivos los retrasados y los activos, que despues se despiertan contra
+    // una app ya cerrada. close() ademas detiene el worker ANTES de que
+    // app.close() cierre la conexion de TypeORM.
+    if (cola) {
+      await cola.obliterate({ force: true }).catch(() => undefined);
+      await cola.close();
+    }
     await app?.close();
   });
 

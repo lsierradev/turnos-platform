@@ -1,5 +1,5 @@
 import { OnQueueFailed, Process, Processor } from '@nestjs/bull';
-import { Inject } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job } from 'bull';
 import { Repository } from 'typeorm';
@@ -17,6 +17,8 @@ import { EMAIL_PROVIDER, WHATSAPP_PROVIDER } from './providers/provider.tokens';
 
 @Processor(NOMBRE_COLA_NOTIFICACIONES)
 export class NotificationsProcessor {
+  private readonly logger = new Logger(NotificationsProcessor.name);
+
   constructor(
     @InjectRepository(Notificacion)
     private readonly notificacionesRepository: Repository<Notificacion>,
@@ -69,11 +71,29 @@ export class NotificationsProcessor {
     const intentosMaximos = job.opts.attempts ?? 1;
     const agotado = job.attemptsMade >= intentosMaximos;
 
-    await this.notificacionesRepository.update(job.data.notificacionId, {
-      intentos: job.attemptsMade,
-      ...(agotado
-        ? { estado: EstadoNotificacion.FALLIDO, error: error.message }
-        : {}),
-    });
+    // El try/catch NO es defensivo por costumbre: este handler corre fuera
+    // del ciclo de vida de un request, disparado por Bull cuando le llega el
+    // fallo. Si el modulo ya se esta destruyendo -- un pod que recibe
+    // SIGTERM durante un rolling update, o un test que cerro su app -- la
+    // conexion de TypeORM puede estar cerrada y este update rechaza con
+    // "Driver not Connected". Al no haber nadie esperando esa promesa, seria
+    // una unhandled rejection: Node tumba el proceso.
+    //
+    // Perder la actualizacion de estado de una notificacion es molesto (la
+    // fila queda en 'pendiente' y la detecta verificarCobertura); tumbar el
+    // proceso durante cada deploy es mucho peor.
+    try {
+      await this.notificacionesRepository.update(job.data.notificacionId, {
+        intentos: job.attemptsMade,
+        ...(agotado
+          ? { estado: EstadoNotificacion.FALLIDO, error: error.message }
+          : {}),
+      });
+    } catch (fallo) {
+      this.logger.warn(
+        `No se pudo registrar el fallo de la notificacion ` +
+          `${job.data.notificacionId}: ${(fallo as Error).message}`,
+      );
+    }
   }
 }

@@ -127,15 +127,15 @@ test.describe('HU4 - Dashboard de indicadores', () => {
     await page.goto('/dashboard');
     await page.getByLabel('Desde').fill(DIA_A);
 
-    // El input de "Hasta" tiene min={from}; se fuerza el valor invalido para
-    // comprobar que la vista tambien lo defiende y no manda un request que
-    // el backend va a rechazar con 400.
-    await page
-      .getByLabel('Hasta')
-      .evaluate((input: HTMLInputElement) => {
-        input.value = '2017-01-01';
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      });
+    // El atributo min={from} del input es una ayuda visual, no un candado:
+    // no impide fijar el valor por codigo. Lo que se comprueba es que la
+    // VISTA lo defienda igual y no mande un request que el backend va a
+    // rechazar con 400.
+    //
+    // fill() y no dispatchEvent('change'): React escucha 'input' para los
+    // inputs controlados, asi que un evento 'change' fabricado a mano no
+    // dispara su onChange y el estado nunca cambiaria.
+    await page.getByLabel('Hasta').fill('2017-01-01');
 
     await expect(page.getByText(/rango es invalido/i)).toBeVisible();
   });

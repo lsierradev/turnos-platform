@@ -1,8 +1,6 @@
-import { InjectQueue } from '@nestjs/bull';
 import { Injectable, Logger } from '@nestjs/common';
-import { Queue } from 'bull';
 import { DataSource } from 'typeorm';
-import { NOMBRE_COLA_NOTIFICACIONES } from '../notifications/notifications.constants';
+import { RedisCacheService } from '../../common/redis-cache.service';
 
 export interface EstadoDependencia {
   status: 'up' | 'down';
@@ -51,9 +49,15 @@ async function probar(fn: () => Promise<unknown>): Promise<EstadoDependencia> {
 export class ReservasService {
   private readonly logger = new Logger(ReservasService.name);
 
+  // Se usa el cliente de RedisCacheService y NO la cola de Bull. Registrar
+  // la cola por segunda vez aca (NotificationsModule ya la registra) crea un
+  // segundo proveedor para el mismo nombre, y de ahi a que el @Processor
+  // quede atado a la instancia equivocada hay un paso. El readiness solo
+  // necesita saber si Redis responde: un PING alcanza, y esa conexion ya
+  // existe.
   constructor(
     private readonly dataSource: DataSource,
-    @InjectQueue(NOMBRE_COLA_NOTIFICACIONES) private readonly cola: Queue,
+    private readonly cache: RedisCacheService,
   ) {}
 
   /**
@@ -77,12 +81,7 @@ export class ReservasService {
   async readiness(): Promise<Readiness> {
     const [postgres, redis] = await Promise.all([
       probar(() => this.dataSource.query('SELECT 1')),
-      // isReady() de Bull resuelve cuando la conexion a Redis esta lista;
-      // el ping confirma ademas que el servidor responde ahora.
-      probar(async () => {
-        await this.cola.isReady();
-        return this.cola.client.ping();
-      }),
+      probar(() => this.cache.ping()),
     ]);
 
     const dependencias = { postgres, redis };

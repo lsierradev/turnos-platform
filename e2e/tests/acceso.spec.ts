@@ -107,7 +107,13 @@ test.describe('Acceso al panel', () => {
     // La guarda de ruta lo deja pasar (tiene sesion), pero el backend
     // responde 403 y la vista muestra el mensaje de permisos. Esa es la
     // division correcta: quien autoriza es el servidor, no el frontend.
-    await expect(page.getByText(/no tiene permiso/i)).toBeVisible({
+    //
+    // Se busca "permiso" y no la frase entera porque el texto puede venir
+    // del backend ("No tenes permiso para esta operacion...") o del
+    // fallback del frontend ("Tu usuario no tiene permiso..."): api-client
+    // prefiere el mensaje del servidor cuando viene, y el filtro global
+    // siempre lo manda.
+    await expect(page.getByText(/permiso/i).first()).toBeVisible({
       timeout: 15_000,
     });
   });

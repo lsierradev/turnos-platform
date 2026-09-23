@@ -50,6 +50,20 @@ export class RedisCacheService implements OnModuleDestroy {
     });
   }
 
+  /**
+   * Comprobacion de vida de Redis para el readiness.
+   *
+   * A diferencia de obtener/guardar, esta SI propaga el error: el readiness
+   * necesita enterarse de que Redis no responde, que es justamente lo que
+   * tiene que reportar.
+   */
+  async ping(): Promise<void> {
+    if (!this.cliente) {
+      throw new Error('REDIS_URL no configurada');
+    }
+    await this.cliente.ping();
+  }
+
   async obtener<T>(clave: string): Promise<T | null> {
     if (!this.cliente) {
       return null;

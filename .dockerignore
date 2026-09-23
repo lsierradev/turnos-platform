@@ -13,7 +13,11 @@ build
 *.tsbuildinfo
 
 # La suite E2E no se empaqueta: arrastra Playwright y sus navegadores.
-e2e
+# Su package.json SI entra: pnpm-workspace.yaml lo incluye como paquete y
+# --frozen-lockfile compara el lockfile contra el workspace completo, asi
+# que sin ese manifiesto el install falla dentro de la imagen.
+e2e/**
+!e2e/package.json
 
 .git
 .github

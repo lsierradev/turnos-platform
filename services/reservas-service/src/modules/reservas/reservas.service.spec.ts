@@ -1,29 +1,22 @@
-import { getQueueToken } from '@nestjs/bull';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
-import { NOMBRE_COLA_NOTIFICACIONES } from '../notifications/notifications.constants';
+import { RedisCacheService } from '../../common/redis-cache.service';
 import { ReservasService } from './reservas.service';
 
 describe('ReservasService', () => {
   let service: ReservasService;
   let dataSource: { query: jest.Mock };
-  let cola: { isReady: jest.Mock; client: { ping: jest.Mock } };
+  let cache: { ping: jest.Mock };
 
   beforeEach(async () => {
     dataSource = { query: jest.fn().mockResolvedValue([{ '?column?': 1 }]) };
-    cola = {
-      isReady: jest.fn().mockResolvedValue(undefined),
-      client: { ping: jest.fn().mockResolvedValue('PONG') },
-    };
+    cache = { ping: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReservasService,
         { provide: DataSource, useValue: dataSource },
-        {
-          provide: getQueueToken(NOMBRE_COLA_NOTIFICACIONES),
-          useValue: cola,
-        },
+        { provide: RedisCacheService, useValue: cache },
       ],
     }).compile();
 
@@ -50,7 +43,7 @@ describe('ReservasService', () => {
       // la base haria que el orquestador reiniciara pods sanos, que es lo
       // contrario de lo que conviene durante un incidente de base de datos.
       expect(dataSource.query).not.toHaveBeenCalled();
-      expect(cola.isReady).not.toHaveBeenCalled();
+      expect(cache.ping).not.toHaveBeenCalled();
     });
   });
 
@@ -82,7 +75,7 @@ describe('ReservasService', () => {
     });
 
     it('reporta degradado si Redis no responde', async () => {
-      cola.client.ping.mockRejectedValue(new Error('redis caido'));
+      cache.ping.mockRejectedValue(new Error('redis caido'));
 
       const resultado = await service.readiness();
 

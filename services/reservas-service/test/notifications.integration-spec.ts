@@ -140,15 +140,48 @@ describirSiHayInfra('Notificaciones (integration)', () => {
   it('reintenta el envio cuando el proveedor se cae y termina marcandolo enviado', async () => {
     await scheduler.programarRecordatorios();
 
-    const notificacion = await esperarA(async () => {
-      const filas: Notificacion[] = await dataSource.query(
-        `SELECT id, estado, intentos FROM notificaciones
-         WHERE turno_id = $1 AND canal = 'email'`,
-        [turnoId],
+    // El scheduler tiene que haber dejado la fila ANTES de encolar nada. Se
+    // comprueba aparte para que, si falla, se sepa si el problema fue no
+    // encontrar el turno (scheduler) o no procesar el job (cola).
+    const [creada]: Notificacion[] = await dataSource.query(
+      `SELECT id, estado, intentos FROM notificaciones
+       WHERE turno_id = $1 AND canal = 'email'`,
+      [turnoId],
+    );
+    if (!creada) {
+      throw new Error(
+        'El scheduler no registro ninguna notificacion para el turno: o no ' +
+          'lo encontro en su ventana de 24h, o el INSERT no se hizo. El ' +
+          'fallo no esta en la cola.',
       );
-      const fila = filas[0];
-      return fila && fila.estado === EstadoNotificacion.ENVIADO ? fila : null;
-    });
+    }
+
+    const notificacion = await esperarA(
+      async () => {
+        const filas: Notificacion[] = await dataSource.query(
+          `SELECT id, estado, intentos FROM notificaciones
+           WHERE turno_id = $1 AND canal = 'email'`,
+          [turnoId],
+        );
+        const fila = filas[0];
+        return fila && fila.estado === EstadoNotificacion.ENVIADO ? fila : null;
+      },
+      // Si se agota, el mensaje trae el estado real de la fila y cuantas
+      // veces llamo el provider. Un timeout pelado no distingue "la cola
+      // nunca proceso el job" de "lo proceso y quedo fallido".
+      async () => {
+        const filas: Notificacion[] = await dataSource.query(
+          `SELECT estado, intentos, error FROM notificaciones
+           WHERE turno_id = $1 AND canal = 'email'`,
+          [turnoId],
+        );
+        return (
+          `fila=${JSON.stringify(filas[0])} ` +
+          `llamadasAlProvider=${providerEmail.llamadas} ` +
+          `jobsEnCola=${JSON.stringify(await cola.getJobCounts())}`
+        );
+      },
+    );
 
     // El provider fallo 2 veces antes de responder OK: si Bull no
     // reintentara, la notificacion habria quedado en 'fallido'.
@@ -157,9 +190,14 @@ describirSiHayInfra('Notificaciones (integration)', () => {
   });
 });
 
-/** Reintenta `fn` hasta que devuelva algo distinto de null o se agote el tiempo. */
+/**
+ * Reintenta `fn` hasta que devuelva algo distinto de null o se agote el
+ * tiempo. `diagnostico` se invoca solo al agotarse, para que el mensaje de
+ * error diga en que estado quedo todo en vez de un "Timeout" pelado.
+ */
 async function esperarA<T>(
   fn: () => Promise<T | null>,
+  diagnostico?: () => Promise<string>,
   timeoutMs = 15_000,
   intervaloMs = 100,
 ): Promise<T> {
@@ -170,7 +208,8 @@ async function esperarA<T>(
       return resultado;
     }
     if (Date.now() > limite) {
-      throw new Error('Timeout esperando la condicion');
+      const detalle = diagnostico ? await diagnostico() : '';
+      throw new Error(`Timeout esperando la condicion. ${detalle}`);
     }
     await new Promise((resolve) => setTimeout(resolve, intervaloMs));
   }

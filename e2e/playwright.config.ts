@@ -63,7 +63,11 @@ export default defineConfig({
     {
       command:
         'pnpm --filter @turnos-platform/reservas-service start',
-      url: `${URL_RESERVAS}/reservas/health`,
+      // Readiness y no liveness: el liveness responde 200 apenas arranca el
+      // proceso, aunque Postgres todavia no acepte conexiones. Esperar al
+      // readiness evita que el primer test falle por una base que aun no
+      // estaba lista.
+      url: `${URL_RESERVAS}/reservas/health/ready`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       stdout: 'pipe',
@@ -71,7 +75,7 @@ export default defineConfig({
     },
     {
       command: 'pnpm --filter @turnos-platform/usuarios-service start',
-      url: `${URL_USUARIOS}/usuarios/health`,
+      url: `${URL_USUARIOS}/usuarios/health/ready`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       stdout: 'pipe',

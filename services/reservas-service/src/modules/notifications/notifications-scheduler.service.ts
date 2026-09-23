@@ -54,6 +54,62 @@ export class NotificationsSchedulerService {
     }
   }
 
+  /**
+   * Reconciliacion de cobertura (Sprint 9).
+   *
+   * El criterio de aceptacion del SRS pide que el 100% de las
+   * notificaciones tenga estado registrado. Lo que la tabla NO puede
+   * mostrar por si sola son los dos huecos:
+   *
+   * 1. Turnos inminentes SIN NINGUNA fila. El cron de arriba mira una
+   *    ventana de 30 min alrededor de "ahora + 24 h" y corre cada 15, asi
+   *    que las ventanas se solapan y un atraso corto se recupera solo. Pero
+   *    si el proceso estuvo caido mas de 30 minutos, el turno atraviesa la
+   *    ventana entero y no queda constancia de nada: no hay fila que diga
+   *    "esta notificacion no se mando", simplemente no existe.
+   *
+   * 2. Filas 'pendiente' viejas. Si el worker murio entre el INSERT y el
+   *    procesamiento, o Redis perdio la cola, la fila se queda en
+   *    'pendiente' para siempre y nadie la reintenta.
+   *
+   * Esto no los arregla: los hace VISIBLES. Sale por el logger a nivel
+   * error justamente para que el monitoreo pueda alertar sobre ello, en vez
+   * de depender de que alguien corra las consultas a mano.
+   */
+  @Cron('*/30 * * * *')
+  async verificarCobertura(): Promise<void> {
+    const [sinNotificacion] = await this.dataSource.query(
+      `SELECT count(*)::int AS total
+       FROM turnos t
+       LEFT JOIN notificaciones n ON n.turno_id = t.id
+       WHERE lower(t.rango_tiempo) BETWEEN now() AND now() + interval '24 hours'
+         AND t.estado = 'programado'
+         AND t.usuario_id IS NOT NULL
+         AND n.id IS NULL`,
+    );
+
+    const [pendientesViejas] = await this.dataSource.query(
+      `SELECT count(*)::int AS total
+       FROM notificaciones
+       WHERE estado = 'pendiente'
+         AND creado_en < now() - interval '1 hour'`,
+    );
+
+    if (sinNotificacion.total > 0) {
+      this.logger.error(
+        `Cobertura de recordatorios incompleta: ${sinNotificacion.total} turnos ` +
+          'empiezan dentro de 24h y no tienen ninguna notificacion registrada.',
+      );
+    }
+
+    if (pendientesViejas.total > 0) {
+      this.logger.error(
+        `${pendientesViejas.total} notificaciones llevan mas de 1h en estado ` +
+          'pendiente: la cola no las proceso.',
+      );
+    }
+  }
+
   private async buscarTurnosParaRecordar(
     desde: Date,
     hasta: Date,

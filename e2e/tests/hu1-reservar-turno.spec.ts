@@ -21,10 +21,15 @@ import { URL_RESERVAS } from '../playwright.config';
 test.describe('HU1 - Reservar un turno', () => {
   let datos: DatosSembrados;
   let token: string;
+  // Desde Sprint 9 la agenda de un tecnico solo la puede leer un admin o ese
+  // mismo tecnico: el token de cliente sirve para reservar, no para
+  // verificar la reserva desde la agenda.
+  let tokenAdmin: string;
 
   test.beforeAll(async ({ request }) => {
     datos = await sembrar();
     token = await iniciarSesion(request, datos.clienteEmail);
+    tokenAdmin = await iniciarSesion(request, datos.adminEmail);
   });
 
   test.afterAll(async () => {
@@ -74,7 +79,7 @@ test.describe('HU1 - Reservar un turno', () => {
       `${URL_RESERVAS}/technicians/${datos.tecnicoId}/agenda?date=${
         inicio.toISOString().slice(0, 10)
       }`,
-      { headers: encabezados(token) },
+      { headers: encabezados(tokenAdmin) },
     );
     expect(agenda.status()).toBe(200);
     const turnos = await agenda.json();
@@ -131,6 +136,19 @@ test.describe('HU1 - Reservar un turno', () => {
     });
 
     expect(respuesta.status()).toBe(400);
+  });
+
+  test('un cliente no puede leer la agenda de un tecnico', async ({
+    request,
+  }) => {
+    // La agenda expone la carga de trabajo del taller entero. Hasta Sprint 9
+    // cualquier autenticado podia leerla pasando un id en la URL.
+    const respuesta = await request.get(
+      `${URL_RESERVAS}/technicians/${datos.tecnicoId}/agenda`,
+      { headers: encabezados(token) },
+    );
+
+    expect(respuesta.status()).toBe(403);
   });
 
   test('exige autenticacion', async ({ request }) => {

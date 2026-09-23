@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'path';
+import { RedisCacheModule } from './common/redis-cache.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -32,6 +33,7 @@ import { TechniciansModule } from './modules/technicians/technicians.module';
       }),
     }),
     ScheduleModule.forRoot(),
+    RedisCacheModule,
     ReservasModule,
     ServiciosModule,
     AppointmentsModule,

@@ -50,11 +50,24 @@ describe('AppointmentsService', () => {
     actualizadoEn: new Date(),
   };
 
+  // Fecha relativa y no fija: desde Sprint 9 create() rechaza reservas en
+  // el pasado, asi que una fecha literal de 2024 haria que estos tests
+  // empezaran a fallar con el correr del calendario. 09:00 UTC cae dentro
+  // del horario laboral que tambien se valida.
+  function proximoHorarioLaboral(): Date {
+    const fecha = new Date();
+    fecha.setUTCDate(fecha.getUTCDate() + 2);
+    fecha.setUTCHours(9, 0, 0, 0);
+    return fecha;
+  }
+
+  const inicioValido = proximoHorarioLaboral();
+
   const dto: CreateAppointmentDto = {
     bahiaId: bahia.id,
     servicioId: servicio.id,
     tecnicoId: 't-1',
-    inicio: '2024-01-08T09:00:00.000Z',
+    inicio: inicioValido.toISOString(),
   };
 
   beforeEach(async () => {
@@ -113,8 +126,10 @@ describe('AppointmentsService', () => {
       tecnicoId: dto.tecnicoId,
       usuarioId: 'u-1',
       rangoTiempo: {
-        inicio: new Date('2024-01-08T09:00:00.000Z'),
-        fin: new Date('2024-01-08T09:30:00.000Z'),
+        inicio: inicioValido,
+        fin: new Date(
+          inicioValido.getTime() + servicio.duracionMinutos * 60_000,
+        ),
       },
     });
   });
@@ -161,7 +176,13 @@ describe('AppointmentsService', () => {
     const response = error.getResponse();
     expect(response.message).toMatch(/bahia/i);
     expect(turnosRepository.find).toHaveBeenCalledWith({
-      where: { bahiaId: dto.bahiaId },
+      where: expect.objectContaining({
+        bahiaId: dto.bahiaId,
+        // La condicion de rango acota la consulta a los dias que
+        // sugerirHorarios va a explorar, en vez de traer todo el historico
+        // de la bahia (ver buscarSugerencias).
+        rangoTiempo: expect.anything(),
+      }),
     });
     expect(Array.isArray(response.sugerencias)).toBe(true);
   });
@@ -179,9 +200,82 @@ describe('AppointmentsService', () => {
     const response = error.getResponse();
     expect(response.message).toMatch(/tecnico/i);
     expect(turnosRepository.find).toHaveBeenCalledWith({
-      where: { tecnicoId: dto.tecnicoId },
+      where: expect.objectContaining({
+        tecnicoId: dto.tecnicoId,
+        rangoTiempo: expect.anything(),
+      }),
     });
     expect(Array.isArray(response.sugerencias)).toBe(true);
+  });
+
+  describe('validacion de horario (Sprint 9)', () => {
+    function enHorario(hora: number, diasAdelante = 2): string {
+      const fecha = new Date();
+      fecha.setUTCDate(fecha.getUTCDate() + diasAdelante);
+      fecha.setUTCHours(hora, 0, 0, 0);
+      return fecha.toISOString();
+    }
+
+    it('rechaza una reserva en el pasado', async () => {
+      await expect(
+        service.create({ ...dto, inicio: '2019-01-01T09:00:00.000Z' }, 'u-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(turnosRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('rechaza una reserva antes de la apertura', async () => {
+      await expect(
+        service.create({ ...dto, inicio: enHorario(3) }, 'u-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rechaza una reserva que termina despues del cierre', async () => {
+      // 17:45 + 30 min de servicio = 18:15, fuera de la ventana. El motor de
+      // sugerencias nunca ofreceria ese horario: si create() lo aceptara,
+      // se podria entrar por la puerta de adelante a algo que el sistema
+      // considera inreservable.
+      const fecha = new Date();
+      fecha.setUTCDate(fecha.getUTCDate() + 2);
+      fecha.setUTCHours(17, 45, 0, 0);
+
+      await expect(
+        service.create({ ...dto, inicio: fecha.toISOString() }, 'u-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('acepta una reserva que termina justo al cierre', async () => {
+      const fecha = new Date();
+      fecha.setUTCDate(fecha.getUTCDate() + 2);
+      fecha.setUTCHours(17, 30, 0, 0);
+      turnosRepository.create.mockReturnValue({ id: 'turno-1' } as Turno);
+      turnosRepository.save.mockResolvedValue({ id: 'turno-1' } as Turno);
+
+      await expect(
+        service.create({ ...dto, inicio: fecha.toISOString() }, 'u-1'),
+      ).resolves.toEqual({ id: 'turno-1' });
+    });
+  });
+
+  it('lanza ConflictException de cliente cuando la constraint violada es la de usuario', async () => {
+    turnosRepository.create.mockReturnValue({} as Turno);
+    turnosRepository.save.mockRejectedValue(
+      crearQueryFailedError({ constraint: 'turnos_usuario_rango_excl' }),
+    );
+    turnosRepository.find.mockResolvedValue([]);
+
+    const error = await service.create(dto, 'u-1').catch((e) => e);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    const response = error.getResponse();
+    expect(response.message).toMatch(/ya tenes otro turno/i);
+    // Las alternativas se buscan sobre la agenda DEL CLIENTE: sugerir
+    // huecos de la bahia cuando el ocupado es el cliente devolveria
+    // horarios que vuelven a dar 409.
+    const argumentos = turnosRepository.find.mock.calls[0]?.[0];
+    expect(argumentos?.where).toEqual(
+      expect.objectContaining({ usuarioId: 'u-1' }),
+    );
   });
 
   it('repropaga errores que no son de solapamiento sin modificarlos', async () => {

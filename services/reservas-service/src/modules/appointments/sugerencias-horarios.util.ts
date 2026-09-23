@@ -16,10 +16,13 @@ export interface SugerirHorariosParams {
   cantidad?: number;
 }
 
-const HORA_APERTURA_DEFAULT = 8;
-const HORA_CIERRE_DEFAULT = 18;
+export const HORA_APERTURA_DEFAULT = 8;
+export const HORA_CIERRE_DEFAULT = 18;
 const PASO_MINUTOS_DEFAULT = 15;
-const DIAS_BUSQUEDA_DEFAULT = 3;
+// Exportado para que el llamador pueda pedirle a la DB exactamente la
+// ventana que esta funcion va a explorar, en vez de traerse todos los
+// turnos historicos del recurso y filtrarlos aca.
+export const DIAS_BUSQUEDA_DEFAULT = 3;
 const CANTIDAD_DEFAULT = 3;
 
 function seSolapan(a: RangoTiempo, b: RangoTiempo): boolean {

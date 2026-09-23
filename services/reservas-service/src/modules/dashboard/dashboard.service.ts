@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { RedisCacheService } from '../../common/redis-cache.service';
 import { KpisQueryDto } from './dto/kpis-query.dto';
 
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
@@ -21,6 +22,19 @@ const MAX_DIAS_RANGO = 92;
 // que es el modo de falla correcto: es una vista de lectura, no el camino
 // critico del negocio.
 const TIMEOUT_CONSULTA_MS = 5_000;
+
+// TTL del cache de KPIs, en segundos.
+//
+// Sale de la aritmetica del criterio "desfase del panel admin < 5 s"
+// (SRS 14). El desfase que ve el usuario es, en el peor caso,
+// TTL + intervalo de polling: un dato puede cambiar justo despues de que se
+// llenara el cache (hasta TTL segundos de espera) y ademas el panel puede
+// acabar de pedir (hasta un intervalo mas). Con TTL 2 s y polling de 2 s el
+// peor caso es 4 s, con un segundo de margen.
+//
+// Si se toca uno de los dos numeros hay que tocar el otro: el del frontend
+// esta en apps/admin-web/src/features/dashboard/useKpisQuery.ts.
+const TTL_CACHE_SEGUNDOS = 2;
 
 // Una sola pasada sobre `turnos`, agrupando por dia. Decisiones:
 //
@@ -138,10 +152,23 @@ function promedioMinutos(
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly cache: RedisCacheService,
+  ) {}
 
   async kpis(query: KpisQueryDto): Promise<KpisResponse> {
     const { from, to, desde, hasta } = this.rangoUtc(query);
+
+    // La clave incluye el rango: dos admins mirando periodos distintos no
+    // deben compartir entrada. Con el rango por defecto (hoy) todos los
+    // paneles abiertos caen en la misma clave, que es justamente el caso que
+    // hace falta abaratar.
+    const claveCache = `kpis:${from}:${to}`;
+    const cacheado = await this.cache.obtener<KpisResponse>(claveCache);
+    if (cacheado) {
+      return cacheado;
+    }
 
     const filas = await this.dataSource.transaction(async (manager) => {
       await manager.query(
@@ -223,7 +250,9 @@ export class DashboardService {
       resumen.turnosMedidos,
     );
 
-    return { rango: { from, to }, resumen, serie };
+    const respuesta: KpisResponse = { rango: { from, to }, resumen, serie };
+    await this.cache.guardar(claveCache, respuesta, TTL_CACHE_SEGUNDOS);
+    return respuesta;
   }
 
   // Traduce ?from=&to= (dias inclusive, en UTC) a la ventana half-open

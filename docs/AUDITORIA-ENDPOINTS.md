@@ -1,6 +1,6 @@
 # Auditoría de validación de entrada y manejo de errores
 
-Sprint 9 · issue #37 · revisión de los 11 endpoints HTTP del repo.
+Sprint 9 · issue #37 · revisión de los endpoints HTTP del repo.
 
 Alcance: validación de entrada, manejo de errores y autorización en
 `reservas-service` y `usuarios-service`. No cubre infraestructura ni el
@@ -10,79 +10,78 @@ frontend.
 
 | # | Hallazgo | Severidad | Estado |
 |---|---|---|---|
-| 1 | Ningún endpoint valida el **rol** del usuario | Alta | Abierto |
+| 1 | Ningún endpoint valida el **rol** del usuario | Alta | **Corregido** |
 | 2 | `JWT_SECRET` tenía fallback a un secreto público | Alta | **Corregido** |
-| 3 | `POST /appointments` acepta reservas en el pasado | Media | Abierto |
+| 3 | `POST /appointments` aceptaba reservas en el pasado | Media | **Corregido** |
 | 4 | `:id` sin `ParseUUIDPipe` en `/servicios` → 500 en vez de 400 | Media | **Corregido** |
 | 5 | `CreateServicioDto` aceptaba nombre vacío y precios fuera de rango | Media | **Corregido** |
-| 6 | Los health checks no comprueban sus dependencias | Media | Abierto |
-| 7 | Sin filtro global de excepciones ni formato de error estándar | Baja | Abierto |
-| 8 | El `statement_timeout` del dashboard sale como 500 | Baja | Abierto |
+| 6 | Los health checks no comprobaban sus dependencias | Media | **Corregido** |
+| 7 | Sin filtro global de excepciones ni formato de error estándar | Baja | **Corregido** |
+| 8 | El `statement_timeout` del dashboard salía como 500 | Baja | **Corregido** |
 
-## Endpoints revisados
+Los ocho quedaron cerrados. Lo que sigue documenta qué era cada uno y por qué
+se resolvió así, porque varias de las decisiones no son evidentes leyendo
+solo el código.
 
-| Endpoint | Body | Params/Query | Errores | Authz |
+## Endpoints
+
+| Endpoint | Body | Params/Query | Errores | Rol exigido |
 |---|---|---|---|---|
-| `GET /reservas/health` | — | — | — | público (ver #6) |
-| `GET /usuarios/health` | — | — | — | público (ver #6) |
-| `POST /auth/login` | `LoginDto` ✅ | — | 401 ✅ | público (correcto) |
-| `POST /auth/refresh` | `RefreshTokenDto` ✅ | — | 401 ✅ | público (correcto) |
-| `POST /servicios` | `CreateServicioDto` ✅ | — | ✅ | ⚠️ #1 |
-| `GET /servicios` | — | — | ✅ | ⚠️ #1 |
-| `GET /servicios/:id` | — | ✅ (corregido #4) | 404 ✅ | ⚠️ #1 |
-| `PATCH /servicios/:id` | `UpdateServicioDto` ✅ | ✅ (corregido #4) | 404 ✅ | ⚠️ #1 |
-| `DELETE /servicios/:id` | — | ✅ (corregido #4) | 404 ✅ | ⚠️ #1 |
-| `POST /appointments` | `CreateAppointmentDto` ⚠️ #3 | — | 404/409 ✅ | ⚠️ #1 |
-| `PATCH /appointments/:id/estado` | `ActualizarEstadoDto` ✅ | ✅ | 400/404 ✅ | ⚠️ #1 |
-| `GET /technicians/:id/agenda` | — | ✅ | 404 ✅ | ⚠️ #1 |
-| `GET /dashboard/kpis` | — | `KpisQueryDto` ✅ | 400 ✅ | ⚠️ #1 |
+| `GET /reservas/health` | — | — | — | público (liveness) |
+| `GET /reservas/health/ready` | — | — | 503 si degradado | público (readiness) |
+| `GET /usuarios/health` | — | — | — | público (liveness) |
+| `GET /usuarios/health/ready` | — | — | 503 si degradado | público (readiness) |
+| `POST /auth/login` | `LoginDto` ✅ | — | 401 ✅ | público |
+| `POST /auth/refresh` | `RefreshTokenDto` ✅ | — | 401 ✅ | público |
+| `POST /servicios` | `CreateServicioDto` ✅ | — | ✅ | `admin` |
+| `GET /servicios` | — | — | ✅ | autenticado |
+| `GET /servicios/:id` | — | ✅ | 404 ✅ | autenticado |
+| `PATCH /servicios/:id` | `UpdateServicioDto` ✅ | ✅ | 404 ✅ | `admin` |
+| `DELETE /servicios/:id` | — | ✅ | 404 ✅ | `admin` |
+| `POST /appointments` | `CreateAppointmentDto` ✅ | — | 400/404/409 ✅ | autenticado |
+| `PATCH /appointments/:id/estado` | `ActualizarEstadoDto` ✅ | ✅ | 400/404 ✅ | `admin`, `tecnico` |
+| `GET /technicians/:id/agenda` | — | ✅ | 403/404 ✅ | `admin`, o el técnico dueño |
+| `GET /dashboard/kpis` | — | `KpisQueryDto` ✅ | 400 ✅ | `admin` |
 
-La base está sana: `ValidationPipe` global con `whitelist: true` en ambos
-servicios, DTOs con `class-validator` en todos los bodies, y el conflicto de
-reservas traducido a 409 en vez de escaparse como error de driver. Lo que
-sigue son los huecos.
+La base ya era sana antes de esta auditoría: `ValidationPipe` global con
+`whitelist: true` en ambos servicios, DTOs con `class-validator` en todos los
+bodies, y el conflicto de reservas traducido a 409 en vez de escaparse como
+error de driver. Lo que sigue son los huecos que quedaban.
 
 ---
 
-## 1. Ningún endpoint valida el rol del usuario — Alta, abierto
+## 1. Ningún endpoint validaba el rol del usuario — Alta
 
-`JwtAuthGuard` extiende `AuthGuard('jwt')` y nada más
-([jwt-auth.guard.ts](../packages/auth/src/jwt-auth.guard.ts)): comprueba que
-el token sea válido, no **quién** es. El payload trae `rol`
-([jwt-payload.interface.ts](../packages/auth/src/jwt-payload.interface.ts))
-pero ningún guard, decorador ni servicio lo lee.
+`JwtAuthGuard` extendía `AuthGuard('jwt')` y nada más: comprobaba que el
+token fuera válido, no **quién** era. El payload traía `rol` pero ningún
+guard, decorador ni servicio lo leía.
 
 Consecuencia concreta: cualquier usuario autenticado —incluido un `cliente`
-recién registrado— puede hoy:
+cualquiera— podía crear y **borrar servicios** del catálogo, leer la **agenda
+completa de cualquier técnico** pasando su id en la URL, leer el **dashboard**
+(cuya HU dice explícitamente "Como Administrador") y **cerrar turnos ajenos**
+como `atendido` o `no_asistio`, alterando los KPIs.
 
-- crear, modificar y **borrar servicios** del catálogo (`/servicios`);
-- leer la **agenda completa de cualquier técnico**, por id
-  (`GET /technicians/:id/agenda`): nombre del cliente no, pero sí la carga de
-  trabajo, bahías y servicios de todo el taller;
-- leer el **dashboard de KPIs**, cuya HU dice explícitamente "Como
-  Administrador";
-- cerrar turnos ajenos como `atendido` o `no_asistio`
-  (`PATCH /appointments/:id/estado`), lo que además **altera los KPIs**.
+**Corregido** con `RolesGuard` + decorador `@Roles()` en
+[`@turnos-platform/auth`](../packages/auth/src/roles.guard.ts), aplicados
+junto a `JwtAuthGuard`. La matriz es la de la tabla de arriba.
 
-No es un problema de validación de entrada sino de autorización, pero apareció
-al revisar endpoint por endpoint y es el riesgo más grande de cara a un beta
-con un CDA real y usuarios que no son del equipo.
+Tres decisiones que conviene conocer:
 
-No se corrigió en este sprint porque define política de producto: hay que
-decidir qué rol puede qué. Propuesta mínima para discutir:
+- **Una ruta sin `@Roles()` no restringe nada.** Es deliberado: agregar el
+  guard a un controller no cambia el comportamiento de sus rutas hasta que
+  cada una declara qué roles acepta. Así el cambio es incremental y no deja
+  usuarios afuera por omisión.
+- **`GET /technicians/:id/agenda` no se resuelve solo con el rol.** Con un
+  `@Roles(TECNICO)` a secas, cualquier técnico podría leer la agenda de todos
+  los demás cambiando el id de la URL. El guard filtra por rol y el
+  controller comprueba además la pertenencia (`user.sub === id`). La suite
+  E2E cubre las dos mitades.
+- **Devuelve 403, no 401.** El token es válido; lo que falta es permiso.
+  Mezclarlos haría que el frontend mande a re-loguear a alguien que ya está
+  logueado y que nunca va a poder entrar.
 
-| Endpoint | Rol |
-|---|---|
-| `POST/PATCH/DELETE /servicios` | `admin` |
-| `GET /dashboard/kpis` | `admin` |
-| `PATCH /appointments/:id/estado` | `admin`, `tecnico` |
-| `GET /technicians/:id/agenda` | `admin`, o el `tecnico` dueño de esa agenda |
-| `POST /appointments` | cualquier autenticado (correcto hoy) |
-
-Implementación sugerida: un `RolesGuard` + decorador `@Roles()` en
-`@turnos-platform/auth`, aplicado junto a `JwtAuthGuard`.
-
-## 2. `JWT_SECRET` con fallback a un secreto público — Alta, **corregido**
+## 2. `JWT_SECRET` con fallback a un secreto público — Alta
 
 `jwt.strategy.ts`, `jwt-auth.module.ts` y `auth.service.ts` resolvían el
 secreto con `process.env.JWT_SECRET ?? 'dev-secret-change-me'`. Un deploy sin
@@ -91,47 +90,51 @@ escrito en este repositorio: cualquiera podía fabricarse un token con el rol
 que quisiera. Y como todo "funcionaba", no había ninguna señal de que
 estuviera pasando.
 
-Corregido con `secretoRequerido()`
-([secretos.util.ts](../packages/auth/src/secretos.util.ts)): en
-`NODE_ENV=production` no arranca; fuera de producción mantiene el fallback
+**Corregido** con [`secretoRequerido()`](../packages/auth/src/secretos.util.ts):
+en `NODE_ENV=production` no arranca; fuera de producción mantiene el fallback
 para no romper el desarrollo local ni los tests. Es el mismo criterio que ya
 usaba `getKey()` en `encryption.util.ts` para `ENCRYPTION_KEY`.
 
 **Pendiente de infraestructura:** verificar que el deploy realmente define
-`JWT_SECRET`, `JWT_REFRESH_SECRET` y `ENCRYPTION_KEY`, y que
-`reservas-service` y `usuarios-service` comparten el mismo `JWT_SECRET`. La
-suite E2E lo detecta indirectamente: si se desalinean, el login de HU1 pasa
-pero la reserva devuelve 401.
+`JWT_SECRET`, `JWT_REFRESH_SECRET` y `ENCRYPTION_KEY`, y que los dos servicios
+comparten el mismo `JWT_SECRET`. La suite E2E lo detecta indirectamente: si se
+desalinean, el login de HU1 pasa pero la reserva devuelve 401.
 
-## 3. `POST /appointments` acepta reservas en el pasado — Media, abierto
+## 3. `POST /appointments` aceptaba reservas en el pasado — Media
 
-`CreateAppointmentDto.inicio` solo valida `@IsISO8601()`, y
-`AppointmentsService.create()` no compara contra el presente: una reserva
-para `2019-01-01T09:00:00Z` se acepta y se persiste con 201.
+`CreateAppointmentDto.inicio` solo validaba `@IsISO8601()` y el servicio no
+comparaba contra el presente: una reserva para `2019-01-01T09:00:00Z` se
+aceptaba y se persistía con 201. Tampoco se validaba el horario laboral,
+aunque el motor de sugerencias sí lo respeta: se podía reservar a las 03:00
+por la puerta de adelante, a un horario que el sistema nunca habría ofrecido.
 
-Tampoco se valida que el turno caiga dentro del horario laboral (08:00-18:00
-UTC), aunque el motor de sugerencias sí respeta esa ventana: se puede reservar
-a las 03:00 por la puerta de adelante, pero el sistema nunca sugeriría ese
-horario.
+**Corregido** en `validarHorarioReservable()`: 400 si el inicio es anterior a
+ahora, y 400 si el turno no entra completo en la ventana laboral
+(08:00-18:00 UTC) — incluido el caso de un servicio que *empieza* dentro pero
+*termina* fuera.
 
-No se corrigió porque el arreglo necesita una decisión de producto: ¿cuál es
-la antelación mínima? ¿Se puede reservar para dentro de 5 minutos? ¿El horario
-laboral es global o por bahía? Una vez definido, son dos validaciones en el
-DTO/servicio.
+**Sin antelación mínima**, por decisión de producto de Sprint 9: se puede
+reservar para dentro de cinco minutos, porque "llegué al taller y hay un hueco
+libre ahora" es un caso real en un CDA. Si eso cambia, es una constante más en
+esa misma función.
 
-## 4. `:id` sin `ParseUUIDPipe` en `/servicios` — Media, **corregido**
+La ventana laboral se lee de las constantes de `sugerencias-horarios.util.ts`,
+no se redefine: si los dos criterios se separan, el sistema sugeriría horarios
+que después rechaza.
+
+## 4. `:id` sin `ParseUUIDPipe` en `/servicios` — Media
 
 `GET/PATCH/DELETE /servicios/:id` tomaban el id como `string` crudo y lo
 pasaban a una consulta contra una columna `UUID`. Un id con cualquier otra
 forma llegaba a Postgres, que responde `22P02 invalid input syntax for type
 uuid`: el cliente recibía un **500 opaco** en vez del 400 que corresponde, y
-el error quedaba contabilizado como falla del servicio (lo que también ensucia
-la métrica de SLA).
+el error quedaba contabilizado como falla del servicio, lo que además ensucia
+la métrica de SLA.
 
-Corregido agregando `ParseUUIDPipe`, que es lo que ya hacían
+**Corregido** agregando `ParseUUIDPipe`, que es lo que ya hacían
 `technicians.controller.ts` y `appointments.controller.ts`.
 
-## 5. `CreateServicioDto` demasiado permisivo — Media, **corregido**
+## 5. `CreateServicioDto` demasiado permisivo — Media
 
 - `nombre` era `@IsString()` a secas: `""` es un string válido, así que se
   podían crear servicios sin nombre, que después aparecen en blanco en la
@@ -142,39 +145,82 @@ Corregido agregando `ParseUUIDPipe`, que es lo que ya hacían
 - `duracionMinutos` no tenía techo: un servicio más largo que la ventana
   laboral es imposible de agendar, pero se aceptaba igual.
 
-Corregido con `@IsNotEmpty()`, `@MaxLength(120)`, `@Max()` en precio y
+**Corregido** con `@IsNotEmpty()`, `@MaxLength(120)`, `@Max()` en precio y
 duración, y `maxDecimalPlaces: 2`.
 
-## 6. Los health checks no comprueban sus dependencias — Media, abierto
+## 6. Los health checks no comprobaban sus dependencias — Media
 
-`GET /reservas/health` y `GET /usuarios/health` devuelven
-`{ status: 'ok' }` constante ([reservas.service.ts](../services/reservas-service/src/modules/reservas/reservas.service.ts)):
-no tocan Postgres ni Redis.
+`GET /reservas/health` y `GET /usuarios/health` devolvían `{ status: 'ok' }`
+constante: no tocaban Postgres ni Redis. Un pod con la base caída respondía
+`ok`, así que el balanceador le seguía mandando tráfico y el probe de
+Kubernetes nunca lo reiniciaba. Es el peor modo de falla posible para el
+criterio de SLA: el sistema está caído y el monitoreo dice que está sano.
 
-Un pod con la base caída responde `ok`, así que el balanceador le sigue
-mandando tráfico y el probe de Kubernetes nunca lo reinicia. Es el peor modo
-de falla posible para el criterio de SLA: el sistema está caído y el
-monitoreo dice que está sano.
+**Corregido** separando los dos probes, sin agregar dependencias nuevas:
 
-Tiene issue propia (#41, Sprint 10). Sugerencia: `@nestjs/terminus` con un
-check de Postgres y otro de Redis, y separar `/health/live` (el proceso
-responde) de `/health/ready` (además sus dependencias responden).
+| Endpoint | Qué comprueba | Respuesta |
+|---|---|---|
+| `/reservas/health` | solo que el proceso responde | 200 |
+| `/reservas/health/ready` | Postgres (`SELECT 1`) + Redis (`PING`) | 200, o **503** |
+| `/usuarios/health` | solo que el proceso responde | 200 |
+| `/usuarios/health/ready` | Postgres | 200 o **503** |
 
-## 7. Sin filtro global de excepciones — Baja, abierto
+Tres detalles que importan:
 
-Ya estaba documentado como pendiente en
-[ENDPOINTS.txt](ENDPOINTS.txt) ("Formato de error estandar — pendiente de
-definir"). Hoy los errores son los de Nest por defecto, que no filtran
-información sensible pero tampoco traen un id de correlación ni un formato
-uniforme, lo que complica el triage durante el beta.
+- **El liveness NO toca las dependencias, a propósito.** Si lo hiciera, una
+  caída momentánea de Postgres haría que el orquestador matara y reiniciara
+  pods sanos, justo lo contrario de lo que conviene durante un incidente de
+  base de datos.
+- **Cada probe tiene timeout propio (2 s).** Sin él, una dependencia que
+  acepta la conexión pero no responde deja al orquestador esperando
+  indefinidamente, lo que es tan inútil como devolver `ok` siempre.
+- **El readiness devuelve 503**, no 200 con un cuerpo que dice "degradado":
+  el balanceador y el orquestador miran el código de estado, no el cuerpo.
+  El cuerpo igual informa qué dependencia falló, porque durante un incidente
+  hace falta saber cuál de las dos se cayó.
 
-## 8. El `statement_timeout` del dashboard sale como 500 — Baja, abierto
+Sigue aplicando la issue #41 para la parte de infraestructura: configurar esos
+paths como `livenessProbe` y `readinessProbe` en el despliegue.
 
-`DashboardService` acota su consulta con un `statement_timeout` de 5s
-a propósito (para no retener una conexión del pool que comparte con el motor
-de reservas). Cuando ese timeout dispara, Postgres corta con `57014` y el
-error sube sin traducir: el cliente ve un 500 genérico.
+## 7. Sin filtro global de excepciones — Baja
 
-Semánticamente es un 503/504 —el servicio está degradado, la petición no es
-inválida— y conviene distinguirlo para que no contamine la métrica de errores
-5xx reales.
+Ya estaba documentado como pendiente en [ENDPOINTS.txt](ENDPOINTS.txt).
+
+**Corregido** con `HttpExceptionFilter` en el nuevo paquete
+[`@turnos-platform/http`](../packages/http/src/http-exception.filter.ts),
+registrado globalmente en ambos servicios. Toda respuesta de error lleva ahora
+`statusCode`, `error`, `message`, `timestamp`, `path` y un **`requestId`** que
+además se escribe en el log del 5xx: durante el beta, "me dio error" del lado
+del CDA deja de ser imposible de cruzar con una línea concreta.
+
+Lo que el filtro **no** hace es aplanar los cuerpos de error que ya son
+estructurados. El 409 de double-booking responde `{ message, sugerencias }` y
+esas sugerencias son parte del contrato de HU2 (el frontend las ofrece como
+botones): se preservan tal cual y solo se les agregan los campos comunes. Lo
+mismo con el array de errores del `ValidationPipe`.
+
+Solo los 5xx se loguean con stack. Un 404 o un 409 son respuestas esperadas
+del negocio, no incidentes, y llenar el log con ellas esconde los errores de
+verdad.
+
+## 8. El `statement_timeout` del dashboard salía como 500 — Baja
+
+`DashboardService` acota su consulta con un `statement_timeout` de 5 s a
+propósito, para no retener una conexión del pool que comparte con el motor de
+reservas. Cuando ese timeout disparaba, Postgres cortaba con `57014` y el
+error subía sin traducir: el cliente veía un 500 genérico y la métrica de 5xx
+—la que alimenta el SLA— contaba como incidente algo que es una salvaguarda
+funcionando bien.
+
+**Corregido** en el mismo `HttpExceptionFilter`, que traduce los códigos de
+Postgres que no son bugs:
+
+| Código | Significado | Se responde |
+|---|---|---|
+| `57014` | query_canceled (statement_timeout) | 503 |
+| `22P02` | uuid o número mal formado que esquivó un pipe | 400 |
+| `23505` | unique_violation | 409 |
+| `23503` | foreign_key_violation | 409 |
+
+Cualquier otro error se responde como 500 sin filtrar nada del original al
+cliente: solo el `requestId` con el que buscarlo en el log.

@@ -5,7 +5,9 @@ import {
   sembrar,
   sembrarTurnos,
 } from '../fixtures/datos-de-prueba';
+import { encabezados, iniciarSesion } from '../fixtures/sesion';
 import { tituloDeTarjeta } from '../fixtures/ui';
+import { URL_RESERVAS } from '../playwright.config';
 
 /**
  * HU3 - Como tecnico quiero ver mi agenda del dia, ordenada por hora y con
@@ -77,6 +79,30 @@ test.describe('HU3 - Agenda del tecnico', () => {
     await expect(
       page.getByText('Sin turnos para este dia.'),
     ).toBeVisible();
+  });
+
+  test('un tecnico no puede leer la agenda de otro tecnico', async ({
+    request,
+  }) => {
+    // La restriccion por rol no alcanza para esta ruta: un @Roles(TECNICO)
+    // a secas dejaria que cualquier tecnico leyera la agenda de todos los
+    // demas cambiando el id de la URL. Lo que decide es la pertenencia.
+    const tokenOtroTecnico = await iniciarSesion(
+      request,
+      `tecnico2-e2e-${datos.sufijo}@turnos.dev`,
+    );
+
+    const ajena = await request.get(
+      `${URL_RESERVAS}/technicians/${datos.tecnicoId}/agenda`,
+      { headers: encabezados(tokenOtroTecnico) },
+    );
+    expect(ajena.status()).toBe(403);
+
+    const propia = await request.get(
+      `${URL_RESERVAS}/technicians/${datos.otroTecnicoId}/agenda`,
+      { headers: encabezados(tokenOtroTecnico) },
+    );
+    expect(propia.status()).toBe(200);
   });
 
   test('un tecnico inexistente no deja la vista colgada cargando', async ({

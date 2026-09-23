@@ -73,18 +73,37 @@ describe('TechniciansService', () => {
     await expect(service.agendaDelDia(tecnicoId, fecha)).resolves.toEqual([]);
   });
 
-  it('filtra al dia solicitado y ordena por hora', async () => {
-    const deOtroDia = turno('2024-01-09T09:00:00.000Z', 't-otro-dia');
+  it('ordena por hora los turnos que devuelve la consulta', async () => {
     const tarde = turno('2024-01-08T15:00:00.000Z', 't-tarde');
     const temprano = turno('2024-01-08T08:00:00.000Z', 't-temprano');
-    turnosRepository.find.mockResolvedValue([deOtroDia, tarde, temprano]);
+    turnosRepository.find.mockResolvedValue([tarde, temprano]);
 
     const agenda = await service.agendaDelDia(tecnicoId, fecha);
 
     expect(agenda.map((t) => t.id)).toEqual(['t-temprano', 't-tarde']);
-    expect(turnosRepository.find).toHaveBeenCalledWith({
-      where: { tecnicoId },
-      relations: ['bahia', 'servicio'],
-    });
+  });
+
+  it('delega el filtro por fecha a SQL y no trae el historico completo', async () => {
+    turnosRepository.find.mockResolvedValue([]);
+
+    await service.agendaDelDia(tecnicoId, fecha);
+
+    // Esta es la regresion que importa: antes el where era solo
+    // { tecnicoId } y el dia se filtraba en memoria, lo que traia todos los
+    // turnos historicos del tecnico en cada carga de la agenda. Si alguien
+    // vuelve a sacar la condicion de rango, este test falla.
+    const argumentos = turnosRepository.find.mock.calls[0]?.[0];
+    expect(argumentos?.where).toEqual(
+      expect.objectContaining({
+        tecnicoId,
+        rangoTiempo: expect.anything(),
+      }),
+    );
+
+    // Raw() de TypeORM expone la condicion como funcion del alias de columna.
+    const condicion = (
+      argumentos?.where as { rangoTiempo: { getSql: (a: string) => string } }
+    ).rangoTiempo;
+    expect(condicion.getSql('rango_tiempo')).toContain('tstzrange');
   });
 });

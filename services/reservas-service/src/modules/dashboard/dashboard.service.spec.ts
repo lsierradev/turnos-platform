@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
+import { RedisCacheService } from '../../common/redis-cache.service';
 import { DashboardService } from './dashboard.service';
 
 interface FilaCruda {
@@ -31,9 +32,13 @@ describe('DashboardService', () => {
   let dataSource: jest.Mocked<DataSource>;
   // La query que corre DENTRO de la transaccion, ya sin el SET LOCAL.
   let queryKpis: jest.Mock;
+  let cache: { obtener: jest.Mock; guardar: jest.Mock };
 
   beforeEach(async () => {
     queryKpis = jest.fn().mockResolvedValue([]);
+    // Cache vacio por defecto: cada test ejercita la consulta real. El
+    // comportamiento del cache tiene sus propios tests mas abajo.
+    cache = { obtener: jest.fn().mockResolvedValue(null), guardar: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -47,6 +52,7 @@ describe('DashboardService', () => {
             ),
           },
         },
+        { provide: RedisCacheService, useValue: cache },
       ],
     }).compile();
 
@@ -253,6 +259,38 @@ describe('DashboardService', () => {
 
       expect(serie[0].tasaAsistencia).toBe(0.5);
       expect(serie[1].tasaAsistencia).toBe(0.75);
+    });
+  });
+
+  describe('cache de lecturas', () => {
+    it('devuelve lo cacheado sin tocar la base', async () => {
+      const guardado = {
+        rango: { from: '2024-01-08', to: '2024-01-08' },
+        resumen: { tasaAsistencia: 0.9 },
+        serie: [],
+      };
+      cache.obtener.mockResolvedValue(guardado);
+
+      const resultado = await service.kpis({
+        from: '2024-01-08',
+        to: '2024-01-08',
+      });
+
+      expect(resultado).toBe(guardado);
+      expect(queryKpis).not.toHaveBeenCalled();
+    });
+
+    it('cachea por rango, no en una sola entrada global', async () => {
+      await service.kpis({ from: '2024-01-08', to: '2024-01-09' });
+
+      expect(cache.obtener).toHaveBeenCalledWith('kpis:2024-01-08:2024-01-09');
+      expect(cache.guardar).toHaveBeenCalledWith(
+        'kpis:2024-01-08:2024-01-09',
+        expect.objectContaining({
+          rango: { from: '2024-01-08', to: '2024-01-09' },
+        }),
+        expect.any(Number),
+      );
     });
   });
 

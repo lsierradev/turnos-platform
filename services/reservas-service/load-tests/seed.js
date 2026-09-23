@@ -45,16 +45,31 @@ async function main() {
        VALUES ('k6-tecnico@turnos.dev', 'hash', 'k6 Tecnico', 'tecnico')
        RETURNING id`,
     );
+    // Desde Sprint 9 la agenda y el dashboard exigen rol admin: el token de
+    // cliente sirve para reservar, no para las lecturas que mide
+    // latencia-lectura.k6.js.
+    const admin = await client.query(
+      `INSERT INTO usuarios (email, password_hash, nombre, rol)
+       VALUES ('k6-admin@turnos.dev', 'hash', 'k6 Admin', 'admin')
+       RETURNING id`,
+    );
 
     const ids = {
       bahiaId: bahia.rows[0].id,
       servicioId: servicio.rows[0].id,
       usuarioId: usuario.rows[0].id,
       tecnicoId: tecnico.rows[0].id,
+      adminId: admin.rows[0].id,
     };
 
     const token = jwt.sign(
       { sub: ids.usuarioId, email: 'k6-cliente@turnos.dev', rol: 'cliente' },
+      process.env.JWT_SECRET ?? 'dev-secret-change-me',
+      { expiresIn: '1h' },
+    );
+
+    const tokenAdmin = jwt.sign(
+      { sub: ids.adminId, email: 'k6-admin@turnos.dev', rol: 'admin' },
       process.env.JWT_SECRET ?? 'dev-secret-change-me',
       { expiresIn: '1h' },
     );
@@ -66,6 +81,7 @@ async function main() {
     console.log(`export K6_SERVICIO_ID=${ids.servicioId}`);
     console.log(`export K6_TECNICO_ID=${ids.tecnicoId}`);
     console.log(`export K6_TOKEN=${token}`);
+    console.log(`export K6_ADMIN_TOKEN=${tokenAdmin}`);
 
     console.error(`Sembrado OK. IDs guardados en ${SEED_FILE} para cleanup.js.`);
   } finally {

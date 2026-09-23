@@ -7,6 +7,8 @@ import { DashboardService } from './dashboard.service';
 // directo con SQL agregado via DataSource. Traer las filas al proceso para
 // contarlas en JS seria el anti-patron exacto que la tarea 3 pide evitar
 // (mover miles de turnos por la red para calcular dos numeros).
+//
+// RedisCacheService no se importa aca: RedisCacheModule es @Global.
 @Module({
   imports: [JwtAuthModule],
   controllers: [DashboardController],

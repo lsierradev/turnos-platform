@@ -29,8 +29,16 @@ describirSiHayDb('Appointments (integration)', () => {
   let otraBahiaId: string;
   let servicioId: string;
   let usuarioId: string;
+  let otroUsuarioId: string;
   let tecnicoId: string;
   let token: string;
+  // Desde la migracion 010 un mismo usuario tampoco puede tener dos turnos
+  // solapados. Si los dos intentos concurrentes vinieran del mismo cliente
+  // se violarian DOS constraints a la vez y el mensaje del 409 dependeria de
+  // cual evalue Postgres primero: el test quedaria intermitente. Dos
+  // clientes distintos peleando por el mismo horario es ademas el escenario
+  // real del double-booking.
+  let otroToken: string;
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -69,6 +77,13 @@ describirSiHayDb('Appointments (integration)', () => {
     );
     usuarioId = usuario[0].id;
 
+    const otroUsuario = await dataSource.query(
+      `INSERT INTO usuarios (email, password_hash, nombre, rol)
+       VALUES ('integration-test-2@turnos.dev', 'hash', 'Integration Test 2', 'cliente')
+       RETURNING id`,
+    );
+    otroUsuarioId = otroUsuario[0].id;
+
     const tecnico = await dataSource.query(
       `INSERT INTO usuarios (email, password_hash, nombre, rol)
        VALUES ('tecnico-integration-test@turnos.dev', 'hash', 'Tecnico Integration Test', 'tecnico')
@@ -78,6 +93,15 @@ describirSiHayDb('Appointments (integration)', () => {
 
     token = jwt.sign(
       { sub: usuarioId, email: 'integration-test@turnos.dev', rol: 'cliente' },
+      process.env.JWT_SECRET ?? 'dev-secret-change-me',
+    );
+
+    otroToken = jwt.sign(
+      {
+        sub: otroUsuarioId,
+        email: 'integration-test-2@turnos.dev',
+        rol: 'cliente',
+      },
       process.env.JWT_SECRET ?? 'dev-secret-change-me',
     );
   });
@@ -95,9 +119,8 @@ describirSiHayDb('Appointments (integration)', () => {
         bahiaId,
         otraBahiaId,
       ]);
-      await dataSource.query('DELETE FROM usuarios WHERE id = $1 OR id = $2', [
-        usuarioId,
-        tecnicoId,
+      await dataSource.query('DELETE FROM usuarios WHERE id = ANY($1)', [
+        [usuarioId, otroUsuarioId, tecnicoId],
       ]);
     }
     await app?.close();
@@ -123,7 +146,7 @@ describirSiHayDb('Appointments (integration)', () => {
         .send(body),
       request(server)
         .post('/appointments')
-        .set('Authorization', `Bearer ${token}`)
+        .set('Authorization', `Bearer ${otroToken}`)
         .send(body),
     ]);
 
@@ -158,7 +181,7 @@ describirSiHayDb('Appointments (integration)', () => {
         }),
       request(server)
         .post('/appointments')
-        .set('Authorization', `Bearer ${token}`)
+        .set('Authorization', `Bearer ${otroToken}`)
         .send({
           bahiaId: otraBahiaId,
           servicioId,

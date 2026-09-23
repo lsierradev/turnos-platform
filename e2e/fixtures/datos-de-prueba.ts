@@ -22,17 +22,42 @@ const DATABASE_URL = process.env.DATABASE_URL;
 
 export const PASSWORD_DE_PRUEBA = 'e2e-password-123';
 
+export interface UsuarioSembrado {
+  id: string;
+  email: string;
+}
+
 export interface DatosSembrados {
   sufijo: string;
   bahiaId: string;
   otraBahiaId: string;
   servicioId: string;
   duracionMinutos: number;
+  /**
+   * Varios clientes, no uno solo. Desde la migracion 010 un mismo usuario no
+   * puede tener dos turnos solapados (constraint turnos_usuario_rango_excl),
+   * asi que probar el conflicto de BAHIA con el mismo cliente dos veces
+   * violaria las dos constraints a la vez y el mensaje del 409 dependeria de
+   * cual evalue Postgres primero. Dos clientes distintos peleando por el
+   * mismo horario es ademas el escenario real.
+   */
+  clientes: UsuarioSembrado[];
   clienteId: string;
   clienteEmail: string;
+  adminId: string;
+  adminEmail: string;
   tecnicoId: string;
   tecnicoEmail: string;
+  /**
+   * Segundo tecnico, para aislar el conflicto de un cliente consigo mismo:
+   * si se reusara el primero, se violarian a la vez la constraint de tecnico
+   * y la de usuario, y el mensaje del 409 dependeria de cual evalue Postgres
+   * antes.
+   */
+  otroTecnicoId: string;
 }
+
+const CANTIDAD_CLIENTES = 5;
 
 function clienteDb(): Client {
   if (!DATABASE_URL) {
@@ -76,11 +101,22 @@ export async function sembrar(): Promise<DatosSembrados> {
       [`Cambio de aceite E2E ${sufijo}`, DURACION_SERVICIO_MINUTOS],
     );
 
-    const clienteEmail = `cliente-e2e-${sufijo}@turnos.dev`;
-    const cliente = await db.query(
+    const clientes: UsuarioSembrado[] = [];
+    for (let i = 0; i < CANTIDAD_CLIENTES; i += 1) {
+      const email = `cliente-e2e-${i}-${sufijo}@turnos.dev`;
+      const fila = await db.query(
+        `INSERT INTO usuarios (email, password_hash, nombre, rol)
+         VALUES ($1, $2, $3, 'cliente') RETURNING id`,
+        [email, passwordHash, `Cliente E2E ${i}`],
+      );
+      clientes.push({ id: fila.rows[0].id, email });
+    }
+
+    const adminEmail = `admin-e2e-${sufijo}@turnos.dev`;
+    const admin = await db.query(
       `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ($1, $2, 'Cliente E2E', 'cliente') RETURNING id`,
-      [clienteEmail, passwordHash],
+       VALUES ($1, $2, 'Admin E2E', 'admin') RETURNING id`,
+      [adminEmail, passwordHash],
     );
 
     const tecnicoEmail = `tecnico-e2e-${sufijo}@turnos.dev`;
@@ -90,16 +126,26 @@ export async function sembrar(): Promise<DatosSembrados> {
       [tecnicoEmail, passwordHash],
     );
 
+    const otroTecnico = await db.query(
+      `INSERT INTO usuarios (email, password_hash, nombre, rol)
+       VALUES ($1, $2, 'Otro tecnico E2E', 'tecnico') RETURNING id`,
+      [`tecnico2-e2e-${sufijo}@turnos.dev`, passwordHash],
+    );
+
     return {
       sufijo,
       bahiaId: bahia.rows[0].id,
       otraBahiaId: otraBahia.rows[0].id,
       servicioId: servicio.rows[0].id,
       duracionMinutos: DURACION_SERVICIO_MINUTOS,
-      clienteId: cliente.rows[0].id,
-      clienteEmail,
+      clientes,
+      clienteId: clientes[0].id,
+      clienteEmail: clientes[0].email,
+      adminId: admin.rows[0].id,
+      adminEmail,
       tecnicoId: tecnico.rows[0].id,
       tecnicoEmail,
+      otroTecnicoId: otroTecnico.rows[0].id,
     };
   });
 }
@@ -120,7 +166,12 @@ export async function limpiar(datos: DatosSembrados): Promise<void> {
       [datos.bahiaId, datos.otraBahiaId],
     ]);
     await db.query('DELETE FROM usuarios WHERE id = ANY($1)', [
-      [datos.clienteId, datos.tecnicoId],
+      [
+        ...datos.clientes.map((c) => c.id),
+        datos.adminId,
+        datos.tecnicoId,
+        datos.otroTecnicoId,
+      ],
     ]);
   });
 }

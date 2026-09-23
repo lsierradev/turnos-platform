@@ -10,13 +10,30 @@ Base URL (dev): http://localhost:3001
 Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
 
 [GET] /reservas/health
-  Descripcion : Health-check del servicio de reservas.
-  Body        : (ninguno)
+  Descripcion : Liveness. Solo confirma que el proceso responde; NO toca
+                Postgres ni Redis a proposito (si lo hiciera, una caida
+                momentanea de la base haria que el orquestador reiniciara
+                pods sanos).
   Response 200:
     {
       "status": "ok",
       "module": "reservas"
     }
+
+[GET] /reservas/health/ready
+  Descripcion : Readiness (Sprint 9). Ademas comprueba Postgres (SELECT 1) y
+                Redis (PING), cada uno con timeout propio de 2s.
+  Response 200 / 503:
+    {
+      "status": "ok" | "degraded",
+      "module": "reservas",
+      "dependencias": {
+        "postgres": { "status": "up" },
+        "redis": { "status": "down", "error": "..." }
+      }
+    }
+    Devuelve 503 si alguna dependencia esta caida: el balanceador y el
+    orquestador miran el codigo de estado, no el cuerpo.
 
 [POST] /servicios  (requiere Authorization: Bearer <accessToken>)
   Descripcion : Crea un servicio (Mecanica/Electrica/Latoneria).
@@ -61,6 +78,10 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
     }
     tecnicoId debe ser un usuario existente con rol "tecnico".
   Response 201: Turno creado (incluye rangoTiempo { inicio, fin }).
+  Response 400 (Sprint 9): inicio en el pasado, o turno que no entra completo
+                en el horario laboral 08:00-18:00 UTC (incluido el caso de un
+                servicio que empieza dentro y termina fuera). No hay
+                antelacion minima: se puede reservar para dentro de 5 min.
   Response 404: bahia, servicio o tecnico inexistente (o el usuario referido
                 por tecnicoId no tiene rol "tecnico").
   Response 409 (double-booking, RF-02 — HU2 bahia, Sprint 4 tecnico):
@@ -72,9 +93,14 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
         { "inicio": "...", "fin": "..." }
       ]
     }
-    El mensaje es "La bahia ya tiene..." o "El tecnico ya tiene un turno
-    asignado en ese horario." segun cual de las dos constraints EXCLUDE se
-    haya violado. Las sugerencias son los 3 horarios libres mas cercanos
+    El mensaje depende de cual de las TRES constraints EXCLUDE se violo:
+      turnos_bahia_rango_excl   -> "La bahia ya tiene un turno reservado..."
+      turnos_tecnico_rango_excl -> "El tecnico ya tiene un turno asignado..."
+      turnos_usuario_rango_excl -> "Ya tenes otro turno reservado en ese
+                                    horario." (Sprint 9, migracion 010)
+    Las sugerencias se buscan sobre el recurso que estaba ocupado: si el
+    ocupado es el cliente, sugerir huecos de la bahia devolveria horarios
+    que vuelven a dar 409. Las sugerencias son los 3 horarios libres mas cercanos
     para ese mismo recurso (bahia o tecnico) — horario laboral 08:00-18:00,
     ventana de busqueda de 3 dias.
 
@@ -188,13 +214,16 @@ Base URL (dev): http://localhost:3002
 Dominio: usuarios, tenants, autenticacion
 
 [GET] /usuarios/health
-  Descripcion : Health-check del servicio de usuarios.
-  Body        : (ninguno)
+  Descripcion : Liveness. Mismo criterio que /reservas/health.
   Response 200:
     {
       "status": "ok",
       "module": "usuarios"
     }
+
+[GET] /usuarios/health/ready
+  Descripcion : Readiness (Sprint 9). Comprueba Postgres.
+  Response 200 / 503: mismo formato que /reservas/health/ready.
 
 [POST] /auth/login
   Descripcion : Valida credenciales y emite access + refresh token.
@@ -236,9 +265,22 @@ Convenciones generales
   y solo se valida en /auth/refresh, nunca contra el guard.
 - Ambos servicios validan el body con class-validator (ValidationPipe global,
   whitelist activado) — campos no declarados en el DTO se descartan.
-- Formato de error estandar — pendiente de definir (probable: filtro global
-  de excepciones NestJS). Por ahora son los errores default de Nest.
-- Autorizacion por ROL: no implementada. El guard solo valida que el token
-  sea valido, no quien es: cualquier usuario autenticado puede hoy operar
-  cualquier endpoint, incluidos /servicios y /dashboard/kpis. Ver el
-  hallazgo 1 de docs/AUDITORIA-ENDPOINTS.md.
+- Formato de error estandar (Sprint 9): HttpExceptionFilter global en ambos
+  servicios. Todo error responde
+    { statusCode, error, message, requestId, timestamp, path }
+  El requestId se escribe tambien en el log del 5xx, para poder cruzar un
+  reporte del beta con una linea concreta. Los cuerpos ya estructurados se
+  preservan: el 409 de double-booking sigue trayendo su array de sugerencias,
+  y el ValidationPipe su lista de errores.
+  Errores de Postgres que NO son 500: 57014 (statement_timeout) -> 503,
+  22P02 (uuid mal formado) -> 400, 23505/23503 -> 409.
+- Autorizacion por ROL (Sprint 9): JwtAuthGuard autentica, RolesGuard
+  autoriza. Una ruta sin @Roles() sigue abierta a cualquier autenticado.
+  Matriz vigente:
+    admin                  -> POST/PATCH/DELETE /servicios, GET /dashboard/kpis
+    admin | tecnico        -> PATCH /appointments/:id/estado
+    admin | tecnico duenio -> GET /technicians/:id/agenda (403 si un tecnico
+                              pide la agenda de otro)
+    autenticado            -> POST /appointments, GET /servicios
+  Falta de permiso responde 403 (el token es valido); 401 queda solo para
+  token ausente o invalido.

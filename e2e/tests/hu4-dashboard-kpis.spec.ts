@@ -5,7 +5,9 @@ import {
   sembrar,
   sembrarTurnos,
 } from '../fixtures/datos-de-prueba';
+import { encabezados, iniciarSesion } from '../fixtures/sesion';
 import { tituloDeTarjeta } from '../fixtures/ui';
+import { URL_RESERVAS } from '../playwright.config';
 
 /**
  * HU4 - Como administrador quiero ver un dashboard con los KPIs operativos
@@ -131,6 +133,41 @@ test.describe('HU4 - Dashboard de indicadores', () => {
       });
 
     await expect(page.getByText(/rango es invalido/i)).toBeVisible();
+  });
+
+  test('un cliente no puede leer los KPIs', async ({ request }) => {
+    // La HU dice "Como Administrador". Son metricas de negocio del taller
+    // entero, no datos operativos de un turno propio.
+    const tokenCliente = await iniciarSesion(request, datos.clienteEmail);
+
+    const respuesta = await request.get(
+      `${URL_RESERVAS}/dashboard/kpis?from=${DIA_A}&to=${DIA_B}`,
+      { headers: encabezados(tokenCliente) },
+    );
+
+    expect(respuesta.status()).toBe(403);
+  });
+
+  test('los KPIs se refrescan solos, sin recargar la pagina', async ({
+    page,
+  }) => {
+    // Criterio "desfase del panel admin < 5 s": el panel tiene que reflejar
+    // un cambio sin que nadie toque nada. El margen de 8 s cubre el peor
+    // caso teorico (TTL del cache + intervalo de polling = 4 s) sin quedar
+    // tan justo como para volverse intermitente en CI.
+    await abrirConRango(page);
+    await expect(
+      page.getByTestId('kpi-turnos-totales-valor'),
+    ).toHaveText('6', { timeout: 15_000 });
+
+    // El cambio se introduce por fuera del navegador: nadie toca la pagina.
+    await sembrarTurnos(datos, [
+      { inicio: aLas(DIA_B, 15), estado: 'programado' },
+    ]);
+
+    await expect(
+      page.getByTestId('kpi-turnos-totales-valor'),
+    ).toHaveText('7', { timeout: 8_000 });
   });
 
   test('el preset de 7 dias vuelve a un rango que termina hoy', async ({

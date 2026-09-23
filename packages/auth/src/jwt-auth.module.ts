@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './jwt.strategy';
+import { RolesGuard } from './roles.guard';
 import { JWT_SECRET_FALLBACK_DEV, secretoRequerido } from './secretos.util';
 
 @Module({
@@ -12,7 +13,10 @@ import { JWT_SECRET_FALLBACK_DEV, secretoRequerido } from './secretos.util';
       signOptions: { expiresIn: process.env.JWT_EXPIRES_IN ?? '15m' },
     }),
   ],
-  providers: [JwtStrategy],
-  exports: [JwtModule, PassportModule],
+  // RolesGuard se provee y exporta aca para que los controllers que ya
+  // importan este modulo puedan usarlo en @UseGuards sin declararlo de nuevo
+  // en cada modulo.
+  providers: [JwtStrategy, RolesGuard],
+  exports: [JwtModule, PassportModule, RolesGuard],
 })
 export class JwtAuthModule {}

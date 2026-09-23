@@ -21,7 +21,7 @@ async function main() {
     process.exit(1);
   }
 
-  const { bahiaId, servicioId, usuarioId, tecnicoId } = JSON.parse(
+  const { bahiaId, servicioId, usuarioId, tecnicoId, adminId } = JSON.parse(
     fs.readFileSync(SEED_FILE, 'utf8'),
   );
 
@@ -35,9 +35,10 @@ async function main() {
     );
     await client.query('DELETE FROM servicios WHERE id = $1', [servicioId]);
     await client.query('DELETE FROM bahias WHERE id = $1', [bahiaId]);
-    await client.query('DELETE FROM usuarios WHERE id = $1 OR id = $2', [
-      usuarioId,
-      tecnicoId,
+    // adminId puede faltar si el .k6-seed.json lo dejo una corrida anterior
+    // a Sprint 9; ANY() con un array filtrado lo tolera.
+    await client.query('DELETE FROM usuarios WHERE id = ANY($1)', [
+      [usuarioId, tecnicoId, adminId].filter(Boolean),
     ]);
 
     fs.unlinkSync(SEED_FILE);

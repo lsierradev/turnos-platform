@@ -20,11 +20,19 @@ import { URL_RESERVAS } from '../playwright.config';
  */
 test.describe('HU2 - Conflicto de horario y sugerencias', () => {
   let datos: DatosSembrados;
-  let token: string;
+  // Un token por cliente sembrado. Hace falta porque desde la migracion 010
+  // un mismo usuario tampoco puede solaparse consigo mismo: si los dos
+  // intentos sobre el mismo horario vinieran del mismo cliente, se violarian
+  // DOS constraints a la vez y el mensaje del 409 dependeria de cual evalue
+  // Postgres primero. Dos clientes distintos peleando por el mismo horario
+  // es ademas lo que pasa en la realidad.
+  let tokens: string[];
 
   test.beforeAll(async ({ request }) => {
     datos = await sembrar();
-    token = await iniciarSesion(request, datos.clienteEmail);
+    tokens = await Promise.all(
+      datos.clientes.map((cliente) => iniciarSesion(request, cliente.email)),
+    );
   });
 
   test.afterAll(async () => {
@@ -34,14 +42,23 @@ test.describe('HU2 - Conflicto de horario y sugerencias', () => {
   function reservar(
     request: APIRequestContext,
     inicio: Date,
-    bahiaId: string = datos.bahiaId,
+    opciones: {
+      bahiaId?: string;
+      cliente?: number;
+      tecnicoId?: string;
+    } = {},
   ): Promise<APIResponse> {
+    const {
+      bahiaId = datos.bahiaId,
+      cliente = 0,
+      tecnicoId = datos.tecnicoId,
+    } = opciones;
     return request.post(`${URL_RESERVAS}/appointments`, {
-      headers: encabezados(token),
+      headers: encabezados(tokens[cliente]),
       data: {
         bahiaId,
         servicioId: datos.servicioId,
-        tecnicoId: datos.tecnicoId,
+        tecnicoId,
         inicio: inicio.toISOString(),
       },
     });
@@ -55,7 +72,7 @@ test.describe('HU2 - Conflicto de horario y sugerencias', () => {
     const primera = await reservar(request, inicio);
     expect(primera.status(), await primera.text()).toBe(201);
 
-    const segunda = await reservar(request, inicio);
+    const segunda = await reservar(request, inicio, { cliente: 1 });
     expect(segunda.status()).toBe(409);
 
     const cuerpo = await segunda.json();
@@ -90,13 +107,13 @@ test.describe('HU2 - Conflicto de horario y sugerencias', () => {
 
     expect((await reservar(request, inicio)).status()).toBe(201);
 
-    const conflicto = await reservar(request, inicio);
+    const conflicto = await reservar(request, inicio, { cliente: 1 });
     expect(conflicto.status()).toBe(409);
     const { sugerencias } = await conflicto.json();
 
     // El cierre real del circuito de la HU: el cliente toma la alternativa
     // que le ofrecio el sistema y esa reserva entra.
-    const reintento = await reservar(request, new Date(sugerencias[0].inicio));
+    const reintento = await reservar(request, new Date(sugerencias[0].inicio), { cliente: 1 });
     expect(reintento.status(), await reintento.text()).toBe(201);
   });
 
@@ -109,9 +126,28 @@ test.describe('HU2 - Conflicto de horario y sugerencias', () => {
 
     // Otra bahia, mismo tecnico y mismo horario: lo bloquea la segunda
     // constraint EXCLUDE (turnos_tecnico_rango_excl).
-    const segunda = await reservar(request, inicio, datos.otraBahiaId);
+    const segunda = await reservar(request, inicio, { bahiaId: datos.otraBahiaId, cliente: 1 });
     expect(segunda.status()).toBe(409);
     expect((await segunda.json()).message).toMatch(/tecnico/i);
+  });
+
+  test('un cliente tampoco puede solaparse consigo mismo en otra bahia', async ({
+    request,
+  }) => {
+    const inicio = horarioLaboral(11, 7);
+
+    expect((await reservar(request, inicio)).status()).toBe(201);
+
+    // Mismo cliente, pero OTRA bahia y OTRO tecnico: para el taller los dos
+    // recursos estan libres, asi que ninguna de las constraints de 001/006
+    // aplica. Lo que bloquea es la de 010: el cliente no puede estar en dos
+    // lugares a la vez.
+    const segunda = await reservar(request, inicio, {
+      bahiaId: datos.otraBahiaId,
+      tecnicoId: datos.otroTecnicoId,
+    });
+    expect(segunda.status()).toBe(409);
+    expect((await segunda.json()).message).toMatch(/ya tenes otro turno/i);
   });
 
   test('cero reservas duplicadas: de 5 intentos simultaneos entra exactamente 1', async ({
@@ -119,8 +155,12 @@ test.describe('HU2 - Conflicto de horario y sugerencias', () => {
   }) => {
     const inicio = horarioLaboral(16, 6);
 
+    // Cinco CLIENTES distintos sobre el mismo horario: el conflicto que se
+    // prueba es el de la bahia, no el del propio usuario consigo mismo.
     const respuestas = await Promise.all(
-      Array.from({ length: 5 }, () => reservar(request, inicio)),
+      datos.clientes.map((_, cliente) =>
+        reservar(request, inicio, { cliente }),
+      ),
     );
     const estados = respuestas.map((r) => r.status());
 

@@ -1,3 +1,17 @@
+# Dos modos de uso, a proposito:
+#
+#   docker compose up -d                 -> solo Postgres y Redis (por defecto)
+#   docker compose --profile full up -d  -> ademas los tres servicios de la app
+#
+# El modo por defecto es el que asumen todos los READMEs y el flujo de
+# desarrollo de siempre: la base y la cola en contenedores, los servicios
+# corriendo con `pnpm start:dev` para tener hot reload. Meter las apps en el
+# arranque por defecto habria roto ese flujo sin avisar.
+#
+# El perfil `full` sirve para verificar las imagenes antes de subirlas a un
+# registry, y para que alguien que solo quiere ver el producto funcionando no
+# tenga que instalar Node.
+
 services:
   postgres:
     image: postgres:16
@@ -26,6 +40,108 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # --- perfil `full` -------------------------------------------------------
+
+  # Aplica las migraciones y termina. Los servicios esperan a que salga bien
+  # (service_completed_successfully): arrancar la app contra un esquema viejo
+  # falla de formas mucho menos obvias que fallar al migrar.
+  migraciones:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: services/reservas-service/Dockerfile
+    command: ['node', 'packages/database/scripts/migrate.js']
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/turnos_platform
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  reservas-service:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: services/reservas-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/turnos_platform
+      REDIS_URL: redis://redis:6379
+      # Valores de JUGUETE, validos solo para este compose local. En
+      # produccion van por Secret (ver infra/k8s/). JWT_SECRET tiene que ser
+      # identico al de usuarios-service: uno firma y el otro valida.
+      JWT_SECRET: compose-local-secret
+      JWT_REFRESH_SECRET: compose-local-refresh-secret
+      ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    ports:
+      - '3001:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migraciones:
+        condition: service_completed_successfully
+    healthcheck:
+      # El readiness, no el liveness: asi `docker compose up --wait` no da por
+      # listo al servicio hasta que realmente alcanza Postgres y Redis.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3001/reservas/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  usuarios-service:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: services/usuarios-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 3002
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/turnos_platform
+      JWT_SECRET: compose-local-secret
+      JWT_REFRESH_SECRET: compose-local-refresh-secret
+      ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    ports:
+      - '3002:3002'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migraciones:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3002/usuarios/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  admin-web:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: apps/admin-web/Dockerfile
+      args:
+        # Se hornea en el bundle en tiempo de build, no se lee en runtime
+        # (ver el Dockerfile). Por eso va aca y no en `environment`: ponerlo
+        # como variable de entorno del contenedor no tendria ningun efecto.
+        VITE_API_URL: http://localhost:3001
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    depends_on:
+      - reservas-service
 
 volumes:
   turnos_platform_postgres_data:

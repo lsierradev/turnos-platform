@@ -1,0 +1,27 @@
+# Todo lo que no debe entrar al contexto de build de Docker.
+# Sin esto, `docker build` sube cientos de MB de node_modules y dist locales
+# (que ademas pisarian lo que el build genera dentro de la imagen).
+
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/build
+.turbo
+**/.turbo
+*.tsbuildinfo
+
+# La suite E2E no se empaqueta: arrastra Playwright y sus navegadores.
+e2e
+
+.git
+.github
+.env
+.env.*
+*.log
+.k6-env.sh
+.k6-seed.json
+**/coverage
+**/playwright-report
+**/test-results

@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: usuarios-service
+  namespace: turnos-platform
+  labels:
+    app.kubernetes.io/name: usuarios-service
+    app.kubernetes.io/part-of: turnos-platform
+spec:
+  # Mismo criterio que reservas-service: dos replicas como minimo, porque
+  # con una sola cualquier reinicio es downtime y 99.9% deja margen para 43
+  # min de caida AL MES. Ademas, si usuarios-service se cae nadie puede
+  # loguearse: es la puerta de entrada de todo lo demas.
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: usuarios-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: usuarios-service
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      # Reparte las replicas entre nodos distintos. Sin esto el scheduler
+      # puede poner las dos en el mismo nodo y perder ese nodo vuelve a ser
+      # downtime total, que es justo lo que las replicas venian a evitar.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: usuarios-service
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: usuarios-service
+          # Reemplazar por el repositorio de ECR y un tag INMUTABLE (el sha
+          # del commit). Nunca :latest: hace que un reinicio de pod pueda
+          # levantar una imagen distinta a la de sus hermanos, y vuelve
+          # imposible saber que version esta corriendo durante un incidente.
+          image: ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/turnos-platform/usuarios-service:REEMPLAZAR
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3002
+          envFrom:
+            - configMapRef:
+                name: turnos-config
+            - secretRef:
+                name: turnos-secrets
+          env:
+            - name: PORT
+              value: '3002'
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              # Sin limite de CPU a proposito: un limite provoca throttling
+              # justo en los picos, que es cuando el p95 importa. La memoria
+              # SI se limita, porque una fuga sin techo se lleva el nodo
+              # entero por delante.
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ['ALL']
+          # readOnlyRootFilesystem deja el contenedor sin ningun lugar
+          # donde escribir. Node y varias librerias usan /tmp de forma
+          # ocasional, asi que se monta un emptyDir ahi: es el minimo
+          # necesario para que el filesystem de solo lectura no rompa nada.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+          # Los tres probes apuntan a endpoints distintos a proposito
+          # (ver services/usuarios-service/src/modules/reservas/).
+          #
+          # startup: le da hasta 60s al arranque (12 x 5s) sin que el
+          # liveness lo mate mientras tanto. Nest + TypeORM tardan unos
+          # segundos en levantar.
+          startupProbe:
+            httpGet:
+              path: /usuarios/health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 12
+
+          # liveness: SOLO que el proceso responda, sin tocar Postgres. Si
+          # lo hiciera, una caida de la base reiniciaria en cascada todos
+          # los pods —que estan sanos— y empeoraria el incidente.
+          livenessProbe:
+            httpGet:
+              path: /usuarios/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # readiness: ademas comprueba Postgres (este servicio no usa
+          # Redis) y devuelve 503 si no responde. Un pod sin base sale de
+          # rotacion en vez de recibir logins que solo pueden fallar.
+          readinessProbe:
+            httpGet:
+              path: /usuarios/health/ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: usuarios-service
+  namespace: turnos-platform
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: usuarios-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Impide que un drenaje de nodo (upgrade del cluster, scale-in) se lleve las
+# dos replicas a la vez. Sin PDB, `kubectl drain` las evicta juntas y hay
+# downtime durante una operacion PLANIFICADA, que es la clase de caida mas
+# facil de evitar.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: usuarios-service
+  namespace: turnos-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: usuarios-service

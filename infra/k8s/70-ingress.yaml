@@ -1,0 +1,127 @@
+# Ingress con AWS Load Balancer Controller (ALB).
+#
+# REQUISITO: el AWS Load Balancer Controller tiene que estar instalado en el
+# cluster. No viene con EKS; se instala aparte (Helm) y necesita un rol de
+# IAM via IRSA. Sin el, estos Ingress se crean pero no provisionan nada, y el
+# sintoma es un Ingress sin ADDRESS y sin ningun error visible.
+#
+# POR QUE RUTEO POR SUBDOMINIO Y NO POR PATH
+#
+# Lo natural seria /api/reservas -> reservas-service. No se puede todavia:
+# los servicios NO tienen prefijo global (docs/ENDPOINTS.txt lo lista como
+# "pendiente de definir"), asi que reservas-service espera /appointments, no
+# /api/reservas/appointments. El ALB no recorta el prefijo por defecto, y
+# hacerlo con anotaciones de accion es fragil.
+#
+# Cuando se agregue `app.setGlobalPrefix(...)` en cada main.ts, esto se puede
+# colapsar a un solo host con tres paths.
+#
+# POR QUE TRES INGRESS Y NO UNO
+#
+# `alb.ingress.kubernetes.io/healthcheck-path` es una anotacion por INGRESS,
+# no por backend, y cada servicio tiene su propio path de salud
+# (/reservas/health/ready, /usuarios/health/ready, /health). Con un unico
+# Ingress, dos de los tres target groups quedarian marcados unhealthy y el
+# ALB dejaria de mandarles trafico.
+#
+# `group.name` hace que los tres compartan UN SOLO ALB (y por lo tanto un
+# solo costo y una sola IP), cada uno con su propio target group y su propio
+# health check. Es el patron documentado de AWS LBC para este caso.
+#
+# Los tres nombres deben existir en Route 53 apuntando al ALB, y el
+# certificado de ACM debe cubrirlos (un wildcard *.REEMPLAZAR.com alcanza).
+
+---
+# Panel de administracion (estaticos servidos por nginx).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: admin-web
+  namespace: turnos-platform
+  annotations:
+    alb.ingress.kubernetes.io/group.name: turnos-platform
+    alb.ingress.kubernetes.io/group.order: '10'
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    # Los access token viajan en el header Authorization: sobre HTTP plano
+    # se leen en el camino.
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: 'arn:aws:acm:us-east-1:ACCOUNT:certificate/REEMPLAZAR'
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+spec:
+  ingressClassName: alb
+  rules:
+    - host: turnos.REEMPLAZAR.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-web
+                port:
+                  number: 80
+
+---
+# API de reservas. Es la que consume admin-web: el VITE_API_URL con el que se
+# construye la imagen del frontend tiene que ser exactamente este host.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: reservas-service
+  namespace: turnos-platform
+  annotations:
+    alb.ingress.kubernetes.io/group.name: turnos-platform
+    alb.ingress.kubernetes.io/group.order: '20'
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: 'arn:aws:acm:us-east-1:ACCOUNT:certificate/REEMPLAZAR'
+    # Readiness y no liveness: el ALB no debe mandar trafico a un pod que no
+    # alcanza Postgres o Redis.
+    alb.ingress.kubernetes.io/healthcheck-path: /reservas/health/ready
+spec:
+  ingressClassName: alb
+  rules:
+    - host: api.REEMPLAZAR.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: reservas-service
+                port:
+                  number: 80
+
+---
+# Autenticacion.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: usuarios-service
+  namespace: turnos-platform
+  annotations:
+    alb.ingress.kubernetes.io/group.name: turnos-platform
+    alb.ingress.kubernetes.io/group.order: '30'
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: 'arn:aws:acm:us-east-1:ACCOUNT:certificate/REEMPLAZAR'
+    alb.ingress.kubernetes.io/healthcheck-path: /usuarios/health/ready
+spec:
+  ingressClassName: alb
+  rules:
+    - host: auth.REEMPLAZAR.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: usuarios-service
+                port:
+                  number: 80

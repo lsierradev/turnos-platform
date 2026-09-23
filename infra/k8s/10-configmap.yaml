@@ -1,0 +1,22 @@
+# Configuracion NO sensible. Todo lo que sea secreto va en el Secret
+# (20-secret.example.yaml), nunca aca: un ConfigMap se lee con permisos de
+# lectura basicos del namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: turnos-config
+  namespace: turnos-platform
+data:
+  # Los servicios de datos son gestionados (RDS y ElastiCache), no viven en
+  # el cluster: para un SLA de 99.9% el backup, el failover y los parches
+  # los maneja AWS. Reemplazar estos hosts por los endpoints reales.
+  #
+  # OJO: DATABASE_URL trae la contrasenia, asi que NO va aca -- se arma
+  # entera en el Secret. Este ConfigMap solo lleva lo que se puede mostrar.
+  NODE_ENV: 'production'
+  JWT_EXPIRES_IN: '15m'
+  JWT_REFRESH_EXPIRES_IN: '7d'
+  NOTIFICACIONES_INTENTOS: '3'
+  NOTIFICACIONES_BACKOFF_MS: '5000'
+  SENDGRID_FROM_EMAIL: 'no-reply@turnos-platform.dev'
+  TWILIO_WHATSAPP_FROM: '+14155238886'

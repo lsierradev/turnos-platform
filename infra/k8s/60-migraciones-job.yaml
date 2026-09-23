@@ -1,0 +1,53 @@
+# Aplica las migraciones de packages/database/migrations.
+#
+# Corre como Job y NO como initContainer de los Deployments a proposito: con
+# 2 replicas, un initContainer intentaria migrar dos veces en paralelo. El
+# script es idempotente (lleva registro en schema_migrations) pero dos
+# procesos corriendo el mismo ALTER TABLE a la vez se bloquean entre si.
+#
+# ORDEN DE DEPLOY: este Job va ANTES de actualizar las imagenes de los
+# servicios. Las migraciones de este repo son aditivas, asi que la version
+# vieja del codigo sigue funcionando contra el esquema nuevo mientras dura
+# el rolling update.
+#
+#   kubectl apply -f 60-migraciones-job.yaml
+#   kubectl wait --for=condition=complete --timeout=300s job/migraciones -n turnos-platform
+#
+# El Job hay que borrarlo antes de volver a aplicarlo (los Jobs son
+# inmutables), o generarle un nombre con sufijo por deploy.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migraciones
+  namespace: turnos-platform
+spec:
+  backoffLimit: 2
+  # Se borra solo a la hora de terminar, para no acumular Jobs viejos.
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: migrate
+          # La misma imagen de reservas-service: ya trae packages/database y
+          # el driver pg. Construir una imagen aparte solo para esto seria
+          # una imagen mas que mantener y versionar en sincronia.
+          image: ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/turnos-platform/reservas-service:REEMPLAZAR
+          command: ['node', 'packages/database/scripts/migrate.js']
+          envFrom:
+            - secretRef:
+                name: turnos-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ['ALL']

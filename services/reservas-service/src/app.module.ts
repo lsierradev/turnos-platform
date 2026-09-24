@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'path';
 import { RedisCacheModule } from './common/redis-cache.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
+import { BahiasModule } from './modules/bahias/bahias.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ReservasModule } from './modules/reservas/reservas.module';
@@ -40,6 +41,7 @@ import { TechniciansModule } from './modules/technicians/technicians.module';
     TechniciansModule,
     NotificationsModule,
     DashboardModule,
+    BahiasModule,
   ],
 })
 export class AppModule {}

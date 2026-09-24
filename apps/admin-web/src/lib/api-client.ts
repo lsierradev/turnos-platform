@@ -261,6 +261,69 @@ export function getTecnicos(): Promise<Tecnico[]> {
   return apiFetch<Tecnico[]>('/usuarios?rol=tecnico', false, AUTH_URL);
 }
 
+// --- Carga por bahia (Sprint 16) ---------------------------------------
+
+export type NivelOcupacion = 'libre' | 'normal' | 'alta' | 'completa';
+
+export interface CargaDia {
+  fecha: string;
+  turnos: number;
+  minutosOcupados: number;
+  /** 0..1 sobre la jornada laboral. */
+  ocupacion: number;
+  nivel: NivelOcupacion;
+}
+
+export interface CargaBahia {
+  bahiaId: string;
+  nombre: string;
+  dias: CargaDia[];
+}
+
+export interface CargaResponse {
+  desde: string;
+  hasta: string;
+  zonaHoraria: string;
+  jornada: { apertura: string; cierre: string; minutos: number };
+  /** Umbrales de alerta, definidos por el backend (0..1). */
+  umbrales: { alta: number; completa: number };
+  bahias: CargaBahia[];
+  resumen: {
+    fecha: string;
+    turnos: number;
+    minutosOcupados: number;
+    ocupacion: number;
+    bahiasEnAlerta: number;
+  }[];
+}
+
+export function getCargaBahias(desde: string, hasta: string): Promise<CargaResponse> {
+  const query = new URLSearchParams({ desde, hasta }).toString();
+  return apiFetch<CargaResponse>(`/bahias/carga?${query}`);
+}
+
+export interface TurnoDeBahia {
+  id: string;
+  inicio: string;
+  fin: string;
+  estado: 'programado' | 'atendido' | 'no_asistio' | 'cancelado';
+  servicio: { nombre: string; categoria: 'mecanica' | 'electrica' | 'latoneria' };
+  tecnico: { id: string; nombre: string } | null;
+  clienteNombre: string | null;
+}
+
+export interface TurnosBahiaResponse {
+  bahia: { id: string; nombre: string; activa: boolean };
+  fecha: string;
+  turnos: TurnoDeBahia[];
+}
+
+export function getTurnosBahia(bahiaId: string, fecha: string): Promise<TurnosBahiaResponse> {
+  return apiFetch<TurnosBahiaResponse>(
+    `/bahias/${bahiaId}/turnos?fecha=${encodeURIComponent(fecha)}`,
+  );
+}
+
 export interface KpiDia {
   fecha: string;
   atendidos: number;

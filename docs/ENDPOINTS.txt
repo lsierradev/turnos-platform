@@ -79,7 +79,8 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
     tecnicoId debe ser un usuario existente con rol "tecnico".
   Response 201: Turno creado (incluye rangoTiempo { inicio, fin }).
   Response 400 (Sprint 9): inicio en el pasado, o turno que no entra completo
-                en el horario laboral 08:00-18:00 UTC (incluido el caso de un
+                en el horario laboral 08:00-18:00 hora del taller
+                (TZ_NEGOCIO, Sprint 12) (incluido el caso de un
                 servicio que empieza dentro y termina fuera). No hay
                 antelacion minima: se puede reservar para dentro de 5 min.
   Response 404: bahia, servicio o tecnico inexistente (o el usuario referido
@@ -107,7 +108,8 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
 [GET] /technicians/:id/agenda  (requiere Authorization: Bearer <accessToken>)
   Descripcion : Turnos del dia para un tecnico (Sprint 4), ordenados por
                 hora, con bahia y servicio ya incluidos.
-  Query       : ?date=2024-06-10 (opcional, ISO 8601; default: hoy)
+  Query       : ?date=2024-06-10 (opcional; YYYY-MM-DD es un dia del taller,
+                TZ_NEGOCIO; default: hoy del taller)
   Response 200: Turno[] (incluye bahia y servicio embebidos)
   Response 404: :id no es un usuario existente con rol "tecnico".
 
@@ -133,7 +135,8 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
 [GET] /dashboard/kpis  (requiere Authorization: Bearer <accessToken>)
   Descripcion : KPIs operativos del periodo (RF-04, Sprint 8).
   Query       : ?from=2024-06-01&to=2024-06-30
-                Formato YYYY-MM-DD, ambos inclusive y en UTC. Los dos son
+                Formato YYYY-MM-DD, ambos inclusive, dias del taller
+                (TZ_NEGOCIO, default America/Bogota). Los dos son
                 opcionales (default: hoy); si va solo uno, se usa para
                 ambos extremos.
   Response 200:
@@ -185,6 +188,81 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
     statement_timeout propio de 5s para no retener una conexion del pool
     que comparte con el motor de reservas. Ver los comentarios en
     dashboard.service.ts y en 009_add_estado_y_atencion_a_turnos.sql.
+
+[GET] /bahias/carga  (requiere Authorization: Bearer <accessToken>, rol admin)
+  Descripcion : Carga de trabajo por bahia y por dia (Sprint 16). Alimenta
+                el panel administrativo.
+  Query       : ?desde=2024-06-10&hasta=2024-06-16
+                YYYY-MM-DD, ambos inclusive, dias del taller (TZ_NEGOCIO).
+                Opcionales (default: hoy); si va solo uno, se usa para
+                ambos extremos. Maximo 31 dias.
+  Response 200:
+    {
+      "desde": "2024-06-10", "hasta": "2024-06-10",
+      "zonaHoraria": "America/Bogota",
+      "jornada": { "apertura": "08:00", "cierre": "18:00", "minutos": 600 },
+      "umbrales": { "alta": 0.8, "completa": 1 },
+      "bahias": [
+        {
+          "bahiaId": "uuid", "nombre": "Bahia 1",
+          "dias": [
+            { "fecha": "2024-06-10", "turnos": 9, "minutosOcupados": 540,
+              "ocupacion": 0.9, "nivel": "alta" }
+          ]
+        }
+      ],
+      "resumen": [
+        { "fecha": "2024-06-10", "turnos": 14, "minutosOcupados": 780,
+          "ocupacion": 0.433, "bahiasEnAlerta": 1 }
+      ]
+    }
+  Response 400: desde posterior a hasta, fecha inexistente, rango > 31 dias.
+  Response 401/403: sin token / sin rol admin.
+
+  Definiciones:
+    ocupacion  = minutos ocupados DENTRO de la jornada del dia (08:00-18:00
+                 hora del taller) / 600. Un turno que empieza antes de la
+                 apertura o termina despues del cierre suma solo la parte
+                 que cae adentro. Tope 1.
+    turnos     = turnos que EMPIEZAN ese dia del taller (un turno a las
+                 22:00 locales es de ese dia aunque en UTC sea el siguiente).
+    cancelados = no cuentan ni como turno ni como ocupacion.
+                 OJO: las constraints EXCLUDE de turnos (bahia, tecnico,
+                 cliente) NO excluyen cancelados, asi que hoy el horario de
+                 un turno cancelado sigue sin poder reservarse (409) aunque
+                 el panel lo muestre libre. Pendiente: migracion que agregue
+                 WHERE (estado <> 'cancelado') a las tres constraints.
+    nivel      = "libre" (sin turnos) | "normal" | "alta" (>= umbrales.alta)
+                 | "completa" (>= umbrales.completa). Los umbrales viajan en
+                 la respuesta para que el front no tenga su propia copia.
+    bahias     = solo las activas, incluidas las que no tienen turnos (en 0).
+    resumen    = por dia, sobre la capacidad de todas las bahias activas.
+
+  Rendimiento y cache: una sola agregacion (bahias x dias con LEFT JOIN a
+  los turnos agrupados), filtro sargable sobre lower(rango_tiempo)
+  (idx_turnos_kpi_inicio), statement_timeout de 5 s y cache en Redis con
+  clave por zona + rango y TTL de 5 s, igual que /dashboard/kpis. El panel
+  refresca cada 15 s: desfase maximo 20 s.
+
+[GET] /bahias/:id/turnos  (requiere Authorization: Bearer <accessToken>, rol admin)
+  Descripcion : Turnos de una bahia en un dia del taller, con servicio,
+                tecnico y cliente (Sprint 16). Detalle del panel; sin cache.
+  Query       : ?fecha=2024-06-10 (opcional; default: hoy del taller)
+  Response 200:
+    {
+      "bahia": { "id": "uuid", "nombre": "Bahia 1", "activa": true },
+      "fecha": "2024-06-10",
+      "turnos": [
+        { "id": "uuid", "inicio": "...Z", "fin": "...Z",
+          "estado": "programado",
+          "servicio": { "nombre": "Cambio de aceite", "categoria": "mecanica" },
+          "tecnico": { "id": "uuid", "nombre": "Ana" },
+          "clienteNombre": "Luis" }
+      ]
+    }
+    Incluye los cancelados (el panel los muestra tachados).
+  Response 400: :id no es UUID, o fecha invalida.
+  Response 404: la bahia no existe.
 
 --- Proceso en background (no es un endpoint HTTP) ---
 

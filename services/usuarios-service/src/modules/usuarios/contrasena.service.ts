@@ -150,12 +150,15 @@ export class ContrasenaService {
         );
       }
 
-      await manager
-        .getRepository(Usuario)
-        .update(
-          { id: fila.usuarioId },
-          { passwordHash: await bcrypt.hash(password, SALT_ROUNDS) },
-        );
+      // sesionesValidasDesde: cierra las sesiones abiertas con la
+      // contrasena anterior (ver AuthService.refresh, migracion 014).
+      await manager.getRepository(Usuario).update(
+        { id: fila.usuarioId },
+        {
+          passwordHash: await bcrypt.hash(password, SALT_ROUNDS),
+          sesionesValidasDesde: new Date(),
+        },
+      );
       await manager
         .getRepository(TokenContrasena)
         .update({ id: fila.id }, { usadoEn: new Date() });

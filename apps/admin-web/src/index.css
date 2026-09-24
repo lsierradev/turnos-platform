@@ -533,3 +533,71 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Sprint 19: foco, movimiento y microinteracciones.
+ *
+ * Estas reglas van FUERA de @layer a proposito: los estilos sin capa le
+ * ganan a las utilidades de Tailwind (que viven en @layer utilities), y
+ * los componentes traen `outline-none` en casi todos lados.
+ * ------------------------------------------------------------------------ */
+
+/* Foco visible con contraste real (WCAG 1.4.11, 3:1). Hasta ahora el unico
+   indicador era el anillo `ring-ring/50`: naranja al 50% sobre la tarjeta,
+   1.9:1 en claro y 2.4:1 en oscuro. Un contorno solido de 2px en --ring
+   (naranja-600 en claro, naranja-500 en oscuro) pasa 3:1 sobre la tarjeta,
+   el fondo y la barra lateral (ver scripts/verificar-contraste.mjs). El
+   anillo suave queda como relleno debajo. */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+/* Foco puesto por codigo (el <main> al navegar, el titulo de la
+   confirmacion de reserva): no es interaccion de teclado sobre un control,
+   no necesita contorno. */
+[tabindex='-1']:focus-visible {
+  outline: none;
+}
+
+/* Que el header fijo (arriba) y la barra de pestanas (abajo, en celular)
+   no tapen lo que recibe foco o se desplaza a la vista (WCAG 2.4.11). */
+html {
+  scroll-padding-top: 4.5rem;
+}
+@media (max-width: 1023.98px) {
+  html {
+    scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Microinteracciones: 180ms con salida suave para todo lo que usa
+   transition-* de Tailwind (default era 150ms lineal-ish). */
+@theme {
+  --default-transition-duration: 180ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Aparicion suave del contenido al cambiar de pantalla. */
+@keyframes aparecer {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.animar-entrada {
+  animation: aparecer 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* prefers-reduced-motion: sin transiciones ni animaciones decorativas.
+   Los spinners (animate-spin) se quedan: comunican "esta pasando algo" y
+   quitarlos dejaria un icono quieto que parece colgado. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

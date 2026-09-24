@@ -78,7 +78,7 @@ export function AgendaTecnicoView() {
         <CardHeader className="gap-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 space-y-1.5">
-              <CardTitle>Agenda del tecnico</CardTitle>
+              <CardTitle as="h1">Agenda del tecnico</CardTitle>
               {esAdmin && !esPropia && idValido ? (
                 <SelectorTecnico tecnicoId={tecnicoId} nombreActual={nombre} />
               ) : (

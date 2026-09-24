@@ -69,9 +69,29 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token invalido o expirado');
     }
 
-    const { sub, email, rol } = payload;
+    // Sprint 19: el refresh se revisa contra la base. Un usuario borrado o
+    // que cambio la contrasena despues de emitido este token ya no renueva:
+    // asi cambiar la contrasena cierra las otras sesiones (en a lo sumo lo
+    // que le quede al access token, 15 min). `iat` viene en segundos: se
+    // compara contra el segundo de la marca, para no rechazar el token que
+    // se emite en el mismo segundo del cambio (el del login siguiente).
+    const usuario = await this.usuariosService.findById(payload.sub);
+    const iat = (payload as JwtPayload & { iat?: number }).iat ?? 0;
+    const desde = usuario?.sesionesValidasDesde;
+    if (!usuario || (desde && iat < Math.floor(desde.getTime() / 1000))) {
+      throw new UnauthorizedException(
+        'La sesion se cerro porque cambio la contrasena. Volve a ingresar.',
+      );
+    }
+
+    // Rol y email de la base, no del token viejo: si un admin le cambio el
+    // rol, el proximo access token ya lo refleja.
     return {
-      accessToken: this.jwtService.sign({ sub, email, rol }),
+      accessToken: this.jwtService.sign({
+        sub: usuario.id,
+        email: usuario.email,
+        rol: usuario.rol,
+      }),
     };
   }
 }

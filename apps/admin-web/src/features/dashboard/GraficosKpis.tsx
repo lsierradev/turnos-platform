@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { KpiDia } from '@/lib/api-client';
 import { formatearDiaMes, formatearFechaLarga } from '@/lib/dates';
+import { usePrefiereMenosMovimiento } from '@/lib/movimiento';
 import { formatearMinutos, formatearPorcentaje, hayCierres, hayMediciones } from './kpis';
 
 // Tokens del sistema de diseno (Sprint 13), no hex sueltos: cambian solos en
@@ -110,6 +111,8 @@ const ejeX = {
 } as const;
 
 export function GraficosKpis({ serie }: { serie: KpiDia[] }) {
+  // Recharts anima en JS: la regla de prefers-reduced-motion del CSS no lo frena.
+  const animar = !usePrefiereMenosMovimiento();
   const filas: FilaGrafico[] = serie.map((d) => ({
     ...d,
     etiqueta: formatearDiaMes(d.fecha),
@@ -150,6 +153,7 @@ export function GraficosKpis({ serie }: { serie: KpiDia[] }) {
                 }
               />
               <Line
+                isAnimationActive={animar}
                 name="Tasa de asistencia"
                 type="monotone"
                 dataKey="tasaAsistenciaPct"
@@ -197,6 +201,7 @@ export function GraficosKpis({ serie }: { serie: KpiDia[] }) {
                 }
               />
               <Line
+                isAnimationActive={animar}
                 name="Tiempo prom. servicio"
                 type="monotone"
                 dataKey="minutosPromedioServicio"
@@ -249,9 +254,10 @@ export function GraficosKpis({ serie }: { serie: KpiDia[] }) {
               />
               {/* El stroke del color de la tarjeta separa los tramos
                   apilados: sin el, dos contiguos se leen como uno. */}
-              <Bar name="Atendidos" dataKey="atendidos" stackId="t" fill={COLOR.atendidos} stroke="var(--card)" strokeWidth={2} />
-              <Bar name="No asistio" dataKey="noAsistio" stackId="t" fill={COLOR.noAsistio} stroke="var(--card)" strokeWidth={2} />
+              <Bar isAnimationActive={animar} name="Atendidos" dataKey="atendidos" stackId="t" fill={COLOR.atendidos} stroke="var(--card)" strokeWidth={2} />
+              <Bar isAnimationActive={animar} name="No asistio" dataKey="noAsistio" stackId="t" fill={COLOR.noAsistio} stroke="var(--card)" strokeWidth={2} />
               <Bar
+                isAnimationActive={animar}
                 name="Cancelados"
                 dataKey="cancelados"
                 stackId="t"

@@ -32,9 +32,15 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+// `as`: cuando el titulo de la tarjeta ES el titulo de la pantalla (agenda,
+// login) tiene que ser un <h1> para lectores de pantalla (Sprint 19).
+function CardTitle({
+  className,
+  as: Etiqueta = "div",
+  ...props
+}: React.ComponentProps<"div"> & { as?: "div" | "h1" | "h2" }) {
   return (
-    <div
+    <Etiqueta
       data-slot="card-title"
       className={cn(
         "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",

@@ -95,6 +95,10 @@ export class UsuariosService {
     };
   }
 
+  findById(id: string): Promise<Usuario | null> {
+    return this.usuariosRepository.findOne({ where: { id } });
+  }
+
   findByEmail(email: string): Promise<Usuario | null> {
     return this.usuariosRepository.findOne({ where: { email } });
   }

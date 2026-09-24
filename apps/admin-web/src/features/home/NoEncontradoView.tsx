@@ -7,6 +7,9 @@ import { buttonVariants } from '@/components/ui/button';
 export function NoEncontradoView() {
   return (
     <div className="mx-auto max-w-3xl p-4 md:p-6">
+      {/* El estado vacio ya lo dice a la vista; el <h1> es para que la
+          pantalla tenga titulo para lectores de pantalla. */}
+      <h1 className="sr-only">Pagina no encontrada</h1>
       <EstadoVacio
         icono={SearchX}
         titulo="Esta pagina no existe"

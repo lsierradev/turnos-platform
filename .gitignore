@@ -24,6 +24,7 @@ pnpm-debug.log*
 # Playwright (reportes y trazas de corridas E2E)
 e2e/playwright-report/
 e2e/test-results/
+e2e/playwright-report-visual/
 e2e/blob-report/
 playwright/.cache/
 
@@ -31,3 +32,6 @@ playwright/.cache/
 .DS_Store
 .vscode/
 .idea/
+
+# Buzon local de correos de usuarios-service en dev (Sprint 19)
+.correos/

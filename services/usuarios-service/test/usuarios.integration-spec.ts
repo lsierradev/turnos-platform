@@ -284,6 +284,52 @@ describirSiHayDb('Usuarios (integration)', () => {
         .expect(400);
     });
 
+    it('cambiar la contrasena cierra las otras sesiones (Sprint 19)', async () => {
+      const server = app.getHttpServer();
+      const login = await request(server)
+        .post('/auth/login')
+        .send({ email, password: 'mi-clave-nueva' })
+        .expect(200);
+      const sesionVieja = login.body.refreshToken;
+      await request(server)
+        .post('/auth/refresh')
+        .send({ refreshToken: sesionVieja })
+        .expect(200);
+
+      // iat es en segundos: el cambio tiene que caer en un segundo posterior.
+      await new Promise((r) => setTimeout(r, 1100));
+      const token = randomBytes(32).toString('base64url');
+      const [{ id }] = await dataSource.query(
+        'SELECT id FROM usuarios WHERE email = $1',
+        [email],
+      );
+      await dataSource.query(
+        `INSERT INTO tokens_contrasena (usuario_id, token_hash, motivo, expira_en)
+         VALUES ($1, $2, 'alta', now() + interval '1 hour')`,
+        [id, createHash('sha256').update(token).digest('hex')],
+      );
+      await request(server)
+        .post('/auth/restablecer')
+        .send({ token, password: 'otra-clave-123' })
+        .expect(204);
+
+      const rechazo = await request(server)
+        .post('/auth/refresh')
+        .send({ refreshToken: sesionVieja })
+        .expect(401);
+      expect(rechazo.body.message).toMatch(/cambio la contrasena/);
+
+      // La sesion nueva, en cambio, renueva sin problema.
+      const nueva = await request(server)
+        .post('/auth/login')
+        .send({ email, password: 'otra-clave-123' })
+        .expect(200);
+      await request(server)
+        .post('/auth/refresh')
+        .send({ refreshToken: nueva.body.refreshToken })
+        .expect(200);
+    });
+
     it('olvide responde igual exista o no el correo, y frena los pedidos seguidos', async () => {
       // Los enlaces de los tests anteriores son de hace segundos: dentro del
       // freno de 1 minuto entre pedidos.

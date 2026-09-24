@@ -147,6 +147,13 @@ for (const [modo, tokens] of Object.entries(modos)) {
     registrar(r >= 3, `grafico ${n} sobre card: ${r.toFixed(2)}:1 (min 3)`);
   }
   // El borde de color del bloque se apoya sobre su propio suave.
+  // Sprint 19: el contorno de foco (:focus-visible en index.css) es --ring
+  // SOLIDO y aparece tambien sobre el fondo de pagina y la barra lateral.
+  for (const fondo of ['background', 'sidebar']) {
+    const r = contraste(t('ring'), t(fondo));
+    registrar(r >= 3, `foco ring sobre ${fondo}: ${r.toFixed(2)}:1 (min 3)`);
+  }
+
   for (const c of CATEGORIAS) {
     const r = contraste(t(c), t(`${c}-suave`));
     registrar(r >= 3, `grafico ${c} sobre ${c}-suave: ${r.toFixed(2)}:1 (min 3)`);

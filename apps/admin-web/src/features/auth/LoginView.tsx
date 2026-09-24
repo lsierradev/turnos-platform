@@ -4,12 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ApiError } from '@/lib/api-client';
+import { useTituloPagina } from '@/lib/titulo';
 import { useAuth } from './AuthProvider';
 
 export function LoginView() {
   const { iniciarSesion } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  useTituloPagina('Ingresar');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,10 +46,10 @@ export function LoginView() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md items-center p-6">
+    <main className="mx-auto flex min-h-screen max-w-md items-center p-6">
       <Card className="w-full">
         <CardHeader>
-          <CardTitle className="font-heading text-xl">
+          <CardTitle as="h1" className="font-heading text-xl">
             turnos-platform
           </CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -101,6 +103,6 @@ export function LoginView() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </main>
   );
 }

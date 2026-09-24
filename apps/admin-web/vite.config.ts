@@ -11,4 +11,17 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // React, router y TanStack Query en su propio archivo: cambian mucho
+        // menos que la app, asi que el navegador los reusa entre despliegues.
+        manualChunks(id) {
+          if (/node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|@tanstack)[\\/]/.test(id)) {
+            return 'vendor'
+          }
+        },
+      },
+    },
+  },
 })

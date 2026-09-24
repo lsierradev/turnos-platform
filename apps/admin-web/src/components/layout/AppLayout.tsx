@@ -1,5 +1,8 @@
 import { LogOut, Palette, Wrench } from 'lucide-react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
+import { Suspense, useEffect, useRef } from 'react';
+import { EstadoCargando } from '@/components/estados';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { tituloDeRuta, useTituloPagina } from '@/lib/titulo';
 import { SelectorTema } from '@/components/SelectorTema';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -159,9 +162,49 @@ function Encabezado() {
   );
 }
 
+/**
+ * Al cambiar de pantalla (Sprint 19): scroll arriba y foco en el <h1> de la
+ * pantalla nueva. Sin esto el foco se quedaba en el link del menu y un
+ * lector de pantalla no anunciaba nada: para quien no ve, el click "no
+ * hacia nada". Solo si la pantalla no puso el foco ella misma (un buscador
+ * con autoFocus, por ejemplo) y nunca en la primera carga.
+ */
+function useFocoAlNavegar(main: React.RefObject<HTMLElement | null>, pathname: string) {
+  const primera = useRef(true);
+  useEffect(() => {
+    if (primera.current) {
+      primera.current = false;
+      return;
+    }
+    window.scrollTo(0, 0);
+    // Las pantallas cargan diferido: el <h1> puede tardar unos frames en
+    // existir. Se espera hasta ~1 s y si no aparece va al <main>.
+    let intentos = 0;
+    let id = 0;
+    const enfocar = () => {
+      const contenedor = main.current;
+      if (!contenedor || contenedor.contains(document.activeElement)) return;
+      const titulo = contenedor.querySelector<HTMLElement>('h1');
+      if (!titulo && intentos++ < 60) {
+        id = requestAnimationFrame(enfocar);
+        return;
+      }
+      const destino = titulo ?? contenedor;
+      if (!destino.hasAttribute('tabindex')) destino.setAttribute('tabindex', '-1');
+      destino.focus({ preventScroll: true });
+    };
+    id = requestAnimationFrame(enfocar);
+    return () => cancelAnimationFrame(id);
+  }, [main, pathname]);
+}
+
 export function AppLayout() {
   const { usuario } = useAuth();
   const items = itemsPara(usuario);
+  const { pathname } = useLocation();
+  const main = useRef<HTMLElement>(null);
+  useTituloPagina(tituloDeRuta(pathname, usuario?.rol));
+  useFocoAlNavegar(main, pathname);
   // Con un solo destino (el cliente) una barra de pestanas no navega a
   // ningun lado: no se muestra.
   const conBarraInferior = items.length > 1;
@@ -178,11 +221,24 @@ export function AppLayout() {
       <div className="lg:pl-60">
         <Encabezado />
         <main
+          ref={main}
           id="contenido"
           tabIndex={-1}
           className={`outline-none ${conBarraInferior ? 'pb-20 lg:pb-0' : ''}`}
         >
-          <Outlet />
+          {/* key por ruta: la entrada suave corre en cada pantalla nueva,
+              no en cada cambio de filtro (?fecha, ?vista). */}
+          <div key={pathname} className="animar-entrada">
+            <Suspense
+              fallback={
+                <div className="mx-auto max-w-5xl p-4 md:p-6">
+                  <EstadoCargando forma="bloque" etiqueta="Cargando pantalla…" />
+                </div>
+              }
+            >
+              <Outlet />
+            </Suspense>
+          </div>
         </main>
       </div>
       {conBarraInferior && <BarraInferior items={items} />}

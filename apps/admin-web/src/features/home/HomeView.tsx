@@ -51,7 +51,10 @@ function Acceso({
   return (
     <Link
       to={to}
-      className="group flex items-center gap-3 rounded-xl border bg-card p-4 shadow-xs transition-colors hover:border-primary/60"
+      // Microinteraccion: sube 2px y gana sombra al pasar el mouse (180ms,
+      // ver --default-transition-duration); con movimiento reducido solo
+      // cambia el borde, sin desplazamiento.
+      className="group flex items-center gap-3 rounded-xl border bg-card p-4 shadow-xs transition-[border-color,box-shadow,translate] hover:border-primary/60 hover:shadow-md motion-safe:hover:-translate-y-0.5 active:translate-y-0"
     >
       <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground group-hover:bg-primary group-hover:text-primary-foreground">
         <Icono className="size-5" aria-hidden />

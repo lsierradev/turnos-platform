@@ -1,0 +1,12 @@
+-- 014_usuarios_sesiones_validas_desde.sql
+-- Cambiar la contrasena cierra las otras sesiones (Sprint 19).
+--
+-- Los refresh tokens duran 7 dias y son JWT sin estado: hasta aca, cambiar
+-- la contrasena (por ejemplo porque alguien la conocia) dejaba abiertas las
+-- sesiones ya iniciadas durante una semana. POST /auth/refresh rechaza
+-- ahora todo refresh token emitido ANTES de esta marca.
+--
+-- NULL = nunca se cambio: vale cualquier token. Los access token (15 min)
+-- no se revisan contra esto -- vencen solos, y revisarlos obligaria a
+-- reservas-service a consultar la tabla de usuarios en cada request.
+ALTER TABLE usuarios ADD COLUMN sesiones_validas_desde TIMESTAMPTZ;

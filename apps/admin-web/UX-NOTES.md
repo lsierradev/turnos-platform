@@ -146,3 +146,33 @@ Otros detalles:
 - **Contraseña**: "¿Olvidaste tu contraseña?" en el login y `/restablecer`
   para el enlace del correo. La respuesta de "olvidé" es la misma exista o
   no la cuenta.
+
+## Sprint 19: auditoría de accesibilidad y calidad visual
+
+Auditoría automatizada con Edge sobre las 19 pantallas por rol (admin,
+técnico, cliente, públicas), en 1366 px claro y 390 px oscuro: axe
+(WCAG 2.0/2.1/2.2 A y AA + buenas prácticas), recorrido completo con Tab,
+contraste del indicador de foco, foco tapado por elementos fijos y
+movimiento con `prefers-reduced-motion`.
+
+| # | Hallazgo | Estado |
+|---|---|---|
+| 1 | Indicador de foco `ring-ring/50`: 1,9:1 en claro y 2,4:1 en oscuro (WCAG 1.4.11 pide 3:1) | Arreglado: contorno sólido de 2px en `--ring` por `:focus-visible` (index.css, fuera de `@layer`). `verificar-contraste.mjs` controla ring sobre card, fondo y barra lateral. |
+| 2 | En celular, "Ver turnos" del panel quedaba debajo de la barra de pestañas al recibir foco (WCAG 2.4.11) | Arreglado: `scroll-padding-top/bottom` en `html` del alto del header y de la barra. |
+| 3 | `prefers-reduced-motion` no se respetaba: todas las transiciones y la animación de los gráficos seguían | Arreglado: regla global que las anula (salvo los spinners, que comunican estado) e `isAnimationActive` de Recharts atado a la preferencia (`lib/movimiento.ts`). |
+| 4 | Login, "olvidé" y "definir contraseña" sin `<main>` ni `<h1>`; agenda y 404 sin `<h1>` | Arreglado: `CardTitle as="h1"` y `<main>` en las públicas; `<h1>` (sr-only) en la 404. |
+| 5 | Mismo título de pestaña en todas las pantallas (WCAG 2.4.2) | Arreglado: `useTituloPagina` / `tituloDeRuta` ("Panel del taller · TurnosPro"). |
+| 6 | Al navegar, el foco quedaba en el link del menú y el lector no anunciaba la pantalla nueva | Arreglado: foco al `<h1>` de la pantalla nueva (espera la carga diferida) y scroll arriba. No pisa un `autoFocus` de la pantalla. |
+| 7 | Bundle: un único JS de 992 kB (304 kB gzip), con Recharts en la carga inicial | Arreglado: carga diferida por pantalla y `vendor` aparte. Inicial ≈ 131 kB gzip (−57%); el dashboard baja Recharts (120 kB gzip) al abrirse. |
+| 8 | Microinteracciones con 150ms y curva por defecto | 180ms con salida suave (`--default-transition-duration`), entrada de 180ms al cambiar de pantalla y tarjetas de acceso que suben 2px al pasar el mouse (solo con movimiento permitido). |
+| 9 | `shadcn` (CLI) en dependencias de producción | Movido a devDependencies. |
+| — | Recorrido con Tab | Sin problemas: todo lo interactivo es alcanzable y en orden; el patrón combobox (opciones con flechas) es correcto. |
+| — | Fuentes: se generan todos los subsets (cirílico, griego, vietnamita) | Sin cambio: el navegador baja solo los que usa la página (`unicode-range`); solo ocupan lugar en `dist/`. |
+
+**Regresión visual**: `e2e/visual/` (Edge, sin backend: API simulada y
+reloj fijo en el jueves 24/09/2026 14:30 del taller). 19 pantallas × 4
+(escritorio/celular × claro/oscuro) = 76 capturas.
+`pnpm --filter @turnos-platform/e2e test:visual` compara y
+`test:visual:actualizar` regenera tras un cambio intencional. No corre en
+CI: las referencias son de Windows y el renderizado de fuentes cambia en
+Linux.

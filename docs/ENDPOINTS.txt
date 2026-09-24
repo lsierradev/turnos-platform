@@ -399,7 +399,13 @@ Dominio: usuarios, tenants, autenticacion
     {
       "accessToken": "..."
     }
-  Response 401: refresh token invalido o expirado.
+  Response 401: refresh token invalido o expirado, de un usuario que ya no
+                existe, o emitido ANTES del ultimo cambio de contrasena
+                (Sprint 19, migracion 014: usuarios.sesiones_validas_desde).
+                Asi cambiar la contrasena cierra las otras sesiones en a lo
+                sumo lo que le quede a su access token (15 min).
+  El access token nuevo sale con el rol y el email ACTUALES de la base, no
+  los del refresh token.
 
 [POST] /usuarios  (requiere Authorization: Bearer <accessToken>, rol admin)
   Descripcion : Alta de un usuario. Desde Sprint 17 la usa el formulario de
@@ -427,9 +433,11 @@ Dominio: usuarios, tenants, autenticacion
   Descripcion : Lista usuarios (id, email, nombre, rol, telefono descifrado,
                 ciudad).
 
-Pendiente:
-  Los refresh tokens emitidos antes de un cambio de contrasena siguen
-  validos hasta vencer (7 dias): cambiarla no cierra otras sesiones.
+Correos (usuarios-service):
+  Con SENDGRID_API_KEY + SENDGRID_FROM_EMAIL salen por SendGrid. Sin ellos no
+  salen: fuera de produccion quedan como .txt en CORREO_BUZON_DIR (default
+  ./.correos, ignorado por git) para abrir el enlace a mano; en produccion
+  solo se registra el aviso en el log.
 
 ----------------------------------------
 Convenciones generales

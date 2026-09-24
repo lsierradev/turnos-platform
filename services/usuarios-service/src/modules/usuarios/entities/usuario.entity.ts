@@ -48,6 +48,15 @@ export class Usuario {
   @Column({ type: 'text', nullable: true })
   ciudad?: string | null;
 
+  // Migracion 014 (Sprint 19): los refresh tokens emitidos antes de esta
+  // marca ya no valen. La pone el cambio de contrasena.
+  @Column({
+    name: 'sesiones_validas_desde',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  sesionesValidasDesde?: Date | null;
+
   @CreateDateColumn({ name: 'creado_en' })
   creadoEn: Date;
 

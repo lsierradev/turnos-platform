@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import sgMail from '@sendgrid/mail';
+import { mkdirSync, writeFileSync } from 'fs';
+import { join, resolve } from 'path';
 
 export interface Correo {
   para: string;
@@ -29,9 +31,12 @@ export class CorreoService {
     const apiKey = process.env.SENDGRID_API_KEY;
     const from = process.env.SENDGRID_FROM_EMAIL;
     if (!apiKey || !from) {
+      const archivo = this.guardarEnBuzon(correo);
       this.logger.warn(
-        `SendGrid sin configurar: correo NO enviado a ${correo.para}.\n` +
-          `Asunto: ${correo.asunto}\n${correo.texto}`,
+        `SendGrid sin configurar: correo NO enviado a ${correo.para}.` +
+          (archivo
+            ? ` Quedo en ${archivo}`
+            : `\nAsunto: ${correo.asunto}\n${correo.texto}`),
       );
       return false;
     }
@@ -47,5 +52,35 @@ export class CorreoService {
       text: correo.texto,
     });
     return true;
+  }
+
+  /**
+   * Buzon local de desarrollo (Sprint 19): sin SendGrid, cada correo queda
+   * como un .txt en CORREO_BUZON_DIR (default ./.correos fuera de
+   * produccion), para abrir el enlace sin buscarlo entre los logs. En
+   * produccion no se escribe nada a disco: ahi falta configurar SendGrid.
+   */
+  private guardarEnBuzon(correo: Correo): string | null {
+    const dir =
+      process.env.CORREO_BUZON_DIR ??
+      (process.env.NODE_ENV === 'production' ? undefined : '.correos');
+    if (!dir) return null;
+    try {
+      mkdirSync(dir, { recursive: true });
+      const sello = new Date().toISOString().replace(/[:.]/g, '-');
+      const archivo = join(
+        dir,
+        `${sello}-${correo.para.replace(/[^\w.@-]/g, '_')}.txt`,
+      );
+      writeFileSync(
+        archivo,
+        `Para: ${correo.para}\nAsunto: ${correo.asunto}\n\n${correo.texto}\n`,
+        'utf8',
+      );
+      return resolve(archivo);
+    } catch (error) {
+      this.logger.error(`No se pudo escribir el buzon local: ${String(error)}`);
+      return null;
+    }
   }
 }

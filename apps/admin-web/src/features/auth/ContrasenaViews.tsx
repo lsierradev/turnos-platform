@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useTituloPagina } from '@/lib/titulo';
 import {
   ApiError,
   restablecerContrasena,
@@ -21,16 +22,17 @@ import {
  */
 
 function Marco({ titulo, descripcion, children }: { titulo: string; descripcion: string; children: ReactNode }) {
+  useTituloPagina(titulo);
   return (
-    <div className="mx-auto flex min-h-screen max-w-md items-center p-6">
+    <main className="mx-auto flex min-h-screen max-w-md items-center p-6">
       <Card className="w-full">
         <CardHeader>
-          <CardTitle className="font-heading text-xl">{titulo}</CardTitle>
+          <CardTitle as="h1" className="font-heading text-xl">{titulo}</CardTitle>
           <p className="text-sm text-muted-foreground">{descripcion}</p>
         </CardHeader>
         <CardContent>{children}</CardContent>
       </Card>
-    </div>
+    </main>
   );
 }
 

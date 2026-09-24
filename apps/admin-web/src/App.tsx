@@ -1,20 +1,39 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { EstadoCargando } from '@/components/estados';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { PanelAdministrativoView } from '@/features/admin-panel/PanelAdministrativoView';
-import { AgendaTecnicoView } from '@/features/agenda/AgendaTecnicoView';
-import { SeleccionTecnicoView } from '@/features/agenda/SeleccionTecnicoView';
 import { AuthProvider } from '@/features/auth/AuthProvider';
-import { OlvideView, RestablecerView } from '@/features/auth/ContrasenaViews';
 import { LoginView } from '@/features/auth/LoginView';
 import { RutaProtegida } from '@/features/auth/RutaProtegida';
-import { DashboardView } from '@/features/dashboard/DashboardView';
-import { DesignView } from '@/features/design/DesignView';
 import { HomeView } from '@/features/home/HomeView';
 import { NoEncontradoView } from '@/features/home/NoEncontradoView';
-import { MisTurnosView } from '@/features/mis-turnos/MisTurnosView';
-import { ReservaView } from '@/features/reserva/ReservaView';
 import { esReintentable } from '@/lib/errores';
+
+// Carga diferida por pantalla (Sprint 19). Antes todo iba en un solo JS de
+// 992 kB (304 kB gzip): quien entraba al login descargaba Recharts entero.
+// Login, inicio y el layout quedan en el paquete principal porque son lo
+// primero que se ve; el resto baja al navegar.
+const perezoso = <K extends string>(
+  cargar: () => Promise<Record<K, React.ComponentType>>,
+  nombre: K,
+) => lazy(() => cargar().then((m) => ({ default: m[nombre] })));
+
+const ReservaView = perezoso(() => import('@/features/reserva/ReservaView'), 'ReservaView');
+const MisTurnosView = perezoso(() => import('@/features/mis-turnos/MisTurnosView'), 'MisTurnosView');
+const SeleccionTecnicoView = perezoso(
+  () => import('@/features/agenda/SeleccionTecnicoView'),
+  'SeleccionTecnicoView',
+);
+const AgendaTecnicoView = perezoso(() => import('@/features/agenda/AgendaTecnicoView'), 'AgendaTecnicoView');
+const PanelAdministrativoView = perezoso(
+  () => import('@/features/admin-panel/PanelAdministrativoView'),
+  'PanelAdministrativoView',
+);
+const DashboardView = perezoso(() => import('@/features/dashboard/DashboardView'), 'DashboardView');
+const DesignView = perezoso(() => import('@/features/design/DesignView'), 'DesignView');
+const OlvideView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'OlvideView');
+const RestablecerView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'RestablecerView');
 import { TemaProvider } from '@/lib/tema';
 
 const queryClient = new QueryClient({
@@ -37,6 +56,13 @@ export function App() {
         <BrowserRouter>
           {/* AuthProvider adentro del router: LoginView navega al entrar. */}
           <AuthProvider>
+            <Suspense
+              fallback={
+                <div className="mx-auto max-w-5xl p-4 md:p-6">
+                  <EstadoCargando forma="bloque" etiqueta="Cargando pantalla…" />
+                </div>
+              }
+            >
             <Routes>
               <Route path="/login" element={<LoginView />} />
               {/* Publicas: quien las usa todavia no puede entrar. */}
@@ -61,6 +87,7 @@ export function App() {
                 </Route>
               </Route>
             </Routes>
+            </Suspense>
           </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>

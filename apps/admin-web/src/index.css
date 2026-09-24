@@ -473,12 +473,31 @@
   --chart-4: var(--color-magenta-300);
   --chart-5: var(--color-carbon-500);
 
-  --categoria-mecanica: var(--chart-2);
-  --categoria-mecanica-suave: var(--color-info-950);
-  --categoria-electrica: var(--chart-3);
-  --categoria-electrica-suave: var(--color-turquesa-950);
-  --categoria-latoneria: var(--chart-4);
-  --categoria-latoneria-suave: var(--color-magenta-950);
+  /*
+   * Agenda en oscuro (Sprint 15.2), revisada con un usuario con protanopia.
+   *
+   * Fondo de los bloques: NEGRO (carbon-950), igual para las tres
+   * categorias. Los 950 de cada familia (azul marino, verde petroleo,
+   * bordo) eran areas grandes, oscuras y saturadas que con protanopia se
+   * veian como manchas parecidas. Sobre negro el texto da 19:1 y las barras
+   * de categoria entre 6.6 y 18.5:1: la categoria es lo primero que se ve.
+   * Se probaron tambien un gris neutro, naranja-950 (con protanopia se ve
+   * oliva oscuro, otra mancha) y naranja-500 (tapa las barras y la linea de
+   * "ahora": 1.0:1).
+   *
+   * Barras e iconos: ya NO son alias de chart-2/3/4 en oscuro. Salen de un
+   * barrido de todos los trios de la paleta que maximiza la separacion con
+   * protanopia (21.5, antes 12.8) sin bajar de 8 en deuteranopia ni
+   * tritanopia (peor caso 12.9, antes 9.8): azul-400, crema (advertencia-
+   * 100, el amarillo claro de "electrico") y rosa-300. Los graficos siguen
+   * con sus series.
+   */
+  --categoria-mecanica: var(--color-info-400);
+  --categoria-mecanica-suave: var(--color-carbon-950);
+  --categoria-electrica: var(--color-advertencia-100);
+  --categoria-electrica-suave: var(--color-carbon-950);
+  --categoria-latoneria: var(--color-magenta-300);
+  --categoria-latoneria-suave: var(--color-carbon-950);
 
   --sidebar: var(--color-carbon-900);
   --sidebar-foreground: var(--color-carbon-100);

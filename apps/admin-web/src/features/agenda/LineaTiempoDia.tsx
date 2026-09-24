@@ -65,7 +65,7 @@ function BloqueTurno({ bloque, desde }: { bloque: Bloque; desde: number }) {
       aria-label={`${rango}, ${servicio}, ${bahia}${categoriaTxt ? `, ${categoriaTxt}` : ''}${
         turno.estado !== 'programado' ? `, ${turno.estado.replace('_', ' ')}` : ''
       }`}
-      className={`absolute inset-x-1 overflow-hidden rounded-md border-l-4 px-2 text-xs shadow-xs sm:inset-x-2 ${
+      className={`absolute inset-x-1 overflow-hidden rounded-md border-l-[6px] px-2 text-xs shadow-xs sm:inset-x-2 ${
         cancelado
           ? // Cancelado: sin relleno ni opacidad (bajaria el contraste del
             // texto); borde punteado y texto tachado.

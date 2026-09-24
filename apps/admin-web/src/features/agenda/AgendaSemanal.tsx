@@ -80,7 +80,7 @@ export function AgendaSemanal({
                     <div
                       key={b.turno.id}
                       title={`${formatearRango(b.inicio, b.fin)} · ${b.turno.servicio?.nombre ?? ''}`}
-                      className={`absolute inset-x-1 overflow-hidden rounded-sm border-l-[3px] px-1 text-[10px] leading-tight ${
+                      className={`absolute inset-x-1 overflow-hidden rounded-sm border-l-4 px-1 text-[10px] leading-tight ${
                         b.cancelado
                           ? `border border-dashed bg-card text-muted-foreground line-through ${c.borde}`
                           : `${c.borde} ${c.fondo} text-foreground`

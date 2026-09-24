@@ -69,6 +69,7 @@ services:
       PORT: 3001
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/turnos_platform
       REDIS_URL: redis://redis:6379
+      TZ_NEGOCIO: America/Bogota
       # Valores de JUGUETE, validos solo para este compose local. En
       # produccion van por Secret (ver infra/k8s/). JWT_SECRET tiene que ser
       # identico al de usuarios-service: uno firma y el otro valida.

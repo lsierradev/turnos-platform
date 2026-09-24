@@ -8,9 +8,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Raw, Repository } from 'typeorm';
 import { buscarTecnico, esRolTecnico } from '../../common/tecnicos.util';
 import {
-  inicioDelDiaUtc,
-  sumarDiasUtc,
-} from '../../common/ventanas-tiempo.util';
+  fechaEnZona,
+  inicioDelDiaEnZona,
+  partesEnZona,
+  sumarDiasFecha,
+  zonaHorariaNegocio,
+} from '../../common/zona-horaria.util';
 import { Bahia } from '../../entities/bahia.entity';
 import { EstadoTurno, Turno } from '../../entities/turno.entity';
 import { ServiciosService } from '../servicios/servicios.service';
@@ -89,13 +92,19 @@ function validarHorarioReservable(inicio: Date, fin: Date): void {
     );
   }
 
-  // Ventana laboral en UTC, la misma que usa sugerirHorarios: si estos dos
-  // criterios se separan, el sistema sugiere horarios que despues rechaza.
-  const horaInicio = inicio.getUTCHours() + inicio.getUTCMinutes() / 60;
-  const horaFin = fin.getUTCHours() + fin.getUTCMinutes() / 60;
+  // Ventana laboral en la zona del taller, la misma que usa sugerirHorarios:
+  // si estos dos criterios se separan, el sistema sugiere horarios que
+  // despues rechaza. El instante que manda el cliente puede venir con
+  // cualquier offset (Z, -05:00, ...): lo que importa es a que hora de
+  // pared del taller corresponde.
+  const zona = zonaHorariaNegocio();
+  const localInicio = partesEnZona(inicio, zona);
+  const localFin = partesEnZona(fin, zona);
+  const horaInicio = localInicio.hora + localInicio.minuto / 60;
+  const horaFin = localFin.hora + localFin.minuto / 60;
   const terminaOtroDia =
     fin.getTime() - inicio.getTime() > 0 &&
-    fin.toISOString().slice(0, 10) !== inicio.toISOString().slice(0, 10);
+    fechaEnZona(fin, zona) !== fechaEnZona(inicio, zona);
 
   if (
     horaInicio < HORA_APERTURA_DEFAULT ||
@@ -103,7 +112,7 @@ function validarHorarioReservable(inicio: Date, fin: Date): void {
     horaFin > HORA_CIERRE_DEFAULT
   ) {
     throw new BadRequestException(
-      `El turno debe quedar dentro del horario laboral (${HORA_APERTURA_DEFAULT}:00-${HORA_CIERRE_DEFAULT}:00 UTC).`,
+      `El turno debe quedar dentro del horario laboral (${HORA_APERTURA_DEFAULT}:00-${HORA_CIERRE_DEFAULT}:00, hora de ${zona}).`,
     );
   }
 }
@@ -232,8 +241,18 @@ export class AppointmentsService {
     //
     // El && lo resuelven los indices GiST de las constraints EXCLUDE (001 y
     // 006), que ya tienen bahia_id / tecnico_id como primera columna.
-    const desde = inicioDelDiaUtc(inicioSolicitado);
-    const hasta = sumarDiasUtc(desde, DIAS_BUSQUEDA_DEFAULT);
+    //
+    // La ventana se corta en dias de NEGOCIO, igual que en sugerirHorarios:
+    // si se cortara en dias UTC, a partir de las 19:00 de Bogota la consulta
+    // arrancaria en el dia siguiente y las sugerencias ignorarian los turnos
+    // ocupados de la tarde local.
+    const zona = zonaHorariaNegocio();
+    const fecha = fechaEnZona(inicioSolicitado, zona);
+    const desde = inicioDelDiaEnZona(fecha, zona);
+    const hasta = inicioDelDiaEnZona(
+      sumarDiasFecha(fecha, DIAS_BUSQUEDA_DEFAULT),
+      zona,
+    );
 
     const turnosOcupados = await this.turnosRepository.find({
       where: {
@@ -249,6 +268,7 @@ export class AppointmentsService {
       inicioSolicitado,
       duracionMinutos,
       turnosOcupados: turnosOcupados.map((turno) => turno.rangoTiempo),
+      zonaHoraria: zona,
     });
   }
 }

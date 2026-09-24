@@ -1,23 +1,9 @@
 /**
- * Helpers de ventanas de tiempo en UTC explicito.
+ * Helpers de ventanas de tiempo sobre `turnos`.
  *
- * UTC y no hora local del proceso: el backend delimita dias asi en todos
- * lados (ver technicians.service.ts, sugerencias-horarios.util.ts y
- * dashboard.service.ts). Usar setHours/setDate correria la ventana en
- * cualquier servidor que no corra en UTC.
+ * Donde empieza y termina un DIA ya no se decide aca: desde Sprint 12 los
+ * dias son del taller (TZ_NEGOCIO), ver zona-horaria.util.ts.
  */
-
-export function inicioDelDiaUtc(fecha: Date): Date {
-  const dia = new Date(fecha);
-  dia.setUTCHours(0, 0, 0, 0);
-  return dia;
-}
-
-export function sumarDiasUtc(fecha: Date, dias: number): Date {
-  const resultado = new Date(fecha);
-  resultado.setUTCDate(resultado.getUTCDate() + dias);
-  return resultado;
-}
 
 /**
  * Condicion SQL para traer de `turnos` solo los que tocan una ventana.

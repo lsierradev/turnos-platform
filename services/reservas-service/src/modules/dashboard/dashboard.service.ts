@@ -1,6 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { RedisCacheService } from '../../common/redis-cache.service';
+import {
+  fechaEnZona,
+  inicioDelDiaEnZona,
+  sumarDiasFecha,
+  zonaHorariaNegocio,
+} from '../../common/zona-horaria.util';
 import { KpisQueryDto } from './dto/kpis-query.dto';
 
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
@@ -43,12 +49,17 @@ const TTL_CACHE_SEGUNDOS = 2;
 //   unicas que lee la agregacion, asi que el plan puede resolverse sin
 //   tocar el heap de turnos.
 //
-// - AT TIME ZONE 'UTC' va en el GROUP BY y NO en el WHERE, a proposito:
-//   date_trunc('day', timestamptz) usa el TimeZone de la sesion, que
-//   depende de como este configurado el servidor -- los dias saldrian
-//   corridos segun donde corra Postgres. El WHERE se deja sobre la columna
+// - AT TIME ZONE $3 (la zona de negocio, TZ_NEGOCIO) va en el GROUP BY y NO
+//   en el WHERE, a proposito: agrupar un timestamptz sin zona explicita usa
+//   el TimeZone de la sesion, que depende de como este configurado el
+//   servidor. Con 'UTC' fijo (hasta Sprint 11) un turno de las 20:00 en
+//   Bogota contaba para el dia siguiente. El WHERE se deja sobre la columna
 //   cruda para que siga siendo sargable contra el indice; envolver
 //   lower(rango_tiempo) en una conversion ahi lo volveria inutilizable.
+//
+// - El dia sale como TEXTO (to_char), no como timestamp: AT TIME ZONE
+//   devuelve un timestamp SIN zona, y el driver pg lo parsearia como hora
+//   local del proceso Node -- volviendo a depender de la zona del proceso.
 //
 // - Devuelve SUMAS y CONTEOS, no promedios por dia. El resumen del periodo
 //   se calcula despues en Node dividiendo los totales. Promediar los
@@ -56,7 +67,7 @@ const TTL_CACHE_SEGUNDOS = 2;
 //   pesaria igual que uno con 40.
 const SQL_KPIS = `
   SELECT
-    date_trunc('day', lower(rango_tiempo) AT TIME ZONE 'UTC') AS dia,
+    to_char(lower(rango_tiempo) AT TIME ZONE $3, 'YYYY-MM-DD') AS dia,
     count(*) FILTER (WHERE estado = 'atendido')::int          AS atendidos,
     count(*) FILTER (WHERE estado = 'no_asistio')::int        AS no_asistio,
     count(*) FILTER (WHERE estado = 'cancelado')::int         AS cancelados,
@@ -82,7 +93,8 @@ const SQL_KPIS = `
 `;
 
 interface FilaKpis {
-  dia: Date;
+  /** YYYY-MM-DD en la zona de negocio. */
+  dia: string;
   atendidos: number;
   no_asistio: number;
   cancelados: number;
@@ -117,10 +129,6 @@ export interface KpisResponse {
   rango: { from: string; to: string };
   resumen: KpisResumen;
   serie: KpiDia[];
-}
-
-function fechaISO(fecha: Date): string {
-  return fecha.toISOString().slice(0, 10);
 }
 
 // Tasa de asistencia = atendidos / (atendidos + no_asistio).
@@ -158,13 +166,17 @@ export class DashboardService {
   ) {}
 
   async kpis(query: KpisQueryDto): Promise<KpisResponse> {
-    const { from, to, desde, hasta } = this.rangoUtc(query);
+    const zona = zonaHorariaNegocio();
+    const { from, to, desde, hasta } = this.rango(query, zona);
 
     // La clave incluye el rango: dos admins mirando periodos distintos no
     // deben compartir entrada. Con el rango por defecto (hoy) todos los
     // paneles abiertos caen en la misma clave, que es justamente el caso que
-    // hace falta abaratar.
-    const claveCache = `kpis:${from}:${to}`;
+    // hace falta abaratar. La zona tambien va en la clave: el mismo from/to
+    // cubre instantes distintos segun TZ_NEGOCIO, y durante un cambio de
+    // configuracion conviven instancias con valores distintos sobre el
+    // mismo Redis.
+    const claveCache = `kpis:${zona}:${from}:${to}`;
     const cacheado = await this.cache.obtener<KpisResponse>(claveCache);
     if (cacheado) {
       return cacheado;
@@ -174,12 +186,16 @@ export class DashboardService {
       await manager.query(
         `SET LOCAL statement_timeout = ${TIMEOUT_CONSULTA_MS}`,
       );
-      return (await manager.query(SQL_KPIS, [desde, hasta])) as FilaKpis[];
+      return (await manager.query(SQL_KPIS, [
+        desde,
+        hasta,
+        zona,
+      ])) as FilaKpis[];
     });
 
     const porDia = new Map<string, FilaKpis>();
     for (const fila of filas) {
-      porDia.set(fechaISO(new Date(fila.dia)), fila);
+      porDia.set(fila.dia, fila);
     }
 
     const serie: KpiDia[] = [];
@@ -200,12 +216,10 @@ export class DashboardService {
     // omitieran, el grafico uniria con una linea recta el dia anterior con
     // el siguiente y un feriado sin actividad se leeria como actividad
     // normal interpolada.
-    for (
-      let dia = new Date(desde);
-      dia < hasta;
-      dia = new Date(dia.getTime() + MS_POR_DIA)
-    ) {
-      const fecha = fechaISO(dia);
+    //
+    // Se itera por fechas de calendario y no sumando 24 h a un instante: en
+    // una zona con horario de verano hay dias de 23 y de 25 horas.
+    for (let fecha = from; fecha <= to; fecha = sumarDiasFecha(fecha, 1)) {
       const fila = porDia.get(fecha);
 
       const atendidos = fila?.atendidos ?? 0;
@@ -255,36 +269,45 @@ export class DashboardService {
     return respuesta;
   }
 
-  // Traduce ?from=&to= (dias inclusive, en UTC) a la ventana half-open
-  // [desde, hasta) que usa la consulta. Misma convencion UTC explicita que
-  // technicians.service.ts: el backend nunca usa la hora local del proceso
-  // para delimitar un dia.
-  private rangoUtc(query: KpisQueryDto): {
+  // Traduce ?from=&to= (dias inclusive, dias del TALLER) a la ventana
+  // half-open [desde, hasta) que usa la consulta: desde = 00:00 local de
+  // `from`, hasta = 00:00 local del dia siguiente a `to`. Mismo criterio que
+  // technicians.service.ts; nunca la hora local del proceso.
+  private rango(
+    query: KpisQueryDto,
+    zona: string,
+  ): {
     from: string;
     to: string;
     desde: Date;
     hasta: Date;
   } {
-    const hoy = fechaISO(new Date());
+    const hoy = fechaEnZona(new Date(), zona);
     const from = query.from ?? query.to ?? hoy;
     const to = query.to ?? query.from ?? hoy;
 
-    const desde = new Date(`${from}T00:00:00.000Z`);
-    const finInclusivo = new Date(`${to}T00:00:00.000Z`);
+    // Medianoche UTC solo como calculadora de calendario: sirve para validar
+    // y contar dias, NO para delimitar la ventana de la consulta.
+    const inicioCalendario = new Date(`${from}T00:00:00.000Z`);
+    const finCalendario = new Date(`${to}T00:00:00.000Z`);
 
     // El regex del DTO acepta cosas como 2024-13-45: valida la FORMA, no
     // que la fecha exista. Date() la convierte en NaN y, sin este chequeo,
     // el rango llegaria a Postgres como null y el dashboard devolveria
     // ceros en vez de un error.
-    if (Number.isNaN(desde.getTime()) || Number.isNaN(finInclusivo.getTime())) {
+    if (
+      Number.isNaN(inicioCalendario.getTime()) ||
+      Number.isNaN(finCalendario.getTime())
+    ) {
       throw new BadRequestException('from/to no son fechas validas');
     }
 
-    if (finInclusivo < desde) {
+    if (finCalendario < inicioCalendario) {
       throw new BadRequestException('`from` no puede ser posterior a `to`');
     }
 
-    const dias = (finInclusivo.getTime() - desde.getTime()) / MS_POR_DIA + 1;
+    const dias =
+      (finCalendario.getTime() - inicioCalendario.getTime()) / MS_POR_DIA + 1;
     if (dias > MAX_DIAS_RANGO) {
       throw new BadRequestException(
         `El rango no puede superar ${MAX_DIAS_RANGO} dias (se pidieron ${dias})`,
@@ -294,8 +317,8 @@ export class DashboardService {
     return {
       from,
       to,
-      desde,
-      hasta: new Date(finInclusivo.getTime() + MS_POR_DIA),
+      desde: inicioDelDiaEnZona(from, zona),
+      hasta: inicioDelDiaEnZona(sumarDiasFecha(to, 1), zona),
     };
   }
 }

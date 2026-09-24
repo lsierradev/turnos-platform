@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
   DatosSembrados,
+  fechaISO,
   horarioLaboral,
   limpiar,
   sembrar,
@@ -76,9 +77,9 @@ test.describe('HU1 - Reservar un turno', () => {
 
     // La reserva se persistio de verdad: se lee de vuelta por otro endpoint.
     const agenda = await request.get(
-      `${URL_RESERVAS}/technicians/${datos.tecnicoId}/agenda?date=${
-        inicio.toISOString().slice(0, 10)
-      }`,
+      `${URL_RESERVAS}/technicians/${datos.tecnicoId}/agenda?date=${fechaISO(
+        inicio,
+      )}`,
       { headers: encabezados(tokenAdmin) },
     );
     expect(agenda.status()).toBe(200);

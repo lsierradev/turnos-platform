@@ -1,6 +1,8 @@
 import { APIRequestContext, APIResponse, expect, test } from '@playwright/test';
 import {
   DatosSembrados,
+  fechaISO,
+  horaEnTaller,
   horarioLaboral,
   limpiar,
   sembrar,
@@ -88,8 +90,10 @@ test.describe('HU2 - Conflicto de horario y sugerencias', () => {
       // horario laboral, con la duracion del servicio y sin pisar el turno
       // que acaba de ocupar el lugar. Devolver horarios que vuelven a dar
       // 409 seria peor que no sugerir nada.
-      expect(desde.getUTCHours()).toBeGreaterThanOrEqual(8);
-      expect(hasta.getUTCHours()).toBeLessThanOrEqual(18);
+      // Hora del taller, no UTC: 08:00 en Bogota son las 13:00Z.
+      expect(horaEnTaller(desde) >= '08:00').toBe(true);
+      expect(horaEnTaller(hasta) <= '18:00').toBe(true);
+      expect(fechaISO(hasta)).toBe(fechaISO(desde));
       expect((hasta.getTime() - desde.getTime()) / 60_000).toBe(
         datos.duracionMinutos,
       );

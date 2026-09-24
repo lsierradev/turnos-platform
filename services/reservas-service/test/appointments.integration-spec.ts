@@ -22,6 +22,16 @@ if (!DATABASE_URL) {
   );
 }
 
+// Hora de pared de Bogota (TZ_NEGOCIO por defecto, UTC-5 fijo) `dias` dias
+// adelante. Desde Sprint 12 el horario laboral es 8-18 LOCAL: las 09:00Z que
+// se usaban antes son las 04:00 en Bogota y ahora se rechazan.
+function horaLocalBogota(hora: number, dias: number): string {
+  const hoyBogota = new Date(Date.now() - 5 * 3_600_000);
+  hoyBogota.setUTCDate(hoyBogota.getUTCDate() + dias);
+  const fecha = hoyBogota.toISOString().slice(0, 10);
+  return `${fecha}T${String(hora).padStart(2, '0')}:00:00-05:00`;
+}
+
 describirSiHayDb('Appointments (integration)', () => {
   let app: INestApplication;
   let dataSource: DataSource;
@@ -127,9 +137,7 @@ describirSiHayDb('Appointments (integration)', () => {
   });
 
   it('solo confirma una de dos reservas concurrentes sobre la misma bahia (HU2)', async () => {
-    const inicio = new Date();
-    inicio.setUTCDate(inicio.getUTCDate() + 3);
-    inicio.setUTCHours(9, 0, 0, 0);
+    const inicio = new Date(horaLocalBogota(9, 3));
 
     const body = {
       bahiaId,
@@ -164,9 +172,7 @@ describirSiHayDb('Appointments (integration)', () => {
   });
 
   it('rechaza el mismo tecnico en dos bahias distintas al mismo horario', async () => {
-    const inicio = new Date();
-    inicio.setUTCDate(inicio.getUTCDate() + 4);
-    inicio.setUTCHours(10, 0, 0, 0);
+    const inicio = new Date(horaLocalBogota(10, 4));
 
     const server = app.getHttpServer();
     const resultados = await Promise.allSettled([

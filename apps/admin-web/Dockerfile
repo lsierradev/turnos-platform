@@ -41,6 +41,12 @@ ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_AUTH_URL=$VITE_AUTH_URL
 RUN test -n "$VITE_API_URL" || (echo "ERROR: falta --build-arg VITE_API_URL" && exit 1)
 RUN test -n "$VITE_AUTH_URL" || (echo "ERROR: falta --build-arg VITE_AUTH_URL" && exit 1)
+# Zona horaria del taller (Sprint 12). Opcional, con el mismo default que
+# TZ_NEGOCIO de reservas-service: si se cambia una, hay que cambiar la otra,
+# o la agenda y el dashboard muestran dias y horas distintos a los que valida
+# el backend.
+ARG VITE_TZ_NEGOCIO=America/Bogota
+ENV VITE_TZ_NEGOCIO=$VITE_TZ_NEGOCIO
 
 RUN pnpm --filter @turnos-platform/admin-web build
 

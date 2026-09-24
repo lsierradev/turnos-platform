@@ -5,7 +5,8 @@ import { RedisCacheService } from '../../common/redis-cache.service';
 import { DashboardService } from './dashboard.service';
 
 interface FilaCruda {
-  dia: Date;
+  // YYYY-MM-DD ya en la zona de negocio: la consulta lo devuelve con to_char.
+  dia: string;
   atendidos: number;
   no_asistio: number;
   cancelados: number;
@@ -16,7 +17,7 @@ interface FilaCruda {
 
 function fila(dia: string, valores: Partial<FilaCruda> = {}): FilaCruda {
   return {
-    dia: new Date(`${dia}T00:00:00.000Z`),
+    dia,
     atendidos: 0,
     no_asistio: 0,
     cancelados: 0,
@@ -65,13 +66,17 @@ describe('DashboardService', () => {
   });
 
   describe('rango de fechas', () => {
-    it('traduce from/to inclusive a una ventana UTC half-open', async () => {
+    it('traduce from/to inclusive a una ventana half-open en dias de Bogota', async () => {
       await service.kpis({ from: '2024-01-08', to: '2024-01-09' });
 
       // El primer query() de la transaccion es el SET LOCAL statement_timeout.
-      const [, params] = queryKpis.mock.calls[1];
-      expect(params[0]).toEqual(new Date('2024-01-08T00:00:00.000Z'));
-      expect(params[1]).toEqual(new Date('2024-01-10T00:00:00.000Z'));
+      const [sql, params] = queryKpis.mock.calls[1];
+      // 00:00 en Bogota (UTC-5) = 05:00Z.
+      expect(params[0]).toEqual(new Date('2024-01-08T05:00:00.000Z'));
+      expect(params[1]).toEqual(new Date('2024-01-10T05:00:00.000Z'));
+      // Y el agrupado por dia usa la misma zona, no la de la sesion.
+      expect(params[2]).toBe('America/Bogota');
+      expect(sql).toContain('AT TIME ZONE $3');
     });
 
     it('acota la consulta con un statement_timeout propio', async () => {
@@ -100,12 +105,49 @@ describe('DashboardService', () => {
       );
     });
 
-    it('sin from ni to usa el dia de hoy', async () => {
-      const resultado = await service.kpis({});
-      const hoy = new Date().toISOString().slice(0, 10);
+    describe('sin from ni to usa el dia de hoy del taller (Sprint 12)', () => {
+      afterEach(() => {
+        jest.useRealTimers();
+      });
 
-      expect(resultado.rango).toEqual({ from: hoy, to: hoy });
-      expect(resultado.serie).toHaveLength(1);
+      function congelarReloj(instante: string) {
+        // Solo el reloj: las promesas tienen que seguir resolviendo solas.
+        jest.useFakeTimers({
+          now: new Date(instante),
+          doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'],
+        });
+      }
+
+      it('a las 23:30 locales hoy sigue siendo hoy, aunque en UTC ya sea manana', async () => {
+        congelarReloj('2024-01-08T23:30:00-05:00'); // 04:30Z del 9
+
+        const resultado = await service.kpis({});
+
+        expect(resultado.rango).toEqual({
+          from: '2024-01-08',
+          to: '2024-01-08',
+        });
+        expect(resultado.serie).toHaveLength(1);
+      });
+
+      it('a las 00:10 locales ya es el dia nuevo', async () => {
+        congelarReloj('2024-01-09T00:10:00-05:00');
+
+        const resultado = await service.kpis({});
+
+        expect(resultado.rango).toEqual({
+          from: '2024-01-09',
+          to: '2024-01-09',
+        });
+      });
+
+      it('a las 19:00 locales (00:00Z) no salta al dia siguiente', async () => {
+        congelarReloj('2024-01-08T19:00:00-05:00');
+
+        const resultado = await service.kpis({});
+
+        expect(resultado.rango.from).toBe('2024-01-08');
+      });
     });
   });
 
@@ -283,9 +325,11 @@ describe('DashboardService', () => {
     it('cachea por rango, no en una sola entrada global', async () => {
       await service.kpis({ from: '2024-01-08', to: '2024-01-09' });
 
-      expect(cache.obtener).toHaveBeenCalledWith('kpis:2024-01-08:2024-01-09');
+      expect(cache.obtener).toHaveBeenCalledWith(
+        'kpis:America/Bogota:2024-01-08:2024-01-09',
+      );
       expect(cache.guardar).toHaveBeenCalledWith(
-        'kpis:2024-01-08:2024-01-09',
+        'kpis:America/Bogota:2024-01-08:2024-01-09',
         expect.objectContaining({
           rango: { from: '2024-01-08', to: '2024-01-09' },
         }),

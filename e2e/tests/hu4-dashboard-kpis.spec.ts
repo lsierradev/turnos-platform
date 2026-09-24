@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import {
+  aLasEnTaller,
   DatosSembrados,
+  hoyEnTaller,
   limpiar,
   PASSWORD_DE_PRUEBA,
   sembrar,
@@ -25,9 +27,8 @@ import { URL_RESERVAS } from '../playwright.config';
 const DIA_A = '2018-05-10';
 const DIA_B = '2018-05-11';
 
-function aLas(dia: string, hora: number): Date {
-  return new Date(`${dia}T${String(hora).padStart(2, '0')}:00:00.000Z`);
-}
+// Hora del taller: el dashboard corta los dias en TZ_NEGOCIO.
+const aLas = (dia: string, hora: number): Date => aLasEnTaller(dia, hora);
 
 test.describe('HU4 - Dashboard de indicadores', () => {
   let datos: DatosSembrados;
@@ -181,7 +182,8 @@ test.describe('HU4 - Dashboard de indicadores', () => {
     await abrirConRango(page);
     await page.getByRole('button', { name: '7 dias' }).click();
 
-    const hoy = new Date().toISOString().slice(0, 10);
-    await expect(page.getByLabel('Hasta')).toHaveValue(hoy);
+    // Hoy del taller: despues de las 19:00 en Bogota ya no coincide con el
+    // hoy UTC.
+    await expect(page.getByLabel('Hasta')).toHaveValue(hoyEnTaller());
   });
 });

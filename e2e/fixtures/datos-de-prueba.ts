@@ -232,7 +232,43 @@ export async function sembrarTurnos(
 }
 
 /**
- * Un horario dentro de la ventana laboral (08:00-18:00 UTC, ver
+ * Hora del TALLER (Sprint 12). La suite asume TZ_NEGOCIO = America/Bogota,
+ * el default de reservas-service y de admin-web: UTC-5 fijo, sin horario de
+ * verano, asi que el offset va escrito a mano en vez de reusar el codigo de
+ * la app (un test que convierte con el mismo codigo que prueba no prueba
+ * nada).
+ */
+const OFFSET_TALLER = '-05:00';
+const OFFSET_TALLER_MS = -5 * 3_600_000;
+
+/** Fecha (YYYY-MM-DD) en que cae `instante` para el taller. */
+export function fechaISO(instante: Date): string {
+  return new Date(instante.getTime() + OFFSET_TALLER_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** Hoy (YYYY-MM-DD) para el taller. */
+export function hoyEnTaller(): string {
+  return fechaISO(new Date());
+}
+
+/** Hora de pared HH:MM del taller para `instante`. */
+export function horaEnTaller(instante: Date): string {
+  return new Date(instante.getTime() + OFFSET_TALLER_MS)
+    .toISOString()
+    .slice(11, 16);
+}
+
+/** El instante de las `hora`:`minuto` del taller el dia `fecha`. */
+export function aLasEnTaller(fecha: string, hora: number, minuto = 0): Date {
+  const hh = String(hora).padStart(2, '0');
+  const mm = String(minuto).padStart(2, '0');
+  return new Date(`${fecha}T${hh}:${mm}:00${OFFSET_TALLER}`);
+}
+
+/**
+ * Un horario dentro de la ventana laboral (08:00-18:00 hora del taller, ver
  * sugerencias-horarios.util.ts) y en el futuro, para que la reserva sea
  * agendable y las sugerencias ante conflicto tengan donde caer.
  *
@@ -241,12 +277,7 @@ export async function sembrarTurnos(
  * quedan huecos hacia adelante en el dia.
  */
 export function horarioLaboral(hora: number, diasAdelante = 2): Date {
-  const fecha = new Date();
+  const fecha = new Date(`${hoyEnTaller()}T00:00:00.000Z`);
   fecha.setUTCDate(fecha.getUTCDate() + diasAdelante);
-  fecha.setUTCHours(hora, 0, 0, 0);
-  return fecha;
-}
-
-export function fechaISO(fecha: Date): string {
-  return fecha.toISOString().slice(0, 10);
+  return aLasEnTaller(fecha.toISOString().slice(0, 10), hora);
 }

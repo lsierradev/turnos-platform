@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { decrypt } from '@turnos-platform/crypto';
 import { Queue } from 'bull';
 import { DataSource } from 'typeorm';
+import { horaEnZona, zonaHorariaNegocio } from '../../common/zona-horaria.util';
 import { CanalNotificacion } from './entities/notificacion.entity';
 import {
   NOMBRE_COLA_NOTIFICACIONES,
@@ -196,7 +197,8 @@ export class NotificationsSchedulerService {
   }
 
   private construirMensaje(turno: TurnoParaRecordar): string {
-    const hora = turno.inicio.toISOString().slice(11, 16);
-    return `Recordatorio: tenes un turno manana a las ${hora} (UTC) en ${turno.bahiaNombre} para ${turno.servicioNombre}.`;
+    // Hora del taller: es la que el cliente tiene que mirar en su reloj.
+    const hora = horaEnZona(turno.inicio, zonaHorariaNegocio());
+    return `Recordatorio: tenes un turno manana a las ${hora} en ${turno.bahiaNombre} para ${turno.servicioNombre}.`;
   }
 }

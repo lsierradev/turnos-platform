@@ -3,9 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Raw, Repository } from 'typeorm';
 import { buscarTecnico, esRolTecnico } from '../../common/tecnicos.util';
 import {
-  inicioDelDiaUtc,
-  sumarDiasUtc,
-} from '../../common/ventanas-tiempo.util';
+  inicioDelDiaEnZona,
+  sumarDiasFecha,
+  zonaHorariaNegocio,
+} from '../../common/zona-horaria.util';
 import { Turno } from '../../entities/turno.entity';
 
 @Injectable()
@@ -16,7 +17,8 @@ export class TechniciansService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async agendaDelDia(tecnicoId: string, fecha: Date): Promise<Turno[]> {
+  /** @param fecha dia de negocio, YYYY-MM-DD (ver fechaDeNegocio). */
+  async agendaDelDia(tecnicoId: string, fecha: string): Promise<Turno[]> {
     const tecnico = await buscarTecnico(this.dataSource, tecnicoId);
     if (!tecnico || !esRolTecnico(tecnico.rol)) {
       throw new NotFoundException(
@@ -24,8 +26,12 @@ export class TechniciansService {
       );
     }
 
-    const desde = inicioDelDiaUtc(fecha);
-    const hasta = sumarDiasUtc(desde, 1);
+    // Dia del TALLER, no dia UTC: en Bogota el dia UTC arranca a las 19:00,
+    // asi que un turno de las 20:00 locales aparecia en la agenda de
+    // manana.
+    const zona = zonaHorariaNegocio();
+    const desde = inicioDelDiaEnZona(fecha, zona);
+    const hasta = inicioDelDiaEnZona(sumarDiasFecha(fecha, 1), zona);
 
     // El filtro por fecha va en SQL, no en memoria.
     //

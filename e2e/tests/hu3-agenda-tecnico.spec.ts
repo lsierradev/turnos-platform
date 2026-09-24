@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import {
+  aLasEnTaller,
   DatosSembrados,
+  hoyEnTaller,
   limpiar,
   PASSWORD_DE_PRUEBA,
   sembrar,
@@ -22,13 +24,11 @@ import { URL_RESERVAS } from '../playwright.config';
 test.describe('HU3 - Agenda del tecnico', () => {
   let datos: DatosSembrados;
 
-  // Hoy en UTC, que es la fecha que la vista toma por defecto (hoyISO()).
-  // Las horas se eligen dentro del horario laboral para que la agenda se
-  // parezca a un dia real.
+  // Hoy del taller, que es la fecha que la vista toma por defecto
+  // (hoyISO()). Las horas se eligen dentro del horario laboral para que la
+  // agenda se parezca a un dia real.
   function hoyALas(hora: number): Date {
-    const fecha = new Date();
-    fecha.setUTCHours(hora, 0, 0, 0);
-    return fecha;
+    return aLasEnTaller(hoyEnTaller(), hora);
   }
 
   test.beforeAll(async () => {
@@ -57,8 +57,9 @@ test.describe('HU3 - Agenda del tecnico', () => {
     // +1 por la fila de encabezados.
     await expect(filas).toHaveCount(3);
 
-    // formatearHora() imprime en UTC (ver lib/dates.ts), asi que estos
-    // valores no dependen de la zona horaria de la maquina que corre el test.
+    // formatearHora() imprime en la hora del taller (ver lib/dates.ts), asi
+    // que estos valores no dependen de la zona horaria de la maquina que
+    // corre el test.
     const primera = filas.nth(1);
     await expect(primera).toContainText('09:00');
     await expect(primera).toContainText('09:30');

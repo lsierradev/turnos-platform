@@ -37,6 +37,10 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
   // turnos que hayan dejado otros specs de integracion.
   const DIA_1 = '2019-03-04';
   const DIA_2 = '2019-03-05';
+  // Par aparte para el corte de medianoche, separado de DIA_1/DIA_2 para no
+  // tocar los totales de los otros tests.
+  const DIA_NOCHE = '2019-03-07';
+  const DIA_NOCHE_SIGUIENTE = '2019-03-08';
 
   async function insertarTurno(
     dia: string,
@@ -44,8 +48,9 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
     estado: string,
     minutosAtencion?: number,
   ) {
-    const inicio = `${dia}T${String(hora).padStart(2, '0')}:00:00.000Z`;
-    const fin = `${dia}T${String(hora + 1).padStart(2, '0')}:00:00.000Z`;
+    // Hora de pared de Bogota (TZ_NEGOCIO por defecto, UTC-5 sin DST).
+    const inicio = `${dia}T${String(hora).padStart(2, '0')}:00:00-05:00`;
+    const fin = `${dia}T${String(hora + 1).padStart(2, '0')}:00:00-05:00`;
 
     const atencionInicio = minutosAtencion === undefined ? null : inicio;
     const atencionFin =
@@ -130,6 +135,9 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
     await insertarTurno(DIA_2, 9, 'atendido');
     await insertarTurno(DIA_2, 11, 'cancelado');
     await insertarTurno(DIA_2, 13, 'programado');
+
+    // 22:00 locales de DIA_NOCHE = 03:00Z de DIA_NOCHE_SIGUIENTE.
+    await insertarTurno(DIA_NOCHE, 22, 'atendido');
   });
 
   afterAll(async () => {
@@ -170,7 +178,26 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
     expect(body.resumen.turnosMedidos).toBe(3);
   });
 
-  it('agrupa por dia en UTC, sin depender del TimeZone del servidor', async () => {
+  it('un turno de la noche local cuenta para ese dia, no para el dia UTC siguiente', async () => {
+    const server = app.getHttpServer();
+
+    const { body: noche } = await request(server)
+      .get(`/dashboard/kpis?from=${DIA_NOCHE}&to=${DIA_NOCHE}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const { body: siguiente } = await request(server)
+      .get(
+        `/dashboard/kpis?from=${DIA_NOCHE_SIGUIENTE}&to=${DIA_NOCHE_SIGUIENTE}`,
+      )
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(noche.resumen.turnosAtendidos).toBe(1);
+    expect(noche.serie[0].atendidos).toBe(1);
+    expect(siguiente.resumen.turnosTotales).toBe(0);
+  });
+
+  it('agrupa por dia de la zona de negocio, sin depender del TimeZone del servidor', async () => {
     const { body } = await request(app.getHttpServer())
       .get(`/dashboard/kpis?from=${DIA_1}&to=${DIA_2}`)
       .set('Authorization', `Bearer ${token}`)
@@ -201,7 +228,7 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
     // algo falso. Lo que se verifica es lo que si esta bajo control del
     // codigo: que el indice SEA UTILIZABLE para este predicado. Si alguien
     // envuelve lower(rango_tiempo) en una conversion -- p. ej. mueve el
-    // AT TIME ZONE 'UTC' del GROUP BY al WHERE -- el indice deja de aplicar
+    // AT TIME ZONE del GROUP BY al WHERE -- el indice deja de aplicar
     // y este test falla aunque los numeros sigan dando bien.
     // El SET LOCAL va en su propio query() dentro de una transaccion: el
     // protocolo extendido de Postgres (el que usa el driver cuando hay

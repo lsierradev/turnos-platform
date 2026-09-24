@@ -52,16 +52,21 @@ describe('AppointmentsService', () => {
 
   // Fecha relativa y no fija: desde Sprint 9 create() rechaza reservas en
   // el pasado, asi que una fecha literal de 2024 haria que estos tests
-  // empezaran a fallar con el correr del calendario. 09:00 UTC cae dentro
-  // del horario laboral que tambien se valida.
-  function proximoHorarioLaboral(): Date {
-    const fecha = new Date();
-    fecha.setUTCDate(fecha.getUTCDate() + 2);
-    fecha.setUTCHours(9, 0, 0, 0);
-    return fecha;
+  // empezaran a fallar con el correr del calendario.
+  //
+  // Hora de pared de Bogota (zona de negocio por defecto, UTC-5 fijo) con el
+  // offset escrito a mano, sin pasar por zona-horaria.util: asi el test no
+  // valida el codigo con el mismo codigo.
+  function horaLocalBogota(hora: number, minuto = 0, diasAdelante = 2): string {
+    const hoyBogota = new Date(Date.now() - 5 * 3_600_000);
+    hoyBogota.setUTCDate(hoyBogota.getUTCDate() + diasAdelante);
+    const fecha = hoyBogota.toISOString().slice(0, 10);
+    const hh = String(hora).padStart(2, '0');
+    const mm = String(minuto).padStart(2, '0');
+    return `${fecha}T${hh}:${mm}:00-05:00`;
   }
 
-  const inicioValido = proximoHorarioLaboral();
+  const inicioValido = new Date(horaLocalBogota(9));
 
   const dto: CreateAppointmentDto = {
     bahiaId: bahia.id,
@@ -208,12 +213,20 @@ describe('AppointmentsService', () => {
     expect(Array.isArray(response.sugerencias)).toBe(true);
   });
 
-  describe('validacion de horario (Sprint 9)', () => {
-    function enHorario(hora: number, diasAdelante = 2): string {
-      const fecha = new Date();
-      fecha.setUTCDate(fecha.getUTCDate() + diasAdelante);
-      fecha.setUTCHours(hora, 0, 0, 0);
-      return fecha.toISOString();
+  describe('validacion de horario (Sprint 9, zona de negocio desde Sprint 12)', () => {
+    const zonaOriginal = process.env.TZ_NEGOCIO;
+
+    afterEach(() => {
+      if (zonaOriginal === undefined) {
+        delete process.env.TZ_NEGOCIO;
+      } else {
+        process.env.TZ_NEGOCIO = zonaOriginal;
+      }
+    });
+
+    function aceptaGuardar() {
+      turnosRepository.create.mockReturnValue({ id: 'turno-1' } as Turno);
+      turnosRepository.save.mockResolvedValue({ id: 'turno-1' } as Turno);
     }
 
     it('rechaza una reserva en el pasado', async () => {
@@ -226,7 +239,7 @@ describe('AppointmentsService', () => {
 
     it('rechaza una reserva antes de la apertura', async () => {
       await expect(
-        service.create({ ...dto, inicio: enHorario(3) }, 'u-1'),
+        service.create({ ...dto, inicio: horaLocalBogota(3) }, 'u-1'),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -235,25 +248,72 @@ describe('AppointmentsService', () => {
       // sugerencias nunca ofreceria ese horario: si create() lo aceptara,
       // se podria entrar por la puerta de adelante a algo que el sistema
       // considera inreservable.
-      const fecha = new Date();
-      fecha.setUTCDate(fecha.getUTCDate() + 2);
-      fecha.setUTCHours(17, 45, 0, 0);
-
       await expect(
-        service.create({ ...dto, inicio: fecha.toISOString() }, 'u-1'),
+        service.create({ ...dto, inicio: horaLocalBogota(17, 45) }, 'u-1'),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('acepta una reserva que termina justo al cierre', async () => {
-      const fecha = new Date();
-      fecha.setUTCDate(fecha.getUTCDate() + 2);
-      fecha.setUTCHours(17, 30, 0, 0);
-      turnosRepository.create.mockReturnValue({ id: 'turno-1' } as Turno);
-      turnosRepository.save.mockResolvedValue({ id: 'turno-1' } as Turno);
+      aceptaGuardar();
 
       await expect(
-        service.create({ ...dto, inicio: fecha.toISOString() }, 'u-1'),
+        service.create({ ...dto, inicio: horaLocalBogota(17, 30) }, 'u-1'),
       ).resolves.toEqual({ id: 'turno-1' });
+    });
+
+    it('acepta las 14:00 locales aunque lleguen expresadas en UTC', async () => {
+      // 14:00 en Bogota = 19:00Z. Es el caso que el navegador manda con
+      // toISOString(): la hora de pared la define la zona, no el sufijo.
+      aceptaGuardar();
+      const inicio = new Date(horaLocalBogota(14)).toISOString();
+
+      await expect(service.create({ ...dto, inicio }, 'u-1')).resolves.toEqual({
+        id: 'turno-1',
+      });
+    });
+
+    it('rechaza las 07:45 locales aunque en UTC (12:45Z) parezcan horario laboral', async () => {
+      await expect(
+        service.create({ ...dto, inicio: horaLocalBogota(7, 45) }, 'u-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rechaza un turno que cruza la medianoche local', async () => {
+      // 23:45 + 30 min = 00:15 del dia siguiente en Bogota (04:45Z-05:15Z,
+      // mismo dia UTC: con el criterio anterior no se detectaba el cruce).
+      await expect(
+        service.create({ ...dto, inicio: horaLocalBogota(23, 45) }, 'u-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rechaza las 00:00 locales en punto', async () => {
+      await expect(
+        service.create({ ...dto, inicio: horaLocalBogota(0, 0) }, 'u-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('nombra la zona en el mensaje de error', async () => {
+      const error = await service
+        .create({ ...dto, inicio: horaLocalBogota(3) }, 'u-1')
+        .catch((e: BadRequestException) => e);
+
+      expect((error as BadRequestException).message).toContain(
+        'America/Bogota',
+      );
+    });
+
+    it('respeta TZ_NEGOCIO configurada', async () => {
+      process.env.TZ_NEGOCIO = 'Asia/Tokyo'; // UTC+9
+      aceptaGuardar();
+
+      // 09:00 en Tokio = 00:00Z: invalido en Bogota, valido en Tokio.
+      const hoyTokio = new Date(Date.now() + 9 * 3_600_000);
+      hoyTokio.setUTCDate(hoyTokio.getUTCDate() + 2);
+      const inicio = `${hoyTokio.toISOString().slice(0, 10)}T09:00:00+09:00`;
+
+      await expect(service.create({ ...dto, inicio }, 'u-1')).resolves.toEqual({
+        id: 'turno-1',
+      });
     });
   });
 

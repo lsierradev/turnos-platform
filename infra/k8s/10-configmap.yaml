@@ -20,6 +20,10 @@ data:
   # dejaria que cualquier sitio hiciera llamadas autenticadas desde el
   # navegador de un usuario logueado.
   CORS_ORIGINS: 'https://turnos.REEMPLAZAR.com'
+  # Zona horaria del taller: horario laboral, corte de dias de agenda y
+  # dashboard, y hora de los recordatorios. Tiene que coincidir con el
+  # --build-arg VITE_TZ_NEGOCIO de la imagen de admin-web.
+  TZ_NEGOCIO: 'America/Bogota'
   JWT_EXPIRES_IN: '15m'
   JWT_REFRESH_EXPIRES_IN: '7d'
   NOTIFICACIONES_INTENTOS: '3'

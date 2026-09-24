@@ -11,7 +11,8 @@ describe('TechniciansService', () => {
   let dataSource: jest.Mocked<DataSource>;
 
   const tecnicoId = 't-1';
-  const fecha = new Date('2024-01-08T00:00:00.000Z');
+  // Dia de negocio (TZ_NEGOCIO, default America/Bogota = UTC-5 sin DST).
+  const fecha = '2024-01-08';
 
   function turno(horaISO: string, id: string): Turno {
     return {
@@ -105,5 +106,50 @@ describe('TechniciansService', () => {
       argumentos?.where as { rangoTiempo: { getSql: (a: string) => string } }
     ).rangoTiempo;
     expect(condicion.getSql('rango_tiempo')).toContain('tstzrange');
+  });
+
+  describe('corte de dia en la zona del taller (Sprint 12)', () => {
+    const zonaOriginal = process.env.TZ_NEGOCIO;
+
+    afterEach(() => {
+      if (zonaOriginal === undefined) {
+        delete process.env.TZ_NEGOCIO;
+      } else {
+        process.env.TZ_NEGOCIO = zonaOriginal;
+      }
+    });
+
+    function ventanaConsultada(): { desde: Date; hasta: Date } {
+      const where = turnosRepository.find.mock.calls[0]?.[0]?.where as {
+        rangoTiempo: { objectLiteralParameters: { desde: Date; hasta: Date } };
+      };
+      return where.rangoTiempo.objectLiteralParameters;
+    }
+
+    it('el dia va de 00:00 a 24:00 de Bogota, no de UTC', async () => {
+      delete process.env.TZ_NEGOCIO;
+      turnosRepository.find.mockResolvedValue([]);
+
+      await service.agendaDelDia(tecnicoId, '2024-01-08');
+
+      // 00:00 en Bogota = 05:00 UTC. Un turno a las 20:00 locales del 8
+      // (01:00 UTC del 9) cae adentro; con el corte UTC caia en el 9.
+      expect(ventanaConsultada()).toEqual({
+        desde: new Date('2024-01-08T05:00:00.000Z'),
+        hasta: new Date('2024-01-09T05:00:00.000Z'),
+      });
+    });
+
+    it('respeta TZ_NEGOCIO configurada', async () => {
+      process.env.TZ_NEGOCIO = 'Asia/Tokyo'; // UTC+9
+      turnosRepository.find.mockResolvedValue([]);
+
+      await service.agendaDelDia(tecnicoId, '2024-01-08');
+
+      expect(ventanaConsultada()).toEqual({
+        desde: new Date('2024-01-07T15:00:00.000Z'),
+        hasta: new Date('2024-01-08T15:00:00.000Z'),
+      });
+    });
   });
 });

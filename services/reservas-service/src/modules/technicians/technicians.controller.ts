@@ -15,6 +15,10 @@ import {
   Roles,
   RolesGuard,
 } from '@turnos-platform/auth';
+import {
+  fechaDeNegocio,
+  zonaHorariaNegocio,
+} from '../../common/zona-horaria.util';
 import { AgendaQueryDto } from './dto/agenda-query.dto';
 import { TechniciansService } from './technicians.service';
 
@@ -38,7 +42,10 @@ export class TechniciansController {
       throw new ForbiddenException('Solo podes consultar tu propia agenda.');
     }
 
-    const fecha = query.date ? new Date(query.date) : new Date();
+    // ?date=YYYY-MM-DD es el dia del taller. Antes new Date('2026-09-24')
+    // lo leia como medianoche UTC, o sea las 19:00 del dia anterior en
+    // Bogota.
+    const fecha = fechaDeNegocio(query.date, zonaHorariaNegocio());
     return this.techniciansService.agendaDelDia(id, fecha);
   }
 }

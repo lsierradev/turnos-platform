@@ -24,6 +24,7 @@
     "@nestjs/typeorm": "^10.0.2",
     "@sendgrid/mail": "^8.1.6",
     "@turnos-platform/auth": "workspace:*",
+    "@turnos-platform/crypto": "workspace:*",
     "@turnos-platform/http": "workspace:*",
     "bull": "^4.16.5",
     "class-transformer": "^0.5.1",

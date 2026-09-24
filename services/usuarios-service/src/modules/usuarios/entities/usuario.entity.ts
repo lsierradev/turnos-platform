@@ -1,4 +1,4 @@
-import { encryptedColumnTransformer } from '@turnos-platform/auth';
+import { encryptedColumnTransformer } from '@turnos-platform/crypto';
 import {
   Column,
   CreateDateColumn,

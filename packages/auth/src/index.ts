@@ -5,6 +5,4 @@ export * from './jwt-auth.guard';
 export * from './roles.decorator';
 export * from './roles.guard';
 export * from './jwt-auth.module';
-export * from './encryption.util';
 export * from './secretos.util';
-export * from './encrypted-column.transformer';

@@ -4,8 +4,8 @@ import { DataSource } from 'typeorm';
 import { NotificationsSchedulerService } from './notifications-scheduler.service';
 import { NOMBRE_COLA_NOTIFICACIONES } from './notifications.constants';
 
-jest.mock('@turnos-platform/auth', () => ({
-  ...jest.requireActual('@turnos-platform/auth'),
+jest.mock('@turnos-platform/crypto', () => ({
+  ...jest.requireActual('@turnos-platform/crypto'),
   decrypt: jest.fn((valor: string) => `telefono-descifrado(${valor})`),
 }));
 
@@ -91,7 +91,7 @@ describe('NotificationsSchedulerService', () => {
   });
 
   it('no rompe el resto si el telefono no se puede desencriptar', async () => {
-    const { decrypt } = jest.requireMock('@turnos-platform/auth') as {
+    const { decrypt } = jest.requireMock('@turnos-platform/crypto') as {
       decrypt: jest.Mock;
     };
     decrypt.mockImplementationOnce(() => {

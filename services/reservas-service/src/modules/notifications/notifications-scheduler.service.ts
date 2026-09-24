@@ -1,7 +1,7 @@
 import { InjectQueue } from '@nestjs/bull';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { decrypt } from '@turnos-platform/auth';
+import { decrypt } from '@turnos-platform/crypto';
 import { Queue } from 'bull';
 import { DataSource } from 'typeorm';
 import { CanalNotificacion } from './entities/notificacion.entity';

@@ -21,5 +21,9 @@ module.exports = {
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
+    // Permite `const { campo: _campo, ...resto } = obj` para omitir un
+    // campo (p.ej. passwordHash) sin que el bind sobrante cuente como
+    // variable sin usar.
+    '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
   },
 };

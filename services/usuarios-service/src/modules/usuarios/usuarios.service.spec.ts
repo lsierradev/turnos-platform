@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { Usuario } from './entities/usuario.entity';
+import { RolUsuario, Usuario } from './entities/usuario.entity';
 import { UsuariosService } from './usuarios.service';
 
 describe('UsuariosService', () => {
@@ -19,6 +19,7 @@ describe('UsuariosService', () => {
           provide: getRepositoryToken(Usuario),
           useValue: {
             findOne: jest.fn(),
+            find: jest.fn(),
             create: jest.fn(),
             save: jest.fn(),
           },
@@ -84,6 +85,54 @@ describe('UsuariosService', () => {
     await expect(service.findByEmail('a@a.com')).resolves.toEqual(usuario);
     expect(repository.findOne).toHaveBeenCalledWith({
       where: { email: 'a@a.com' },
+    });
+  });
+
+  describe('findAll', () => {
+    const selectEsperado = [
+      'id',
+      'email',
+      'nombre',
+      'rol',
+      'telefono',
+      'creadoEn',
+      'actualizadoEn',
+    ];
+
+    it('lista todos los usuarios sin filtro de rol', async () => {
+      const usuarios = [{ id: '1' }, { id: '2' }] as Usuario[];
+      repository.find.mockResolvedValue(usuarios);
+
+      await expect(service.findAll()).resolves.toEqual(usuarios);
+      expect(repository.find).toHaveBeenCalledWith({
+        where: {},
+        select: selectEsperado,
+      });
+    });
+
+    it('filtra por rol cuando se lo pasan', async () => {
+      const tecnicos = [{ id: '1', rol: RolUsuario.TECNICO }] as Usuario[];
+      repository.find.mockResolvedValue(tecnicos);
+
+      await expect(service.findAll(RolUsuario.TECNICO)).resolves.toEqual(
+        tecnicos,
+      );
+      expect(repository.find).toHaveBeenCalledWith({
+        where: { rol: RolUsuario.TECNICO },
+        select: selectEsperado,
+      });
+    });
+
+    it('nunca devuelve el password_hash', async () => {
+      repository.find.mockResolvedValue([]);
+
+      await service.findAll();
+
+      expect(repository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.not.arrayContaining(['passwordHash']),
+        }),
+      );
     });
   });
 });

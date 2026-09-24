@@ -97,6 +97,21 @@ export class UsuariosService {
     return this.usuariosRepository.findOne({ where: { email } });
   }
 
+  findAll(rol?: RolUsuario): Promise<Usuario[]> {
+    return this.usuariosRepository.find({
+      where: rol ? { rol } : {},
+      select: [
+        'id',
+        'email',
+        'nombre',
+        'rol',
+        'telefono',
+        'creadoEn',
+        'actualizadoEn',
+      ],
+    });
+  }
+
   async create(input: CrearUsuarioInput): Promise<Usuario> {
     const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
     const usuario = this.usuariosRepository.create({

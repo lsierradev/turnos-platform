@@ -98,7 +98,15 @@ const PARES_TEXTO = [
   // destructive y detalle muted-foreground sobre error-suave.
   ['destructive', 'error-suave'],
   ['muted-foreground', 'error-suave'],
+  // Bloques de la agenda (Sprint 15): texto normal sobre el suave de cada
+  // categoria de servicio.
+  ...['mecanica', 'electrica', 'latoneria'].flatMap((c) => [
+    ['foreground', `categoria-${c}-suave`],
+    ['muted-foreground', `categoria-${c}-suave`],
+  ]),
 ];
+
+const CATEGORIAS = ['mecanica', 'electrica', 'latoneria'].map((c) => `categoria-${c}`);
 
 const NO_TEXTO = [
   'ring',
@@ -134,12 +142,25 @@ for (const [modo, tokens] of Object.entries(modos)) {
   const rTinte = contraste(t('destructive'), tinte);
   registrar(rTinte >= 4.5, `texto  destructive sobre destructive/${TINTE_DESTRUCTIVE[modo] * 100}: ${rTinte.toFixed(2)}:1`);
 
-  for (const n of NO_TEXTO) {
+  for (const n of [...NO_TEXTO, ...CATEGORIAS]) {
     const r = contraste(t(n), t('card'));
     registrar(r >= 3, `grafico ${n} sobre card: ${r.toFixed(2)}:1 (min 3)`);
   }
+  // El borde de color del bloque se apoya sobre su propio suave.
+  for (const c of CATEGORIAS) {
+    const r = contraste(t(c), t(`${c}-suave`));
+    registrar(r >= 3, `grafico ${c} sobre ${c}-suave: ${r.toFixed(2)}:1 (min 3)`);
+  }
 
-  for (const grupo of [ESTADOS.map((e) => `estado-${e}`), SERIES]) {
+  // En la linea de tiempo conviven las categorias y la marca de "ahora":
+  // se tienen que distinguir entre si. El hueco libre NO esta en el grupo
+  // a proposito: en oscuro, estado-libre (verde) y la categoria electrica
+  // (turquesa) colapsan con daltonismo (dE 3.9). La agenda no pinta los
+  // huecos de verde: los dibuja punteados, sin relleno y con el texto
+  // "Libre", asi que se distinguen por forma, no por tono.
+  const AGENDA = [...CATEGORIAS, 'marca'];
+
+  for (const grupo of [ESTADOS.map((e) => `estado-${e}`), SERIES, AGENDA]) {
     for (let i = 0; i < grupo.length; i++) {
       for (let j = i + 1; j < grupo.length; j++) {
         const [a, b] = [t(grupo[i]), t(grupo[j])];

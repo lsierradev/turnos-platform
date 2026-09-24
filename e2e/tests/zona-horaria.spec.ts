@@ -68,13 +68,17 @@ test.describe('Zona horaria del taller', () => {
     await page.getByRole('button', { name: 'Siguiente' }).click();
     await expect(page.getByText(fechaISO(inicio))).toBeVisible();
 
-    const filas = page.getByRole('row');
-    await expect(filas).toHaveCount(2); // encabezado + el turno
-    await expect(filas.nth(1)).toContainText('14:00');
-    await expect(filas.nth(1)).toContainText(
-      horaEnTaller(
-        new Date(inicio.getTime() + datos.duracionMinutos * 60_000),
-      ),
+    const turnos = page
+      .getByRole('list', { name: 'Turnos del dia' })
+      .getByRole('listitem');
+    await expect(turnos).toHaveCount(1);
+    const fin = horaEnTaller(
+      new Date(inicio.getTime() + datos.duracionMinutos * 60_000),
     );
+    await expect(turnos.first()).toHaveAccessibleName(
+      new RegExp(`^14:00–${fin},`),
+    );
+    // Y el bloque visible arranca a las 14:00 en la linea de tiempo.
+    await expect(turnos.first()).toContainText('14:00');
   });
 });

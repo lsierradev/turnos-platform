@@ -11,6 +11,7 @@ export const AGENDA_MOCK: TurnoAgenda[] = [
     servicioId: 'servicio-1',
     tecnicoId: 'mock-tecnico',
     usuarioId: 'usuario-1',
+    estado: 'programado',
     rangoTiempo: {
       inicio: '2024-01-08T09:00:00.000Z',
       fin: '2024-01-08T09:30:00.000Z',
@@ -29,6 +30,7 @@ export const AGENDA_MOCK: TurnoAgenda[] = [
     servicioId: 'servicio-2',
     tecnicoId: 'mock-tecnico',
     usuarioId: 'usuario-2',
+    estado: 'programado',
     rangoTiempo: {
       inicio: '2024-01-08T11:00:00.000Z',
       fin: '2024-01-08T12:00:00.000Z',
@@ -47,6 +49,7 @@ export const AGENDA_MOCK: TurnoAgenda[] = [
     servicioId: 'servicio-3',
     tecnicoId: 'mock-tecnico',
     usuarioId: 'usuario-3',
+    estado: 'programado',
     rangoTiempo: {
       inicio: '2024-01-08T15:00:00.000Z',
       fin: '2024-01-08T16:00:00.000Z',

@@ -259,6 +259,13 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
+  --color-categoria-mecanica: var(--categoria-mecanica);
+  --color-categoria-mecanica-suave: var(--categoria-mecanica-suave);
+  --color-categoria-electrica: var(--categoria-electrica);
+  --color-categoria-electrica-suave: var(--categoria-electrica-suave);
+  --color-categoria-latoneria: var(--categoria-latoneria);
+  --color-categoria-latoneria-suave: var(--categoria-latoneria-suave);
+
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -362,6 +369,21 @@
   --chart-4: var(--color-magenta-700);
   --chart-5: var(--color-carbon-500);
 
+  /*
+   * Categorias de servicio (Sprint 15, agenda). ALIAS de series ya
+   * validadas, no colores nuevos: mecanica = chart-2, electrica = chart-3,
+   * latoneria = chart-4. El naranja (chart-1) queda fuera a proposito: en
+   * la agenda es la marca de "ahora" y el estado "en servicio", y una
+   * categoria del mismo color competiria con eso. El solido va en el borde
+   * del bloque (>= 3:1); el texto va en foreground sobre el suave.
+   */
+  --categoria-mecanica: var(--chart-2);
+  --categoria-mecanica-suave: var(--color-info-50);
+  --categoria-electrica: var(--chart-3);
+  --categoria-electrica-suave: var(--color-turquesa-50);
+  --categoria-latoneria: var(--chart-4);
+  --categoria-latoneria-suave: var(--color-magenta-50);
+
   --radius: 0.625rem;
 
   --sidebar: var(--color-carbon-800);
@@ -439,6 +461,13 @@
   --chart-3: var(--color-turquesa-500);
   --chart-4: var(--color-magenta-300);
   --chart-5: var(--color-carbon-500);
+
+  --categoria-mecanica: var(--chart-2);
+  --categoria-mecanica-suave: var(--color-info-950);
+  --categoria-electrica: var(--chart-3);
+  --categoria-electrica-suave: var(--color-turquesa-950);
+  --categoria-latoneria: var(--chart-4);
+  --categoria-latoneria-suave: var(--color-magenta-950);
 
   --sidebar: var(--color-carbon-900);
   --sidebar-foreground: var(--color-carbon-100);

@@ -53,3 +53,60 @@ export function formatearHora(iso: string): string {
 export function formatearDiaMes(fechaISO: string): string {
   return `${fechaISO.slice(8, 10)}/${fechaISO.slice(5, 7)}`;
 }
+
+/** Fecha (YYYY-MM-DD) del taller en la que cae un instante de la API. */
+export function fechaDeInstante(iso: string | Date): string {
+  const { year, month, day } = partes(new Date(iso));
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Minutos desde la medianoche del taller: la coordenada vertical de la
+ * linea de tiempo. 14:30 en Bogota -> 870, venga el instante en Z o con
+ * offset.
+ */
+export function minutosDelDia(iso: string | Date): number {
+  const { hour, minute } = partes(new Date(iso));
+  return Number(hour) * 60 + Number(minute);
+}
+
+/** 0 = lunes ... 6 = domingo, para una fecha de calendario. */
+function diaDeSemana(fechaISO: string): number {
+  return (new Date(`${fechaISO}T00:00:00.000Z`).getUTCDay() + 6) % 7;
+}
+
+/** Lunes de la semana de `fechaISO` (la semana del taller arranca el lunes). */
+export function inicioDeSemana(fechaISO: string): string {
+  return sumarDiasISO(fechaISO, -diaDeSemana(fechaISO));
+}
+
+// Fechas de calendario (sin hora): se formatean en UTC a proposito, porque
+// "2026-09-24" ya ES el dia del taller; pasarlo por otra zona lo correria.
+const formatoDia = new Intl.DateTimeFormat('es', {
+  timeZone: 'UTC',
+  weekday: 'short',
+  day: 'numeric',
+});
+const formatoLargo = new Intl.DateTimeFormat('es', {
+  timeZone: 'UTC',
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+});
+
+/** "jue 24" */
+export function formatearDiaCorto(fechaISO: string): string {
+  return formatoDia.format(new Date(`${fechaISO}T12:00:00.000Z`)).replace('.', '');
+}
+
+/** "jueves, 24 de septiembre" */
+export function formatearFechaLarga(fechaISO: string): string {
+  return formatoLargo.format(new Date(`${fechaISO}T12:00:00.000Z`));
+}
+
+export function formatearDuracion(minutos: number): string {
+  if (minutos < 60) return `${minutos} min`;
+  const h = Math.floor(minutos / 60);
+  const m = minutos % 60;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}

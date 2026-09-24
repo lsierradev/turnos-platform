@@ -235,6 +235,7 @@ export interface TurnoAgenda {
   servicioId: string;
   tecnicoId: string;
   usuarioId: string;
+  estado: 'programado' | 'atendido' | 'no_asistio' | 'cancelado';
   rangoTiempo: RangoTiempo;
   bahia?: BahiaResumen;
   servicio?: ServicioResumen;

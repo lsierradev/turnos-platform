@@ -53,27 +53,29 @@ test.describe('HU3 - Agenda del tecnico', () => {
 
     await expect(tituloDeTarjeta(page, 'Agenda del tecnico')).toBeVisible();
 
-    const filas = page.getByRole('row');
-    // +1 por la fila de encabezados.
-    await expect(filas).toHaveCount(3);
+    // Desde Sprint 15 la agenda es una linea de tiempo: cada turno es un
+    // item de la lista "Turnos del dia" y su nombre accesible trae horario,
+    // servicio, bahia y categoria (el bloque visible puede abreviarlos si
+    // el turno es corto).
+    const turnos = page
+      .getByRole('list', { name: 'Turnos del dia' })
+      .getByRole('listitem');
+    await expect(turnos).toHaveCount(2);
 
-    // formatearHora() imprime en la hora del taller (ver lib/dates.ts), asi
-    // que estos valores no dependen de la zona horaria de la maquina que
-    // corre el test.
-    const primera = filas.nth(1);
-    await expect(primera).toContainText('09:00');
-    await expect(primera).toContainText('09:30');
-    await expect(primera).toContainText(`Bahia E2E ${datos.sufijo}`);
-    await expect(primera).toContainText('Cambio de aceite E2E');
-    await expect(primera).toContainText('Mecanica');
-
-    await expect(filas.nth(2)).toContainText('11:00');
+    // Las horas son del taller (ver lib/dates.ts), asi que no dependen de la
+    // zona horaria de la maquina que corre el test.
+    await expect(turnos.nth(0)).toHaveAccessibleName(
+      `09:00–09:30, Cambio de aceite E2E ${datos.sufijo}, Bahia E2E ${datos.sufijo}, Mecanica`,
+    );
+    await expect(turnos.nth(1)).toHaveAccessibleName(/^11:00–11:30,/);
   });
 
   test('navegar a otro dia muestra la agenda vacia', async ({ page }) => {
     await iniciarSesionEnPanel(page, datos.tecnicoEmail, PASSWORD_DE_PRUEBA);
     await page.goto(`/agenda/${datos.tecnicoId}`);
-    await expect(page.getByRole('row')).toHaveCount(3);
+    await expect(
+      page.getByRole('list', { name: 'Turnos del dia' }).getByRole('listitem'),
+    ).toHaveCount(2);
 
     await page.getByRole('button', { name: 'Siguiente' }).click();
 
@@ -83,6 +85,47 @@ test.describe('HU3 - Agenda del tecnico', () => {
     await expect(
       page.getByText('Sin turnos para este dia.'),
     ).toBeVisible();
+  });
+
+  test('el admin busca al tecnico por nombre y abre su agenda (Sprint 15)', async ({
+    page,
+  }) => {
+    await iniciarSesionEnPanel(page, datos.adminEmail, PASSWORD_DE_PRUEBA);
+    await page.goto('/agenda');
+
+    // Busqueda sin tildes ni mayusculas; el sufijo hace unico al tecnico
+    // de este run entre los que hayan dejado otras corridas.
+    const buscador = page.getByRole('combobox', { name: /Buscar tecnico/ });
+    await buscador.fill(datos.sufijo);
+    await expect(page.getByRole('option')).not.toHaveCount(0);
+    await page
+      .getByRole('option')
+      .filter({ hasText: datos.tecnicoEmail })
+      .click();
+
+    await expect(page).toHaveURL(new RegExp(`/agenda/${datos.tecnicoId}$`));
+    await expect(
+      page.getByRole('list', { name: 'Turnos del dia' }).getByRole('listitem'),
+    ).toHaveCount(2);
+  });
+
+  test('la vista semanal muestra el dia con turnos y lleva a ese dia', async ({
+    page,
+  }) => {
+    await iniciarSesionEnPanel(page, datos.tecnicoEmail, PASSWORD_DE_PRUEBA);
+    await page.goto(`/agenda/${datos.tecnicoId}`);
+    await page.getByRole('button', { name: 'Semana', exact: true }).click();
+
+    await expect(page).toHaveURL(/vista=semana/);
+    // La columna de hoy resume los 2 turnos sembrados.
+    const hoy = page.getByRole('button', { name: /: 2 turnos\. Ver el dia$/ });
+    await expect(hoy).toBeVisible();
+    await hoy.click();
+
+    await expect(page).not.toHaveURL(/vista=semana/);
+    await expect(
+      page.getByRole('list', { name: 'Turnos del dia' }).getByRole('listitem'),
+    ).toHaveCount(2);
   });
 
   test('un tecnico no puede leer la agenda de otro tecnico', async ({

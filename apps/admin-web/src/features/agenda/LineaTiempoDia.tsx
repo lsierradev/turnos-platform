@@ -174,8 +174,9 @@ export function LineaTiempoDia({
           />
         )}
 
-        {/* Huecos libres: por forma (punteado + texto), no por color; ver
-            verificar-contraste.mjs sobre por que no van en verde. */}
+        {/* Huecos libres: punteados y con texto (forma) + punto en el verde de
+            estado-libre (color). Desde Sprint 15.1 ese verde se distingue de
+            la categoria electrica tambien con daltonismo; ver index.css. */}
         <ul aria-label="Huecos libres">
           {huecos.map((h) => (
             <li
@@ -183,7 +184,8 @@ export function LineaTiempoDia({
               className="absolute inset-x-1 flex items-center justify-center rounded-md border-2 border-dashed border-input text-xs text-muted-foreground sm:inset-x-2"
               style={{ top: top(h.inicio, desde), height: `calc(${alto(h.fin - h.inicio)} - 2px)` }}
             >
-              <span className="rounded bg-card px-1.5">
+              <span className="inline-flex items-center gap-1.5 rounded bg-card px-1.5">
+                <span className="size-2 rounded-full bg-estado-libre" aria-hidden />
                 Libre · {formatearDuracion(h.fin - h.inicio)}
                 <span className="sr-only">
                   {' '}

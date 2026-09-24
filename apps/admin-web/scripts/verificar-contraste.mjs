@@ -152,13 +152,12 @@ for (const [modo, tokens] of Object.entries(modos)) {
     registrar(r >= 3, `grafico ${c} sobre ${c}-suave: ${r.toFixed(2)}:1 (min 3)`);
   }
 
-  // En la linea de tiempo conviven las categorias y la marca de "ahora":
-  // se tienen que distinguir entre si. El hueco libre NO esta en el grupo
-  // a proposito: en oscuro, estado-libre (verde) y la categoria electrica
-  // (turquesa) colapsan con daltonismo (dE 3.9). La agenda no pinta los
-  // huecos de verde: los dibuja punteados, sin relleno y con el texto
-  // "Libre", asi que se distinguen por forma, no por tono.
-  const AGENDA = [...CATEGORIAS, 'marca'];
+  // En la linea de tiempo conviven las categorias, la marca de "ahora" y
+  // el estado libre: se tienen que distinguir entre si. En Sprint 15
+  // estado-libre quedaba afuera porque en oscuro colapsaba con la
+  // categoria electrica (dE 3.9 con daltonismo); desde 15.1 chart-3 oscuro
+  // es turquesa-200 y el par se separa por luminosidad (ver index.css).
+  const AGENDA = [...CATEGORIAS, 'marca', 'estado-libre'];
 
   for (const grupo of [ESTADOS.map((e) => `estado-${e}`), SERIES, AGENDA]) {
     for (let i = 0; i < grupo.length; i++) {

@@ -458,7 +458,18 @@
 
   --chart-1: var(--color-naranja-500);
   --chart-2: var(--color-info-300);
-  --chart-3: var(--color-turquesa-500);
+  /*
+   * turquesa-200 y no 500 (Sprint 15.1). En oscuro, turquesa-500 y el verde
+   * de estado-libre (exito-500) tienen casi la misma luminosidad: con
+   * daltonismo solo los separaba el tono y colapsaban (peor caso dE 3.9),
+   * justo en la agenda, donde conviven la categoria electrica y los huecos
+   * libres. Separarlos por LUMINOSIDAD sobrevive a los tres tipos de
+   * daltonismo: con 200 el peor caso sube a 19. Se cambio el turquesa y no
+   * el verde porque estado-libre lo usan todos los estados de bahias y
+   * mecanicos. Buscado por barrido de pasos contra todos los grupos de
+   * verificar-contraste.mjs; el 200 es el unico turquesa que pasa todo.
+   */
+  --chart-3: var(--color-turquesa-200);
   --chart-4: var(--color-magenta-300);
   --chart-5: var(--color-carbon-500);
 

@@ -87,9 +87,19 @@ export function AgendaSemanal({
                       }`}
                       style={{ top: pct(inicio), height: `calc(${pctLargo(fin - inicio)} - 1px)` }}
                     >
-                      {fin - inicio >= 45 && (
-                        <span className="block truncate font-medium">
-                          {b.turno.servicio?.nombre}
+                      {/* Icono de categoria desde 30 min (alto >= ~14px). */}
+                      {fin - inicio >= 30 && (
+                        <span className="flex items-center gap-1 pt-0.5">
+                          <c.icono
+                            className={`size-3 shrink-0 ${
+                              b.cancelado ? 'text-muted-foreground' : c.texto
+                            }`}
+                          />
+                          {fin - inicio >= 45 && (
+                            <span className="truncate font-medium">
+                              {b.turno.servicio?.nombre}
+                            </span>
+                          )}
                         </span>
                       )}
                     </div>
@@ -167,12 +177,16 @@ export function AgendaSemanal({
 export function LeyendaCategorias() {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 pt-3 text-xs text-muted-foreground" aria-label="Categorias de servicio">
-      {(Object.keys(CATEGORIA_LABEL) as (keyof typeof CATEGORIA_LABEL)[]).map((c) => (
-        <li key={c} className="flex items-center gap-1.5">
-          <span className={`size-2.5 rounded-sm ${CATEGORIA_CLASES[c].punto}`} aria-hidden />
-          {CATEGORIA_LABEL[c]}
-        </li>
-      ))}
+      {(Object.keys(CATEGORIA_LABEL) as (keyof typeof CATEGORIA_LABEL)[]).map((c) => {
+        const { icono: Icono, texto, punto } = CATEGORIA_CLASES[c];
+        return (
+          <li key={c} className="flex items-center gap-1.5">
+            <span className={`size-2.5 rounded-sm ${punto}`} aria-hidden />
+            <Icono className={`size-3.5 ${texto}`} aria-hidden />
+            {CATEGORIA_LABEL[c]}
+          </li>
+        );
+      })}
     </ul>
   );
 }

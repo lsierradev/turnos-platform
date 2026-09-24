@@ -32,6 +32,14 @@ const alto = (min: number) => `calc(var(--hora) * ${min / 60})`;
 function BloqueTurno({ bloque, desde }: { bloque: Bloque; desde: number }) {
   const { turno, inicio, fin, categoria, cancelado } = bloque;
   const clases = CATEGORIA_CLASES[categoria ?? 'ninguna'];
+  const IconoCategoria = clases.icono;
+  // Icono de categoria: siempre visible, tambien en el bloque compacto.
+  const icono = (
+    <IconoCategoria
+      className={`size-3.5 shrink-0 ${cancelado ? 'text-muted-foreground' : clases.texto}`}
+      aria-hidden
+    />
+  );
   const duracion = fin - inicio;
   const servicio = turno.servicio?.nombre ?? 'Servicio';
   const bahia = turno.bahia?.nombre ?? 'Bahia';
@@ -73,6 +81,7 @@ function BloqueTurno({ bloque, desde }: { bloque: Bloque; desde: number }) {
     >
       {compacto ? (
         <>
+          {icono}
           <span className="shrink-0 font-mono font-semibold" aria-hidden>
             {hhmm(inicio)}
           </span>
@@ -85,6 +94,7 @@ function BloqueTurno({ bloque, desde }: { bloque: Bloque; desde: number }) {
       ) : mediano ? (
         <div aria-hidden className="space-y-0.5">
           <p className="flex items-center gap-1.5 font-mono font-semibold">
+            {icono}
             {rango}
             {estadoIcono}
           </p>
@@ -96,6 +106,7 @@ function BloqueTurno({ bloque, desde }: { bloque: Bloque; desde: number }) {
       ) : (
         <div aria-hidden className="space-y-0.5">
           <p className="flex items-center gap-1.5 font-mono font-semibold">
+            {icono}
             {rango}
             {estadoIcono}
           </p>

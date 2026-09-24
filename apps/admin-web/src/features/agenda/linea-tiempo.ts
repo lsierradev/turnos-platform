@@ -1,3 +1,4 @@
+import { CircleHelp, Hammer, Wrench, Zap, type LucideIcon } from 'lucide-react';
 import type { TurnoAgenda } from '@/lib/api-client';
 import { minutosDelDia } from '@/lib/dates';
 
@@ -103,28 +104,50 @@ export const CATEGORIA_LABEL: Record<Categoria, string> = {
   latoneria: 'Latoneria',
 };
 
-// Clases completas por categoria (Tailwind no genera clases armadas en
-// runtime). Sin categoria (servicio no cargado) cae al neutro.
-export const CATEGORIA_CLASES: Record<Categoria | 'ninguna', { borde: string; fondo: string; punto: string }> = {
+/*
+ * Cada categoria se codifica DOS veces: color e icono (WCAG 1.4.1, no
+ * transmitir informacion solo con color). Con tres categorias mas la marca
+ * de "ahora" y el verde de "libre" conviviendo, el color solo no alcanza
+ * holgado para los tres tipos de daltonismo: un barrido de TODAS las
+ * combinaciones de la paleta (Sprint 15.1) dio como techo un peor caso de
+ * ~16 en claro y ~14 en oscuro (el minimo del verificador es 8), y solo
+ * metiendo el ambar de advertencia como categoria. Con el icono, el color
+ * pasa a ser refuerzo y esos margenes dejan de ser criticos.
+ *
+ * Clases completas por categoria (Tailwind no genera clases armadas en
+ * runtime). Sin categoria (servicio no cargado) cae al neutro.
+ */
+export const CATEGORIA_CLASES: Record<
+  Categoria | 'ninguna',
+  { borde: string; fondo: string; punto: string; texto: string; icono: LucideIcon }
+> = {
   mecanica: {
     borde: 'border-categoria-mecanica',
     fondo: 'bg-categoria-mecanica-suave',
     punto: 'bg-categoria-mecanica',
+    texto: 'text-categoria-mecanica',
+    icono: Wrench,
   },
   electrica: {
     borde: 'border-categoria-electrica',
     fondo: 'bg-categoria-electrica-suave',
     punto: 'bg-categoria-electrica',
+    texto: 'text-categoria-electrica',
+    icono: Zap,
   },
   latoneria: {
     borde: 'border-categoria-latoneria',
     fondo: 'bg-categoria-latoneria-suave',
     punto: 'bg-categoria-latoneria',
+    texto: 'text-categoria-latoneria',
+    icono: Hammer,
   },
   ninguna: {
     borde: 'border-chart-5',
     fondo: 'bg-muted',
     punto: 'bg-chart-5',
+    texto: 'text-muted-foreground',
+    icono: CircleHelp,
   },
 };
 

@@ -225,10 +225,11 @@ function Seccion({
 
 function Veredicto({ razon, minimo }: { razon: number | null; minimo: number }) {
   if (razon === null) return <Badge variant="outline">sin dato</Badge>;
+  // shrink-0: en celular el nombre del token se trunca, el veredicto no.
   const pasa = razon >= minimo;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium ${
+      className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium ${
         pasa ? 'bg-exito-suave text-exito-texto' : 'bg-error-suave text-error-texto'
       }`}
     >
@@ -287,7 +288,7 @@ export function DesignView() {
   ];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-12 p-6">
+    <div className="mx-auto max-w-5xl space-y-12 p-4 md:p-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <p className="text-xs font-semibold tracking-wider text-marca-texto uppercase">
@@ -336,13 +337,13 @@ export function DesignView() {
         titulo="Roles y contraste"
         descripcion="Cada par texto/fondo que usa la aplicacion, con su razon de contraste en el tema activo. AA exige 4.5:1 para texto normal."
       >
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {PARES.map(({ texto, fondo, nota }) => {
             const [hexTexto, hexFondo] = [leerToken(texto), leerToken(fondo)];
             return (
               <div
                 key={`${texto}-${fondo}`}
-                className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                className="flex min-w-0 items-center justify-between gap-3 rounded-lg border p-3"
                 style={{ background: `var(--${fondo})`, color: `var(--${texto})` }}
               >
                 <div className="min-w-0">

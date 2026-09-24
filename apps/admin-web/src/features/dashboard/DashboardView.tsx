@@ -11,11 +11,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Badge } from '@/components/ui/badge';
+import {
+  EstadoCargando,
+  EstadoError,
+  IndicadorActualizando,
+} from '@/components/estados';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -200,7 +203,7 @@ export function DashboardView() {
     resumen !== undefined && resumen.turnosMedidos < resumen.turnosAtendidos;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-6">
+    <div className="mx-auto max-w-5xl space-y-4 p-4 md:p-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-semibold">
@@ -210,14 +213,13 @@ export function DashboardView() {
             KPIs operativos del periodo seleccionado
           </p>
         </div>
-        {isFetching && !isPending && (
-          <Badge variant="secondary">Actualizando…</Badge>
-        )}
+        <IndicadorActualizando activo={isFetching && !isPending} />
       </header>
 
       {/* Filtros en una sola fila arriba de los graficos. */}
       <Card>
-        <CardContent className="flex flex-wrap items-end gap-3">
+        {/* En celular: las dos fechas lado a lado y los atajos abajo. */}
+        <CardContent className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Desde
             <Input
@@ -225,7 +227,7 @@ export function DashboardView() {
               value={from}
               max={to}
               onChange={(e) => setFrom(e.target.value)}
-              className="w-40"
+              className="sm:w-40"
             />
           </label>
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -235,10 +237,10 @@ export function DashboardView() {
               value={to}
               min={from}
               onChange={(e) => setTo(e.target.value)}
-              className="w-40"
+              className="sm:w-40"
             />
           </label>
-          <div className="flex gap-2">
+          <div className="col-span-2 flex gap-2">
             {PRESETS.map((preset) => (
               <Button
                 key={preset.label}
@@ -253,7 +255,7 @@ export function DashboardView() {
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto"
+            className="col-span-2 justify-self-start sm:ml-auto"
             onClick={() => setVerTabla((v) => !v)}
           >
             {verTabla ? 'Ver graficos' : 'Ver tabla'}
@@ -262,24 +264,18 @@ export function DashboardView() {
       </Card>
 
       {rangoInvalido ? (
-        <p className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-lg border border-advertencia/40 bg-advertencia-suave p-3 text-sm text-advertencia-texto"
+        >
           El rango es invalido: «desde» es posterior a «hasta».
         </p>
       ) : isError ? (
-        <div className="space-y-2 rounded-md border border-destructive/40 p-3">
-          <p className="text-sm text-destructive">{error.message}</p>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            Reintentar
-          </Button>
-        </div>
+        <EstadoError error={error} onReintentar={refetch} />
       ) : isPending ? (
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
-          </div>
-          <Skeleton className="h-72 w-full" />
+          <EstadoCargando forma="tarjetas" etiqueta="Cargando indicadores…" />
+          <EstadoCargando forma="bloque" etiqueta="" />
         </div>
       ) : (
         <div className={`space-y-4 ${isFetching ? 'opacity-60' : ''}`}>

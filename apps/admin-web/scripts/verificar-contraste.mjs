@@ -94,6 +94,10 @@ const PARES_TEXTO = [
     ['foreground', `${s}-suave`],
   ]),
   ...ESTADOS.map((e) => ['foreground', `estado-${e}-suave`]),
+  // Componentes de estado (Sprint 14): EstadoError pinta titulo
+  // destructive y detalle muted-foreground sobre error-suave.
+  ['destructive', 'error-suave'],
+  ['muted-foreground', 'error-suave'],
 ];
 
 const NO_TEXTO = [

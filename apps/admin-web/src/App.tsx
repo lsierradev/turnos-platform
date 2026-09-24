@@ -1,42 +1,31 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Outlet, Route, Routes } from 'react-router-dom';
-import { AppHeader } from '@/components/AppHeader';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { AppLayout } from '@/components/layout/AppLayout';
 import { PanelAdministrativoView } from '@/features/admin-panel/PanelAdministrativoView';
 import { AgendaTecnicoView } from '@/features/agenda/AgendaTecnicoView';
+import { SeleccionTecnicoView } from '@/features/agenda/SeleccionTecnicoView';
 import { AuthProvider } from '@/features/auth/AuthProvider';
 import { LoginView } from '@/features/auth/LoginView';
 import { RutaProtegida } from '@/features/auth/RutaProtegida';
 import { DashboardView } from '@/features/dashboard/DashboardView';
-import { HomeView } from '@/features/home/HomeView';
-import { ApiError } from '@/lib/api-client';
-import { TemaProvider } from '@/lib/tema';
 import { DesignView } from '@/features/design/DesignView';
+import { HomeView } from '@/features/home/HomeView';
+import { NoEncontradoView } from '@/features/home/NoEncontradoView';
+import { esReintentable } from '@/lib/errores';
+import { TemaProvider } from '@/lib/tema';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // No reintentar un 401 ni un 403: el primero ya lo maneja el cliente
-      // HTTP renovando el token, y el segundo no va a cambiar por insistir
-      // —el usuario no tiene el rol—. Reintentarlos solo agrega latencia
-      // antes de mostrar el error.
-      retry: (intentos, error) => {
-        if (error instanceof ApiError && [401, 403].includes(error.status)) {
-          return false;
-        }
-        return intentos < 1;
-      },
+      // No reintentar lo que va a fallar igual: 401 (ya lo maneja el
+      // cliente HTTP renovando el token), 403 (no tiene el rol), 400 y 404
+      // (el dato no cambia por insistir). Reintentarlos solo agrega latencia
+      // antes de mostrar el error. Misma regla que decide si el estado de
+      // error ofrece "Reintentar" (lib/errores.ts).
+      retry: (intentos, error) => esReintentable(error) && intentos < 1,
     },
   },
 });
-
-function LayoutPrivado() {
-  return (
-    <>
-      <AppHeader />
-      <Outlet />
-    </>
-  );
-}
 
 export function App() {
   return (
@@ -49,8 +38,9 @@ export function App() {
               <Route path="/login" element={<LoginView />} />
 
               <Route element={<RutaProtegida />}>
-                <Route element={<LayoutPrivado />}>
+                <Route element={<AppLayout />}>
                   <Route path="/" element={<HomeView />} />
+                  <Route path="/agenda" element={<SeleccionTecnicoView />} />
                   <Route
                     path="/agenda/:tecnicoId"
                     element={<AgendaTecnicoView />}
@@ -59,6 +49,7 @@ export function App() {
                   <Route path="/dashboard" element={<DashboardView />} />
                   {/* Referencia interna del sistema de diseno (Sprint 13). */}
                   <Route path="/design" element={<DesignView />} />
+                  <Route path="*" element={<NoEncontradoView />} />
                 </Route>
               </Route>
             </Routes>

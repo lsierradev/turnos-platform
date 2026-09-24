@@ -157,12 +157,33 @@ function mensajeDeError(body: unknown, status: number): string {
   return `Error ${status}`;
 }
 
-async function apiFetch<T>(path: string, reintentando = false): Promise<T> {
-  const respuesta = await fetch(`${BASE_URL}${path}`, {
-    headers: tokens
-      ? { Authorization: `Bearer ${tokens.accessToken}` }
-      : undefined,
-  });
+/**
+ * status 0 = la request ni siquiera llego a tener respuesta (servidor caido,
+ * sin red, CORS). fetch() lo reporta como TypeError("Failed to fetch"), que
+ * mostrado tal cual no le dice nada a nadie; como ApiError con status 0 la
+ * UI lo puede explicar (ver lib/errores.ts).
+ */
+export const STATUS_SIN_CONEXION = 0;
+
+async function apiFetch<T>(
+  path: string,
+  reintentando = false,
+  base = BASE_URL,
+): Promise<T> {
+  let respuesta: Response;
+  try {
+    respuesta = await fetch(`${base}${path}`, {
+      headers: tokens
+        ? { Authorization: `Bearer ${tokens.accessToken}` }
+        : undefined,
+    });
+  } catch (error) {
+    throw new ApiError(
+      'No se pudo conectar con el servidor.',
+      STATUS_SIN_CONEXION,
+      error,
+    );
+  }
 
   // Un 401 con sesión activa significa access token vencido: se renueva una
   // sola vez y se reintenta. `reintentando` corta la recursión para que un
@@ -170,7 +191,7 @@ async function apiFetch<T>(path: string, reintentando = false): Promise<T> {
   if (respuesta.status === 401 && !reintentando && tokens) {
     const nuevo = await refrescarToken();
     if (nuevo) {
-      return apiFetch<T>(path, true);
+      return apiFetch<T>(path, true, base);
     }
   }
 
@@ -225,6 +246,18 @@ export function getAgenda(
 ): Promise<TurnoAgenda[]> {
   const query = fecha ? `?date=${encodeURIComponent(fecha)}` : '';
   return apiFetch<TurnoAgenda[]>(`/technicians/${tecnicoId}/agenda${query}`);
+}
+
+export interface Tecnico {
+  id: string;
+  email: string;
+  nombre: string;
+  rol: 'tecnico';
+}
+
+/** GET /usuarios?rol=tecnico en usuarios-service (solo admin, Sprint 11). */
+export function getTecnicos(): Promise<Tecnico[]> {
+  return apiFetch<Tecnico[]>('/usuarios?rol=tecnico', false, AUTH_URL);
 }
 
 export interface KpiDia {

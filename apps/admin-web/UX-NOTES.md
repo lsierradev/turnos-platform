@@ -56,6 +56,18 @@ Sin cambios de código, solo hallazgos y recomendaciones.
    no es amigable. Validar el formato antes de navegar (o al menos mostrar
    un mensaje más claro cuando `error.status === 400`) evita ese salto feo.
 
+## Estado de los hallazgos 1–7 (revisado en Sprint 14)
+
+| # | Estado al revisar | Resolución |
+|---|---|---|
+| 1 | Vigente: `/agenda` sin id no tenía ruta (pantalla en blanco) y el `enabled: Boolean(tecnicoId)` seguía ahí | `/agenda` existe: el admin elige técnico de una lista (por nombre, `GET /usuarios?rol=tecnico`) y el técnico va directo a la suya. `/agenda/<id inválido>` muestra un mensaje sin llamar al backend. Rutas desconocidas → página 404 propia. |
+| 2 | Vigente en Agenda y Panel (Dashboard ya lo tenía) | `EstadoError` (`src/components/estados.tsx`) ofrece **Reintentar** en todas las vistas cuando el error es reintentable (red, 5xx, 409). Para 400/403/404 ofrece una acción alternativa ("Elegir otro técnico") en vez de un botón que va a fallar igual. |
+| 3 | Parcial: solo 401/403, y solo si el backend no mandaba mensaje (siempre lo manda) | `src/lib/errores.ts` da título y explicación propios para sin conexión, 400, 401, 403, 404, 409 y 5xx; el mensaje del backend queda como detalle chico. Los fallos de red ahora son `ApiError` con status 0 en vez de un `TypeError: Failed to fetch`. |
+| 4 | Vigente en Agenda y Panel | `NavegadorFecha`: Anterior / **Hoy** / Siguiente, con Hoy deshabilitado cuando ya se está en hoy. |
+| 5 | Vigente en Agenda y Panel | `IndicadorActualizando` (spinner + "Actualizando…", `aria-live`) junto a la fecha y en el Dashboard. Reserva su lugar para que el layout no salte. |
+| 6 | Resuelto en Sprint 10 (header con link a Home) | Reemplazado por la barra lateral (escritorio) / barra de pestañas inferior (celular). |
+| 7 | Vigente: el input de Home navegaba con cualquier texto | El input vive ahora en `/agenda` ("Ir por id") y valida formato UUID antes de navegar; el caso normal ya no necesita UUID (lista de técnicos). |
+
 ## Para cuando exista el flujo de reserva
 
 8. **Las sugerencias de horario del backend ya están listas para usarse.**

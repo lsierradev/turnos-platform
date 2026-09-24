@@ -207,4 +207,38 @@ describirSiHayDb('Appointments (integration)', () => {
     expect(conflictos).toHaveLength(1);
     expect(conflictos[0]!.body.message).toMatch(/tecnico/i);
   });
+
+  it('un turno cancelado libera su horario y no se puede reactivar si otro lo tomo (011)', async () => {
+    const server = app.getHttpServer();
+    const inicio = new Date(horaLocalBogota(11, 5)).toISOString();
+    const tokenAdmin = jwt.sign(
+      { sub: usuarioId, email: 'admin-integration@turnos.dev', rol: 'admin' },
+      process.env.JWT_SECRET ?? 'dev-secret-change-me',
+    );
+    const reservar = (t: string) =>
+      request(server)
+        .post('/appointments')
+        .set('Authorization', `Bearer ${t}`)
+        .send({ bahiaId, servicioId, tecnicoId, inicio });
+
+    const original = await reservar(token).expect(201);
+
+    await request(server)
+      .patch(`/appointments/${original.body.id}/estado`)
+      .set('Authorization', `Bearer ${tokenAdmin}`)
+      .send({ estado: 'cancelado' })
+      .expect(200);
+
+    // Misma bahia, mismo tecnico, mismo horario: antes de 011 daba 409
+    // porque el cancelado seguia ocupando.
+    await reservar(otroToken).expect(201);
+
+    // Reactivar el cancelado ahora chocaria con el nuevo: 409 claro, no 500.
+    const reactivar = await request(server)
+      .patch(`/appointments/${original.body.id}/estado`)
+      .set('Authorization', `Bearer ${tokenAdmin}`)
+      .send({ estado: 'programado' })
+      .expect(409);
+    expect(reactivar.body.message).toMatch(/No se puede reactivar/);
+  });
 });

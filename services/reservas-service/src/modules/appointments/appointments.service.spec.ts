@@ -428,5 +428,83 @@ describe('AppointmentsService', () => {
         service.actualizarEstado('turno-1', { estado: EstadoTurno.ATENDIDO }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    describe('reactivar un cancelado (011: los cancelados no ocupan)', () => {
+      const cancelado = () =>
+        ({
+          ...turnoProgramado(),
+          estado: EstadoTurno.CANCELADO,
+          bahiaId: 'b-1',
+          tecnicoId: 't-1',
+          usuarioId: 'u-1',
+        }) as Turno;
+
+      it('409 con mensaje claro si otro turno ya tomo su horario', async () => {
+        turnosRepository.findOne.mockResolvedValue(cancelado());
+        turnosRepository.save.mockRejectedValue(
+          crearQueryFailedError({ constraint: 'turnos_bahia_rango_excl' }),
+        );
+
+        const error = await service
+          .actualizarEstado('turno-1', { estado: EstadoTurno.PROGRAMADO })
+          .catch((e) => e);
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect(error.message).toMatch(/No se puede reactivar.*bahia/i);
+      });
+
+      it('nombra el recurso ocupado segun la constraint (tecnico)', async () => {
+        turnosRepository.findOne.mockResolvedValue(cancelado());
+        turnosRepository.save.mockRejectedValue(
+          crearQueryFailedError({ constraint: 'turnos_tecnico_rango_excl' }),
+        );
+
+        const error = await service
+          .actualizarEstado('turno-1', { estado: EstadoTurno.PROGRAMADO })
+          .catch((e) => e);
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect(error.message).toMatch(/tecnico/i);
+      });
+
+      it('se reactiva normalmente si el horario sigue libre', async () => {
+        turnosRepository.findOne.mockResolvedValue(cancelado());
+
+        const resultado = await service.actualizarEstado('turno-1', {
+          estado: EstadoTurno.PROGRAMADO,
+        });
+
+        expect(resultado.estado).toBe(EstadoTurno.PROGRAMADO);
+      });
+
+      it('un error que no es de solapamiento se repropaga tal cual', async () => {
+        const caida = new Error('conexion perdida');
+        turnosRepository.findOne.mockResolvedValue(cancelado());
+        turnosRepository.save.mockRejectedValue(caida);
+
+        await expect(
+          service.actualizarEstado('turno-1', {
+            estado: EstadoTurno.PROGRAMADO,
+          }),
+        ).rejects.toBe(caida);
+      });
+    });
+  });
+
+  it('las sugerencias no cuentan los turnos cancelados como ocupados (011)', async () => {
+    turnosRepository.create.mockReturnValue({} as Turno);
+    turnosRepository.save.mockRejectedValue(
+      crearQueryFailedError({ constraint: 'turnos_bahia_rango_excl' }),
+    );
+    turnosRepository.find.mockResolvedValue([]);
+
+    await service.create(dto, 'u-1').catch(() => undefined);
+
+    const where = turnosRepository.find.mock.calls[0][0]?.where as {
+      estado: { type: string; value: unknown };
+    };
+    // Not(EstadoTurno.CANCELADO) de TypeORM.
+    expect(where.estado.type).toBe('not');
+    expect(where.estado.value).toBe(EstadoTurno.CANCELADO);
   });
 });

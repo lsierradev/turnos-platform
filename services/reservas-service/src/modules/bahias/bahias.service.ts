@@ -51,9 +51,8 @@ const TTL_CACHE_SEGUNDOS = 5;
 // - El WHERE va sobre lower(rango_tiempo) crudo (sargable contra
 //   idx_turnos_kpi_inicio, 009), como el dashboard; la conversion de zona
 //   queda en el GROUP BY.
-// - Los cancelados no ocupan. OJO: hoy las constraints EXCLUDE de turnos
-//   no excluyen cancelados (el horario sigue bloqueado para reservar);
-//   ver docs/ENDPOINTS.txt, GET /bahias/carga.
+// - Los cancelados no ocupan, igual que en las constraints EXCLUDE desde
+//   la migracion 011 (su horario se puede volver a reservar).
 const SQL_CARGA = `
   WITH dias AS (
     SELECT d::date AS dia

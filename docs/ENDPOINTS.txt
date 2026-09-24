@@ -99,6 +99,9 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
       turnos_tecnico_rango_excl -> "El tecnico ya tiene un turno asignado..."
       turnos_usuario_rango_excl -> "Ya tenes otro turno reservado en ese
                                     horario." (Sprint 9, migracion 010)
+    Desde la migracion 011 las tres constraints ignoran los turnos
+    cancelados: el horario de un turno cancelado se puede volver a reservar,
+    y las sugerencias tampoco lo cuentan como ocupado.
     Las sugerencias se buscan sobre el recurso que estaba ocupado: si el
     ocupado es el cliente, sugerir huecos de la bahia devolveria horarios
     que vuelven a dar 409. Las sugerencias son los 3 horarios libres mas cercanos
@@ -131,6 +134,10 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
   Response 200: Turno actualizado.
   Response 400: atencionFin <= atencionInicio.
   Response 404: el turno no existe.
+  Response 409 (migracion 011): se intenta sacar de "cancelado" un turno
+                cuyo horario ya tomo otro turno (misma bahia, tecnico o
+                cliente). Mensaje: "No se puede reactivar el turno: su
+                horario ya fue tomado. <recurso ocupado>".
 
 [GET] /dashboard/kpis  (requiere Authorization: Bearer <accessToken>)
   Descripcion : KPIs operativos del periodo (RF-04, Sprint 8).
@@ -226,12 +233,9 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
                  que cae adentro. Tope 1.
     turnos     = turnos que EMPIEZAN ese dia del taller (un turno a las
                  22:00 locales es de ese dia aunque en UTC sea el siguiente).
-    cancelados = no cuentan ni como turno ni como ocupacion.
-                 OJO: las constraints EXCLUDE de turnos (bahia, tecnico,
-                 cliente) NO excluyen cancelados, asi que hoy el horario de
-                 un turno cancelado sigue sin poder reservarse (409) aunque
-                 el panel lo muestre libre. Pendiente: migracion que agregue
-                 WHERE (estado <> 'cancelado') a las tres constraints.
+    cancelados = no cuentan ni como turno ni como ocupacion. Coincide con
+                 las constraints EXCLUDE desde la migracion 011: el horario
+                 de un turno cancelado se puede volver a reservar.
     nivel      = "libre" (sin turnos) | "normal" | "alta" (>= umbrales.alta)
                  | "completa" (>= umbrales.completa). Los umbrales viajan en
                  la respuesta para que el front no tenga su propia copia.

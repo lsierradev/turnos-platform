@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, QueryFailedError, Raw, Repository } from 'typeorm';
+import { DataSource, Not, QueryFailedError, Raw, Repository } from 'typeorm';
 import { buscarTecnico, esRolTecnico } from '../../common/tecnicos.util';
 import {
   fechaEnZona,
@@ -220,11 +220,36 @@ export class AppointmentsService {
     // que despues se cuele en el promedio del dashboard.
     const esAtendido = dto.estado === EstadoTurno.ATENDIDO;
 
+    const estadoAnterior = turno.estado;
     turno.estado = dto.estado;
     turno.atencionInicio = esAtendido ? atencionInicio : null;
     turno.atencionFin = esAtendido ? atencionFin : null;
 
-    return this.turnosRepository.save(turno);
+    try {
+      return await this.turnosRepository.save(turno);
+    } catch (error) {
+      // Desde 011 un cancelado libera su horario. Reactivarlo (sacarlo de
+      // "cancelado") vuelve a hacerlo competir en las EXCLUDE: si otro
+      // turno ya tomo la bahia, el tecnico o el cliente en ese horario, el
+      // UPDATE falla con 23P01. Sin esto salia como 500.
+      if (
+        esErrorDeSolapamiento(error) &&
+        estadoAnterior === EstadoTurno.CANCELADO
+      ) {
+        const { mensaje } = interpretarConflicto(
+          nombreConstraintViolada(error),
+          {
+            bahiaId: turno.bahiaId,
+            tecnicoId: turno.tecnicoId ?? '',
+            usuarioId: turno.usuarioId ?? '',
+          },
+        );
+        throw new ConflictException(
+          `No se puede reactivar el turno: su horario ya fue tomado. ${mensaje}`,
+        );
+      }
+      throw error;
+    }
   }
 
   private async buscarSugerencias(
@@ -257,6 +282,11 @@ export class AppointmentsService {
     const turnosOcupados = await this.turnosRepository.find({
       where: {
         ...filtro,
+        // Desde 011 un cancelado no ocupa su horario: sugerirlo como
+        // ocupado ocultaria un hueco que ahora si se puede reservar. Con
+        // este predicado el planner puede usar el GiST parcial de la
+        // constraint.
+        estado: Not(EstadoTurno.CANCELADO),
         rangoTiempo: Raw(
           (alias) => `${alias} && tstzrange(:desde, :hasta, '[)')`,
           { desde, hasta },

@@ -72,6 +72,10 @@ describirSiHayInfra('Notificaciones (integration)', () => {
     // sin esto el test tardaria ~20s solo esperando reintentos.
     process.env.NOTIFICACIONES_BACKOFF_MS = '50';
     process.env.NOTIFICACIONES_INTENTOS = '3';
+    // Cola propia de esta corrida (ver BULL_PREFIX en app.module.ts): un
+    // reservas-service de dev escuchando el mismo Redis no puede tomar
+    // estos jobs. obliterate() en afterAll borra estas claves.
+    process.env.BULL_PREFIX = `bull-test-${process.pid}-${Date.now()}`;
 
     providerEmail = new ProviderQueSeCae(2);
 
@@ -151,6 +155,7 @@ describirSiHayInfra('Notificaciones (integration)', () => {
       await cola.close();
     }
     await app?.close();
+    delete process.env.BULL_PREFIX;
   });
 
   it('reintenta el envio cuando el proveedor se cae y termina marcandolo enviado', async () => {

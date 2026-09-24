@@ -31,6 +31,13 @@ import { TechniciansModule } from './modules/technicians/technicians.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         url: config.get<string>('REDIS_URL'),
+        // Espacio de nombres de las colas en Redis. 'bull' es el default de
+        // Bull (lo que se uso siempre). Los tests de integracion ponen uno
+        // propio por corrida: si no, un reservas-service corriendo en la
+        // misma maquina (mismo Redis) consume los jobs del test con sus
+        // providers reales. Paso en Sprint 16: el job del test termino
+        // "fallido" con "SENDGRID_API_KEY no configurada" del proceso de dev.
+        prefix: config.get<string>('BULL_PREFIX') || 'bull',
       }),
     }),
     ScheduleModule.forRoot(),

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -92,6 +92,12 @@ export function LoginView() {
             >
               {enviando ? 'Ingresando…' : 'Ingresar'}
             </Button>
+            <Link
+              to="/olvide"
+              className="block text-center text-sm text-muted-foreground hover:text-foreground"
+            >
+              ¿Olvidaste tu contraseña?
+            </Link>
           </form>
         </CardContent>
       </Card>

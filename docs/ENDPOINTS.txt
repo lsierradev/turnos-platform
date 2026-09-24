@@ -74,9 +74,15 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
       "bahiaId": "uuid",
       "servicioId": "uuid",
       "tecnicoId": "uuid",
-      "inicio": "2024-06-10T09:00:00.000Z"
+      "inicio": "2024-06-10T09:00:00.000Z",
+      "clienteId": "uuid"        (opcional, solo admin; Sprint 17)
     }
     tecnicoId debe ser un usuario existente con rol "tecnico".
+    clienteId: a nombre de que cliente queda el turno (un admin que reserva
+    por un cliente). Sin clienteId, el turno es de quien reserva (sub del
+    JWT). Otro rol mandando el id de otra persona -> 403; un id que no es de
+    un usuario con rol "cliente" -> 404. El 409 por solapamiento del cliente
+    dice "El cliente ya tiene otro turno..." en vez de "Ya tenes otro...".
   Response 201: Turno creado (incluye rangoTiempo { inicio, fin }).
   Response 400 (Sprint 9): inicio en el pasado, o turno que no entra completo
                 en el horario laboral 08:00-18:00 hora del taller
@@ -84,7 +90,8 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
                 servicio que empieza dentro y termina fuera). No hay
                 antelacion minima: se puede reservar para dentro de 5 min.
   Response 404: bahia, servicio o tecnico inexistente (o el usuario referido
-                por tecnicoId no tiene rol "tecnico").
+                por tecnicoId no tiene rol "tecnico"). Desde Sprint 17
+                tambien una bahia inactiva o un servicio dado de baja.
   Response 409 (double-booking, RF-02 — HU2 bahia, Sprint 4 tecnico):
     {
       "message": "La bahia ya tiene un turno reservado en ese horario.",
@@ -107,6 +114,44 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
     que vuelven a dar 409. Las sugerencias son los 3 horarios libres mas cercanos
     para ese mismo recurso (bahia o tecnico) — horario laboral 08:00-18:00,
     ventana de busqueda de 3 dias.
+
+[GET] /appointments/disponibilidad?bahiaId=&servicioId=&tecnicoId=&fecha=YYYY-MM-DD
+      (requiere Authorization: Bearer <accessToken>, cualquier rol)
+  Descripcion : Horarios reservables de UN dia del taller (Sprint 17): la
+                grilla del formulario de reserva. Paso de 15 min dentro de
+                08:00-18:00 hora del taller, sin horarios ya empezados, y
+                sin pisar turnos no cancelados de la bahia, del tecnico NI
+                del propio usuario del token (las tres EXCLUDE).
+  Response 200:
+    {
+      "fecha": "2026-09-25",
+      "zonaHoraria": "America/Bogota",
+      "duracionMinutos": 30,
+      "jornada": { "apertura": "08:00", "cierre": "18:00" },
+      "horarios": [ { "inicio": "2026-09-25T13:00:00.000Z", "fin": "..." }, ... ]
+    }
+  clienteId (opcional, solo admin, mismas reglas que en POST): descuenta
+  los turnos de ESE cliente en vez de los de quien consulta.
+  Response 400: parametros faltantes, id que no es UUID o fecha inexistente.
+  Response 404: mismas reglas que POST /appointments (bahia/servicio
+                inactivos, tecnico sin rol).
+  Sin cache a proposito: es lo que se mira justo antes de reservar. Puede
+  quedar vieja entre la consulta y el POST; para eso esta el 409.
+
+[GET] /appointments/mios  (requiere Authorization: Bearer <accessToken>, cualquier rol)
+  Descripcion : Los turnos de quien pregunta (Sprint 18, "Mis turnos"): los
+                que vienen y los de los ultimos 90 dias, maximo 100, con
+                bahia, servicio y nombre del tecnico. Sin parametros: no hay
+                forma de pedir los de otro.
+
+[GET] /bahias  (requiere Authorization: Bearer <accessToken>, cualquier rol)
+  Descripcion : Bahias activas, solo { id, nombre }, ordenadas por nombre
+                (Sprint 17, formulario de reserva).
+
+[GET] /technicians  (requiere Authorization: Bearer <accessToken>, cualquier rol)
+  Descripcion : Tecnicos, solo { id, nombre } (Sprint 17). Existe porque
+                GET /usuarios?rol=tecnico de usuarios-service es solo admin
+                y devuelve email.
 
 [GET] /technicians/:id/agenda  (requiere Authorization: Bearer <accessToken>)
   Descripcion : Turnos del dia para un tecnico (Sprint 4), ordenados por
@@ -139,8 +184,17 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
                 cliente). Mensaje: "No se puede reactivar el turno: su
                 horario ya fue tomado. <recurso ocupado>".
 
-[GET] /dashboard/kpis  (requiere Authorization: Bearer <accessToken>)
+[GET] /dashboard/kpis  (requiere Authorization: Bearer <accessToken>, rol admin o tecnico)
   Descripcion : KPIs operativos del periodo (RF-04, Sprint 8).
+  Sprint 18:
+    - ?tecnicoId=<uuid> (admin): solo los turnos de ese tecnico. Para el
+      rol tecnico se ignora y se usa SIEMPRE su propio id ("Mis
+      indicadores"). Un cliente recibe 403.
+    - La respuesta suma "zonaHoraria", "tecnicoId" (null = taller entero) y
+      "anterior": { rango, resumen } -- el periodo inmediatamente anterior
+      de la misma cantidad de dias (hoy -> ayer; 7 dias -> los 7 de antes),
+      para comparar cada KPI. Se resuelve en la MISMA consulta.
+    - La clave de cache incluye el tecnico.
   Query       : ?from=2024-06-01&to=2024-06-30
                 Formato YYYY-MM-DD, ambos inclusive, dias del taller
                 (TZ_NEGOCIO, default America/Bogota). Los dos son
@@ -321,6 +375,20 @@ Dominio: usuarios, tenants, autenticacion
     }
   Response 401: credenciales invalidas.
 
+[POST] /auth/olvide  (publico, Sprint 18)
+  Body        : { "email": "maria@correo.com" }
+  Response 202 SIEMPRE, exista o no el correo (no revela cuentas). Si existe,
+  manda un enlace de un solo uso para cambiar la contrasena (vale 1 hora).
+  Freno: no manda otro si hubo uno en el ultimo minuto.
+
+[POST] /auth/restablecer  (publico, Sprint 18)
+  Body        : { "token": "<43 caracteres del enlace>", "password": "minimo8car" }
+  Response 204: contrasena cambiada; el enlace queda usado.
+  Response 400: enlace inexistente, usado o vencido.
+  Los enlaces se guardan como SHA-256 (tabla tokens_contrasena, migracion
+  013). Uno nuevo anula los anteriores del mismo usuario. Sin SENDGRID_*
+  configurado el correo no sale: queda en el log de usuarios-service.
+
 [POST] /auth/refresh
   Descripcion : Emite un nuevo access token a partir de un refresh token valido.
   Body        :
@@ -333,10 +401,35 @@ Dominio: usuarios, tenants, autenticacion
     }
   Response 401: refresh token invalido o expirado.
 
+[POST] /usuarios  (requiere Authorization: Bearer <accessToken>, rol admin)
+  Descripcion : Alta de un usuario. Desde Sprint 17 la usa el formulario de
+                reserva para dar de alta un cliente nuevo.
+  Body        :
+    {
+      "email": "maria@correo.com",
+      "password": "minimo8car",    (opcional desde Sprint 17, ver abajo)
+      "nombre": "Maria Perez",
+      "rol": "cliente",            (opcional, default cliente)
+      "telefono": "+57 300 ...",   (opcional; se guarda cifrado)
+      "ciudad": "Medellin"         (opcional, max 80; migracion 012)
+    }
+  Sin password (Sprint 18) la cuenta nace con una contrasena al azar que
+  nadie conoce y el usuario recibe por correo un enlace para definir la suya
+  (vale 72 horas; ver /auth/restablecer). La respuesta suma
+  "invitacion": { "enviado": true|false } -- false si SendGrid no esta
+  configurado (el enlace queda en el log).
+  Response 201: el usuario, sin password_hash.
+  Response 400: email invalido, password < 8, nombre vacio, ciudad > 80.
+  Response 409: "Ya existe un usuario con el correo <email>." (Sprint 17;
+                antes salia el mensaje crudo de Postgres).
+
+[GET] /usuarios?rol=cliente|tecnico|admin  (rol admin)
+  Descripcion : Lista usuarios (id, email, nombre, rol, telefono descifrado,
+                ciudad).
+
 Pendiente:
-  No hay endpoint de registro/CRUD de usuarios todavia — la creacion de
-  usuarios (UsuariosService.create) solo existe como metodo interno, sin
-  controller expuesto (no fue parte del alcance de Sprint 2).
+  Los refresh tokens emitidos antes de un cambio de contrasena siguen
+  validos hasta vencer (7 dias): cambiarla no cierra otras sesiones.
 
 ----------------------------------------
 Convenciones generales
@@ -359,10 +452,16 @@ Convenciones generales
 - Autorizacion por ROL (Sprint 9): JwtAuthGuard autentica, RolesGuard
   autoriza. Una ruta sin @Roles() sigue abierta a cualquier autenticado.
   Matriz vigente:
-    admin                  -> POST/PATCH/DELETE /servicios, GET /dashboard/kpis
+    admin                  -> POST/PATCH/DELETE /servicios
+    admin | tecnico (suyo) -> GET /dashboard/kpis (Sprint 18)
     admin | tecnico        -> PATCH /appointments/:id/estado
     admin | tecnico duenio -> GET /technicians/:id/agenda (403 si un tecnico
                               pide la agenda de otro)
-    autenticado            -> POST /appointments, GET /servicios
+    admin                  -> GET /bahias/carga, GET /bahias/:id/turnos
+    autenticado            -> POST /appointments, GET /servicios,
+                              GET /appointments/disponibilidad (Sprint 17),
+                              GET /bahias, GET /technicians,
+                              GET /appointments/mios (Sprint 18)
+    publico                -> POST /auth/login, /auth/olvide, /auth/restablecer
   Falta de permiso responde 403 (el token es valido); 401 queda solo para
   token ausente o invalido.

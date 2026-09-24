@@ -88,14 +88,20 @@ test.describe('Acceso al panel', () => {
     ).toHaveCount(0);
   });
 
-  test('un cliente entra pero no tiene ninguna vista disponible', async ({
-    page,
-  }) => {
+  test('un cliente entra y solo puede reservar', async ({ page }) => {
     await iniciarSesionEnPanel(page, datos.clienteEmail, PASSWORD_DE_PRUEBA);
 
+    // Desde Sprint 17 la reserva es la unica vista del cliente: ni agenda,
+    // ni panel, ni dashboard en la navegacion.
     await expect(
-      page.getByText(/no tiene acceso a ninguna vista/i),
+      page.getByRole('button', { name: 'Reservar un turno' }),
     ).toBeVisible();
+    // Hay dos <nav> (lateral y barra inferior); el oculto por CSS no cuenta
+    // para getByRole.
+    const nav = page.getByRole('navigation', { name: 'Principal' });
+    await expect(nav.getByRole('link', { name: 'Reservar' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Agenda' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Dashboard' })).toHaveCount(0);
   });
 
   test('un cliente que fuerza la URL del dashboard recibe un error, no los datos', async ({

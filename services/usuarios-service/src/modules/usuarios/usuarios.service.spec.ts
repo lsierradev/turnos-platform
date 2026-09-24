@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import * as bcrypt from 'bcryptjs';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { ConflictException } from '@nestjs/common';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { RolUsuario, Usuario } from './entities/usuario.entity';
 import { UsuariosService } from './usuarios.service';
 
@@ -95,6 +97,7 @@ describe('UsuariosService', () => {
       'nombre',
       'rol',
       'telefono',
+      'ciudad',
       'creadoEn',
       'actualizadoEn',
     ];
@@ -132,6 +135,58 @@ describe('UsuariosService', () => {
         expect.objectContaining({
           select: expect.not.arrayContaining(['passwordHash']),
         }),
+      );
+    });
+  });
+
+  describe('create', () => {
+    const input = {
+      email: 'cliente@taller.dev',
+      password: 'secreta123',
+      nombre: 'Cliente',
+    };
+
+    it('crea clientes por defecto y guarda el hash, no la contrasena', async () => {
+      repository.create.mockImplementation((u) => u as Usuario);
+      repository.save.mockImplementation(async (u) => u as Usuario);
+
+      const creado = await service.create(input);
+
+      expect(creado.rol).toBe(RolUsuario.CLIENTE);
+      expect(creado.passwordHash).not.toBe(input.password);
+    });
+
+    it('sin password guarda el hash de un secreto al azar, nunca vacio', async () => {
+      repository.create.mockImplementation((u) => u as Usuario);
+      repository.save.mockImplementation(async (u) => u as Usuario);
+
+      const a = await service.create({
+        email: 'a@taller.dev',
+        nombre: 'A',
+        ciudad: ' Medellin ',
+      });
+      const b = await service.create({ email: 'b@taller.dev', nombre: 'B' });
+
+      expect(a.passwordHash).toMatch(/^\$2[aby]\$/);
+      // Ni vacia ni una constante: nadie puede entrar con esa cuenta.
+      expect(bcrypt.compareSync('', a.passwordHash)).toBe(false);
+      expect(a.ciudad).toBe('Medellin');
+      expect(b.ciudad).toBeNull();
+    });
+
+    it('un correo repetido es 409 con mensaje util, no el error de Postgres', async () => {
+      repository.create.mockImplementation((u) => u as Usuario);
+      repository.save.mockRejectedValue(
+        new QueryFailedError('INSERT', [], {
+          code: '23505',
+          constraint: 'usuarios_email_key',
+        } as any),
+      );
+
+      const error = await service.create(input).catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.message).toBe(
+        'Ya existe un usuario con el correo cliente@taller.dev.',
       );
     });
   });

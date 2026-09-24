@@ -19,10 +19,10 @@ import { getKpis } from '@/lib/api-client';
  */
 const INTERVALO_REFRESCO_MS = 2_000;
 
-export function useKpisQuery(from: string, to: string) {
+export function useKpisQuery(from: string, to: string, tecnicoId?: string) {
   return useQuery({
-    queryKey: ['kpis', from, to],
-    queryFn: () => getKpis(from, to),
+    queryKey: ['kpis', from, to, tecnicoId ?? 'todos'],
+    queryFn: () => getKpis(from, to, tecnicoId),
     enabled: Boolean(from && to),
 
     // keepPreviousData: mismo patrón que el resto de la app -- al mover el

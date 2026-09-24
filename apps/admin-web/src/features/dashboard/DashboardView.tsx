@@ -1,121 +1,60 @@
 import { useState } from 'react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { ChartColumn, Download, Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import {
   EstadoCargando,
   EstadoError,
+  EstadoVacio,
   IndicadorActualizando,
 } from '@/components/estados';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/features/auth/AuthProvider';
+import { useTecnicosQuery } from '@/features/agenda/useTecnicosQuery';
+import { aCsv, descargarCsv } from '@/lib/csv';
+import { formatearDiaMes, hoyISO, sumarDiasISO, ZONA_NEGOCIO } from '@/lib/dates';
+import { GraficosKpis } from './GraficosKpis';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import type { KpiDia, KpisResumen } from '@/lib/api-client';
-import { formatearDiaMes, hoyISO, sumarDiasISO } from '@/lib/dates';
+  comparar,
+  diasDelRango,
+  filasCsv,
+  formatearMinutos,
+  formatearPorcentaje,
+  nombrePeriodoAnterior,
+  type Comparacion,
+} from './kpis';
+import { TablaKpis } from './TablaKpis';
 import { useKpisQuery } from './useKpisQuery';
 
-// Los colores de serie salen de los tokens del tema (index.css), no de hex
-// sueltos aca: son los pasos ya validados para cada superficie, y asi el
-// modo oscuro cambia solo. SVG acepta var() en fill/stroke.
-const COLOR_ATENDIDOS = 'var(--chart-1)';
-const COLOR_NO_ASISTIO = 'var(--chart-2)';
-const COLOR_EJE = 'var(--muted-foreground)';
-const COLOR_GRILLA = 'var(--border)';
-
+// Los atajos se calculan SIEMPRE desde hoyISO(), que es "hoy" en la zona del
+// taller (lib/dates.ts), no la del navegador: a las 20:00 en Bogota el
+// navegador de alguien en Madrid ya esta en el dia siguiente, y "Hoy" le
+// mostraria un dia vacio.
 const PRESETS = [
   { label: 'Hoy', dias: 0 },
   { label: '7 dias', dias: 6 },
   { label: '30 dias', dias: 29 },
 ];
 
-function formatearPorcentaje(valor: number | null): string {
-  return valor === null ? '—' : `${Math.round(valor * 100)}%`;
-}
+const ICONO = { sube: TrendingUp, baja: TrendingDown, igual: Minus } as const;
 
-// El grafico de tasa trabaja en 0-100 (ver tasaAsistenciaPct), asi que su
-// tooltip necesita su propio formateador: pasarle formatearPorcentaje, que
-// espera 0-1, mostraria 8000% en vez de 80%.
-function formatearPorcentajeDesde100(valor: number | null): string {
-  return valor === null ? '—' : `${Math.round(valor)}%`;
-}
-
-function formatearMinutos(valor: number | null): string {
-  return valor === null ? '—' : `${valor} min`;
-}
-
-interface FilaGrafico extends KpiDia {
-  etiqueta: string;
-  tasaAsistenciaPct: number | null;
-}
-
-function TooltipKpi({
-  active,
-  payload,
-  label,
-  formatear,
-}: {
-  active?: boolean;
-  payload?: Array<{ name?: string; value?: number | null; color?: string }>;
-  label?: string;
-  formatear: (valor: number | null) => string;
-}) {
-  if (!active || !payload?.length) {
-    return null;
-  }
-
-  return (
-    <div className="rounded-md bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md ring-1 ring-foreground/10">
-      <p className="mb-1 font-medium">{label}</p>
-      {payload.map((serie) => (
-        <p key={serie.name} className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className="size-2 rounded-full"
-            style={{ backgroundColor: serie.color }}
-          />
-          <span className="text-muted-foreground">{serie.name}:</span>
-          <span className="font-medium">
-            {formatear(serie.value ?? null)}
-          </span>
-        </p>
-      ))}
-    </div>
-  );
-}
-
-// testId: gancho estable para la suite E2E (e2e/tests/hu4-*). Sin el, los
-// tests tendrian que localizar los KPIs por su texto visible, y cualquier
-// retoque de copy los romperia sin que nada haya dejado de funcionar.
+// testId: gancho estable para la suite E2E (e2e/tests/hu4-*).
 function StatTile({
   titulo,
   valor,
   detalle,
+  comparacion,
   destacado,
   testId,
 }: {
   titulo: string;
   valor: string;
   detalle: string;
+  comparacion?: Comparacion;
   destacado?: boolean;
   testId: string;
 }) {
+  const Icono = comparacion?.direccion ? ICONO[comparacion.direccion] : null;
   return (
     <Card data-testid={testId}>
       <CardContent>
@@ -131,135 +70,135 @@ function StatTile({
           {valor}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">{detalle}</p>
+        {comparacion && (
+          // Flecha + texto, sin verde/rojo: el cambio se describe, no se
+          // juzga (ver comparar()), y no depende del color.
+          <p data-testid={`${testId}-comparacion`} className="mt-2 flex items-start gap-1 text-xs text-foreground">
+            {Icono && <Icono className="mt-px size-3.5 shrink-0" aria-hidden />}
+            {comparacion.texto}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function TablaKpis({ serie }: { serie: FilaGrafico[] }) {
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Dia</TableHead>
-          <TableHead className="text-right">Atendidos</TableHead>
-          <TableHead className="text-right">No asistio</TableHead>
-          <TableHead className="text-right">Tasa</TableHead>
-          <TableHead className="text-right">Tiempo prom.</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {serie.map((dia) => (
-          <TableRow key={dia.fecha}>
-            <TableCell className="font-mono text-xs">{dia.fecha}</TableCell>
-            <TableCell className="text-right">{dia.atendidos}</TableCell>
-            <TableCell className="text-right">{dia.noAsistio}</TableCell>
-            <TableCell className="text-right">
-              {formatearPorcentaje(dia.tasaAsistencia)}
-            </TableCell>
-            <TableCell className="text-right">
-              {formatearMinutos(dia.minutosPromedioServicio)}
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
+/**
+ * Dashboard de indicadores (Sprint 18).
+ *
+ * - Admin: el taller entero, o un tecnico elegido.
+ * - Tecnico: "Mis indicadores", siempre los suyos (lo fuerza el backend).
+ * - Cliente: no llega aca (no esta en su navegacion; el backend da 403).
+ */
 export function DashboardView() {
+  const { usuario } = useAuth();
+  const esAdmin = usuario?.rol === 'admin';
   const [from, setFrom] = useState(() => sumarDiasISO(hoyISO(), -6));
   const [to, setTo] = useState(hoyISO);
+  const [tecnicoId, setTecnicoId] = useState('');
   const [verTabla, setVerTabla] = useState(false);
 
+  const tecnicos = useTecnicosQuery(esAdmin);
   const { data, isPending, isFetching, isError, error, refetch } = useKpisQuery(
     from,
     to,
+    esAdmin && tecnicoId ? tecnicoId : undefined,
   );
 
   // El backend tambien valida esto (400), pero atajarlo aca evita un viaje
-  // garantizado a fallar cada vez que el admin escribe la fecha "desde"
-  // pasando por un valor mayor que "hasta".
+  // garantizado a fallar mientras se escribe la fecha.
   const rangoInvalido = from > to;
+  const hoy = hoyISO();
 
   function aplicarPreset(dias: number) {
-    const hoy = hoyISO();
-    setFrom(sumarDiasISO(hoy, -dias));
-    setTo(hoy);
+    setFrom(sumarDiasISO(hoyISO(), -dias));
+    setTo(hoyISO());
   }
 
-  const serie: FilaGrafico[] = (data?.serie ?? []).map((dia) => ({
-    ...dia,
-    etiqueta: formatearDiaMes(dia.fecha),
-    // Recharts dibuja el eje en la unidad que recibe: se pasa a 0-100 aca
-    // para no tener que formatear el eje, el tooltip y la grilla por
-    // separado. null se mantiene null -- ver connectNulls abajo.
-    tasaAsistenciaPct:
-      dia.tasaAsistencia === null ? null : dia.tasaAsistencia * 100,
-  }));
+  const nombreTecnico = esAdmin
+    ? (tecnicos.data?.find((t) => t.id === tecnicoId)?.nombre ?? 'Todo el taller')
+    : (usuario?.email ?? '');
+  const resumen = data?.resumen;
+  const previo = data?.anterior.resumen;
+  const periodo = data ? nombrePeriodoAnterior(data.rango.from, data.rango.to, hoy) : '';
+  const medicionParcial = resumen !== undefined && resumen.turnosMedidos < resumen.turnosAtendidos;
+  const titulo = esAdmin ? 'Dashboard de indicadores' : 'Mis indicadores';
+  const tituloTabla = data
+    ? `Detalle diario del ${formatearDiaMes(data.rango.from)} al ${formatearDiaMes(data.rango.to)} (${nombreTecnico})`
+    : '';
 
-  const resumen: KpisResumen | undefined = data?.resumen;
-  const medicionParcial =
-    resumen !== undefined && resumen.turnosMedidos < resumen.turnosAtendidos;
+  function exportar() {
+    if (!data) return;
+    const sufijo = esAdmin && tecnicoId ? `-${nombreTecnico.replace(/\W+/g, '_')}` : '';
+    descargarCsv(`kpis_${data.rango.from}_${data.rango.to}${sufijo}.csv`, aCsv(filasCsv(data, nombreTecnico)));
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4 md:p-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-heading text-2xl font-semibold">
-            Dashboard de indicadores
-          </h1>
+          <h1 className="font-heading text-2xl font-semibold">{titulo}</h1>
           <p className="text-sm text-muted-foreground">
-            KPIs operativos del periodo seleccionado
+            {esAdmin ? 'KPIs operativos del periodo' : 'Tus turnos del periodo'} · dias en hora del
+            taller ({ZONA_NEGOCIO})
           </p>
         </div>
         <IndicadorActualizando activo={isFetching && !isPending} />
       </header>
 
-      {/* Filtros en una sola fila arriba de los graficos. */}
       <Card>
-        {/* En celular: las dos fechas lado a lado y los atajos abajo. */}
         <CardContent className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Desde
-            <Input
-              type="date"
-              value={from}
-              max={to}
-              onChange={(e) => setFrom(e.target.value)}
-              className="sm:w-40"
-            />
+            <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="sm:w-40" />
           </label>
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Hasta
-            <Input
-              type="date"
-              value={to}
-              min={from}
-              onChange={(e) => setTo(e.target.value)}
-              className="sm:w-40"
-            />
+            <Input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} className="sm:w-40" />
           </label>
-          <div className="col-span-2 flex gap-2">
-            {PRESETS.map((preset) => (
-              <Button
-                key={preset.label}
-                variant="outline"
-                size="sm"
-                onClick={() => aplicarPreset(preset.dias)}
+          {esAdmin && (
+            <label className="col-span-2 flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-1">
+              Tecnico
+              <select
+                value={tecnicoId}
+                onChange={(e) => setTecnicoId(e.target.value)}
+                disabled={tecnicos.isPending || tecnicos.isError}
+                className="h-8 rounded-lg border border-input bg-card px-2.5 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 sm:w-48 dark:bg-input/30"
               >
-                {preset.label}
-              </Button>
-            ))}
+                <option value="">Todo el taller</option>
+                {(tecnicos.data ?? []).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div role="group" aria-label="Rangos rapidos" className="col-span-2 flex gap-2">
+            {PRESETS.map((preset) => {
+              const activo = to === hoy && from === sumarDiasISO(hoy, -preset.dias);
+              return (
+                <Button
+                  key={preset.label}
+                  variant={activo ? 'secondary' : 'outline'}
+                  size="sm"
+                  aria-pressed={activo}
+                  onClick={() => aplicarPreset(preset.dias)}
+                >
+                  {preset.label}
+                </Button>
+              );
+            })}
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="col-span-2 justify-self-start sm:ml-auto"
-            onClick={() => setVerTabla((v) => !v)}
-          >
-            {verTabla ? 'Ver graficos' : 'Ver tabla'}
-          </Button>
+          <div className="col-span-2 flex gap-2 sm:ml-auto">
+            <Button variant="ghost" size="sm" onClick={() => setVerTabla((v) => !v)}>
+              {verTabla ? 'Ver graficos' : 'Ver tabla'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportar} disabled={!data || rangoInvalido}>
+              <Download aria-hidden />
+              Exportar CSV
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -272,7 +211,7 @@ export function DashboardView() {
         </p>
       ) : isError ? (
         <EstadoError error={error} onReintentar={refetch} />
-      ) : isPending ? (
+      ) : isPending || !resumen || !previo ? (
         <div className="space-y-4">
           <EstadoCargando forma="tarjetas" etiqueta="Cargando indicadores…" />
           <EstadoCargando forma="bloque" etiqueta="" />
@@ -283,227 +222,62 @@ export function DashboardView() {
             <StatTile
               titulo="Tasa de asistencia"
               testId="kpi-tasa-asistencia"
-              valor={formatearPorcentaje(resumen?.tasaAsistencia ?? null)}
-              detalle={`${resumen?.turnosAtendidos ?? 0} atendidos · ${
-                resumen?.turnosNoAsistio ?? 0
-              } no asistio`}
+              valor={formatearPorcentaje(resumen.tasaAsistencia)}
+              detalle={`${resumen.turnosAtendidos} atendidos · ${resumen.turnosNoAsistio} no asistio`}
+              comparacion={comparar('tasa', resumen.tasaAsistencia, previo.tasaAsistencia, periodo)}
             />
             <StatTile
               titulo="Tiempo prom. servicio"
               testId="kpi-tiempo-promedio"
-              valor={formatearMinutos(
-                resumen?.minutosPromedioServicio ?? null,
-              )}
-              detalle={`sobre ${resumen?.turnosMedidos ?? 0} turnos medidos`}
+              valor={formatearMinutos(resumen.minutosPromedioServicio)}
+              detalle={`sobre ${resumen.turnosMedidos} turnos medidos`}
+              comparacion={comparar('minutos', resumen.minutosPromedioServicio, previo.minutosPromedioServicio, periodo)}
               destacado
             />
             <StatTile
               titulo="Turnos en el periodo"
               testId="kpi-turnos-totales"
-              valor={String(resumen?.turnosTotales ?? 0)}
-              detalle={`${resumen?.turnosProgramados ?? 0} sin cerrar · ${
-                resumen?.turnosCancelados ?? 0
-              } cancelados`}
+              valor={String(resumen.turnosTotales)}
+              detalle={`${resumen.turnosProgramados} sin cerrar · ${resumen.turnosCancelados} cancelados`}
+              comparacion={comparar('cantidad', resumen.turnosTotales, previo.turnosTotales, periodo)}
             />
           </div>
 
           {medicionParcial && (
             <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-              El tiempo promedio se calculo sobre {resumen?.turnosMedidos} de{' '}
-              {resumen?.turnosAtendidos} turnos atendidos: el resto se cerro
-              sin registrar las horas reales de atencion.
+              El tiempo promedio se calculo sobre {resumen.turnosMedidos} de {resumen.turnosAtendidos}{' '}
+              turnos atendidos: el resto se cerro sin registrar las horas reales de atencion.
             </p>
           )}
 
-          {verTabla ? (
+          {resumen.turnosTotales === 0 ? (
+            // Antes: tres graficos con los ejes vacios. Un periodo sin
+            // turnos se dice, no se dibuja.
+            <EstadoVacio
+              icono={ChartColumn}
+              titulo="Sin turnos en este periodo"
+              descripcion={`Entre el ${formatearDiaMes(data.rango.from)} y el ${formatearDiaMes(
+                data.rango.to,
+              )} no hay turnos ${esAdmin && !tecnicoId ? 'en el taller' : 'asignados'}. Proba con un rango mas amplio.`}
+              accion={
+                diasDelRango(from, to) < 30 ? (
+                  <Button variant="outline" size="sm" onClick={() => aplicarPreset(29)}>
+                    Ver los ultimos 30 dias
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : verTabla ? (
             <Card>
               <CardHeader>
-                <CardTitle className="font-heading text-base">
-                  Detalle diario
-                </CardTitle>
+                <CardTitle className="font-heading text-base">Detalle diario</CardTitle>
               </CardHeader>
               <CardContent>
-                <TablaKpis serie={serie} />
+                <TablaKpis serie={data.serie} resumen={resumen} titulo={tituloTabla} />
               </CardContent>
             </Card>
           ) : (
-            <>
-              {/*
-                Un grafico por medida y nunca dos ejes Y en el mismo: un
-                porcentaje y una cantidad de minutos no comparten escala, y
-                superponerlos deja que la elección de escalas invente
-                correlaciones que los datos no tienen.
-              */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="font-heading text-base">
-                    Tasa de asistencia por dia
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={serie} accessibilityLayer>
-                      <CartesianGrid
-                        stroke={COLOR_GRILLA}
-                        strokeDasharray="3 3"
-                        vertical={false}
-                      />
-                      <XAxis
-                        dataKey="etiqueta"
-                        stroke={COLOR_EJE}
-                        tickLine={false}
-                        axisLine={false}
-                        fontSize={12}
-                      />
-                      <YAxis
-                        domain={[0, 100]}
-                        unit="%"
-                        stroke={COLOR_EJE}
-                        tickLine={false}
-                        axisLine={false}
-                        fontSize={12}
-                        width={44}
-                      />
-                      <Tooltip
-                        content={
-                          <TooltipKpi formatear={formatearPorcentajeDesde100} />
-                        }
-                      />
-                      <Line
-                        name="Tasa de asistencia"
-                        type="monotone"
-                        dataKey="tasaAsistenciaPct"
-                        stroke={COLOR_ATENDIDOS}
-                        strokeWidth={2}
-                        dot={{ r: 4, strokeWidth: 0, fill: COLOR_ATENDIDOS }}
-                        activeDot={{ r: 6 }}
-                        // Un dia sin turnos cerrados no es 0%: es un hueco.
-                        // Unir la linea por encima dibujaria una asistencia
-                        // que nunca se midio.
-                        connectNulls={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="font-heading text-base">
-                    Tiempo promedio de servicio por dia
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={serie} accessibilityLayer>
-                      <CartesianGrid
-                        stroke={COLOR_GRILLA}
-                        strokeDasharray="3 3"
-                        vertical={false}
-                      />
-                      <XAxis
-                        dataKey="etiqueta"
-                        stroke={COLOR_EJE}
-                        tickLine={false}
-                        axisLine={false}
-                        fontSize={12}
-                      />
-                      <YAxis
-                        unit=" min"
-                        stroke={COLOR_EJE}
-                        tickLine={false}
-                        axisLine={false}
-                        fontSize={12}
-                        width={60}
-                      />
-                      <Tooltip
-                        content={<TooltipKpi formatear={formatearMinutos} />}
-                      />
-                      <Line
-                        name="Tiempo prom. servicio"
-                        type="monotone"
-                        dataKey="minutosPromedioServicio"
-                        stroke={COLOR_NO_ASISTIO}
-                        strokeWidth={2}
-                        dot={{ r: 4, strokeWidth: 0, fill: COLOR_NO_ASISTIO }}
-                        activeDot={{ r: 6 }}
-                        connectNulls={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="font-heading text-base">
-                    Turnos cerrados por dia
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={serie} accessibilityLayer>
-                      <CartesianGrid
-                        stroke={COLOR_GRILLA}
-                        strokeDasharray="3 3"
-                        vertical={false}
-                      />
-                      <XAxis
-                        dataKey="etiqueta"
-                        stroke={COLOR_EJE}
-                        tickLine={false}
-                        axisLine={false}
-                        fontSize={12}
-                      />
-                      <YAxis
-                        allowDecimals={false}
-                        stroke={COLOR_EJE}
-                        tickLine={false}
-                        axisLine={false}
-                        fontSize={12}
-                        width={36}
-                      />
-                      <Tooltip
-                        cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
-                        content={<TooltipKpi formatear={String} />}
-                      />
-                      <Legend
-                        iconType="circle"
-                        wrapperStyle={{ fontSize: 12 }}
-                        // Recharts pinta el texto con el color de la serie:
-                        // el naranja de chart-1 como texto sobre la tarjeta
-                        // no llega a 4.5:1. El punto ya identifica la serie.
-                        formatter={(valor) => (
-                          <span className="text-foreground">{valor}</span>
-                        )}
-                      />
-                      {/*
-                        El stroke del color de la tarjeta es el separador de
-                        2px entre segmentos apilados: sin el, dos tramos
-                        contiguos se leen como un solo bloque.
-                      */}
-                      <Bar
-                        name="Atendidos"
-                        dataKey="atendidos"
-                        stackId="turnos"
-                        fill={COLOR_ATENDIDOS}
-                        stroke="var(--card)"
-                        strokeWidth={2}
-                      />
-                      <Bar
-                        name="No asistio"
-                        dataKey="noAsistio"
-                        stackId="turnos"
-                        fill={COLOR_NO_ASISTIO}
-                        stroke="var(--card)"
-                        strokeWidth={2}
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </>
+            <GraficosKpis serie={data.serie} />
           )}
         </div>
       )}

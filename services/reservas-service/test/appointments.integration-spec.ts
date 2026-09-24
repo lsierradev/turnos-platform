@@ -241,4 +241,216 @@ describirSiHayDb('Appointments (integration)', () => {
       .expect(409);
     expect(reactivar.body.message).toMatch(/No se puede reactivar/);
   });
+
+  describe('datos del formulario de reserva (Sprint 17)', () => {
+    it('GET /bahias y GET /technicians sirven a un cliente, sin datos de mas', async () => {
+      const server = app.getHttpServer();
+
+      const bahias = await request(server)
+        .get('/bahias')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(bahias.body).toContainEqual({
+        id: bahiaId,
+        nombre: 'Bahia integration test',
+      });
+
+      const tecnicos = await request(server)
+        .get('/technicians')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const propio = tecnicos.body.find(
+        (t: { id: string }) => t.id === tecnicoId,
+      );
+      // Sin email: por eso existe esta lista y no se reusa /usuarios.
+      expect(propio).toEqual({
+        id: tecnicoId,
+        nombre: 'Tecnico Integration Test',
+      });
+      expect(
+        tecnicos.body.some((t: { id: string }) => t.id === usuarioId),
+      ).toBe(false);
+
+      // La carga del taller sigue siendo solo admin.
+      await request(server)
+        .get('/bahias/carga')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('la disponibilidad descuenta el turno tomado y lo que el POST aceptaria coincide', async () => {
+      const server = app.getHttpServer();
+      const inicio = horaLocalBogota(10, 6);
+      const fecha = inicio.slice(0, 10);
+
+      await request(server)
+        .post('/appointments')
+        .set('Authorization', `Bearer ${otroToken}`)
+        .send({ bahiaId, servicioId, tecnicoId, inicio })
+        .expect(201);
+
+      const r = await request(server)
+        .get('/appointments/disponibilidad')
+        .query({ bahiaId, servicioId, tecnicoId, fecha })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const inicios = r.body.horarios.map((h: { inicio: string }) =>
+        new Date(h.inicio).getTime(),
+      );
+      const tomado = new Date(inicio).getTime();
+      expect(inicios).not.toContain(tomado);
+      expect(inicios).not.toContain(tomado - 15 * 60_000);
+      expect(inicios).toContain(tomado + 30 * 60_000);
+      expect(r.body.horarios[0].inicio).toBe(`${fecha}T13:00:00.000Z`);
+
+      // El primer horario ofrecido se puede reservar de verdad.
+      await request(server)
+        .post('/appointments')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          bahiaId,
+          servicioId,
+          tecnicoId,
+          inicio: r.body.horarios[0].inicio,
+        })
+        .expect(201);
+    });
+
+    it('un admin reserva a nombre de un cliente; un cliente no puede', async () => {
+      const server = app.getHttpServer();
+      const inicio = horaLocalBogota(15, 6);
+      const tokenAdmin = jwt.sign(
+        { sub: usuarioId, email: 'admin-integration@turnos.dev', rol: 'admin' },
+        process.env.JWT_SECRET ?? 'dev-secret-change-me',
+      );
+
+      // Un cliente mandando clienteId de otro: 403, y no se crea nada.
+      await request(server)
+        .post('/appointments')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          bahiaId: otraBahiaId,
+          servicioId,
+          tecnicoId,
+          inicio,
+          clienteId: otroUsuarioId,
+        })
+        .expect(403);
+
+      const creado = await request(server)
+        .post('/appointments')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({
+          bahiaId: otraBahiaId,
+          servicioId,
+          tecnicoId,
+          inicio,
+          clienteId: otroUsuarioId,
+        })
+        .expect(201);
+      expect(creado.body.usuarioId).toBe(otroUsuarioId);
+
+      // La grilla de ese cliente ya no ofrece ese horario, aunque la pida
+      // el admin para otra bahia (el cliente no puede estar en dos lados).
+      const r = await request(server)
+        .get('/appointments/disponibilidad')
+        .query({
+          bahiaId,
+          servicioId,
+          tecnicoId: tecnicoId,
+          fecha: inicio.slice(0, 10),
+          clienteId: otroUsuarioId,
+        })
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .expect(200);
+      const inicios = r.body.horarios.map((h: { inicio: string }) =>
+        new Date(h.inicio).getTime(),
+      );
+      expect(inicios).not.toContain(new Date(inicio).getTime());
+
+      // Un tecnico no es un cliente.
+      await request(server)
+        .post('/appointments')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({
+          bahiaId,
+          servicioId,
+          tecnicoId,
+          inicio: horaLocalBogota(16, 6),
+          clienteId: tecnicoId,
+        })
+        .expect(404);
+    });
+
+    it('mis turnos devuelve solo los del usuario del token (Sprint 18)', async () => {
+      const server = app.getHttpServer();
+      const inicio = horaLocalBogota(13, 7);
+      const mio = await request(server)
+        .post('/appointments')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ bahiaId, servicioId, tecnicoId, inicio })
+        .expect(201);
+      // El otro cliente ya tiene turnos de los tests anteriores: ninguno
+      // puede aparecer en esta lista.
+      const { body } = await request(server)
+        .get('/appointments/mios')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const propio = body.find((t: { id: string }) => t.id === mio.body.id);
+      expect(propio).toMatchObject({
+        bahia: 'Bahia integration test',
+        servicio: {
+          nombre: 'Servicio integration test',
+          categoria: 'mecanica',
+        },
+        tecnico: 'Tecnico Integration Test',
+        estado: 'programado',
+      });
+      expect(new Date(propio.inicio).toISOString()).toBe(
+        new Date(inicio).toISOString(),
+      );
+
+      // Ningun turno del otro cliente.
+      const [{ ids }] = await dataSource.query(
+        'SELECT array_agg(id) AS ids FROM turnos WHERE usuario_id = $1',
+        [otroUsuarioId],
+      );
+      for (const t of body) expect(ids ?? []).not.toContain(t.id);
+    });
+
+    it('el dashboard de un tecnico es siempre el suyo; un cliente no entra (Sprint 18)', async () => {
+      const server = app.getHttpServer();
+      const tokenTecnico = jwt.sign(
+        {
+          sub: tecnicoId,
+          email: 'tecnico-integration-test@turnos.dev',
+          rol: 'tecnico',
+        },
+        process.env.JWT_SECRET ?? 'dev-secret-change-me',
+      );
+
+      const { body } = await request(server)
+        .get('/dashboard/kpis')
+        .query({ tecnicoId: otroUsuarioId })
+        .set('Authorization', `Bearer ${tokenTecnico}`)
+        .expect(200);
+      expect(body.tecnicoId).toBe(tecnicoId);
+      expect(body.anterior.rango).toBeDefined();
+
+      await request(server)
+        .get('/dashboard/kpis')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('400 con parametros faltantes', async () => {
+      await request(app.getHttpServer())
+        .get('/appointments/disponibilidad')
+        .query({ bahiaId })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+    });
+  });
 });

@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { EstadoCargando, EstadoError, EstadoVacio } from '@/components/estados';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/features/auth/AuthProvider';
-import { BuscadorTecnicos } from './BuscadorTecnicos';
+import { BuscadorPersonas } from '@/components/BuscadorPersonas';
 import { useTecnicosQuery } from './useTecnicosQuery';
 
 /**
@@ -43,8 +43,8 @@ export function SeleccionTecnicoView() {
               descripcion="Cuando se de de alta un usuario con rol tecnico va a aparecer aca."
             />
           ) : (
-            <BuscadorTecnicos
-              tecnicos={tecnicos.data}
+            <BuscadorPersonas
+              personas={tecnicos.data}
               onElegir={(t) => navigate(`/agenda/${t.id}`)}
               autoFocus
               alto="max-h-[28rem]"

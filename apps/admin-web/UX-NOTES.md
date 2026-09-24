@@ -99,3 +99,50 @@ Sin cambios de código, solo hallazgos y recomendaciones.
     disparar su propio query con `keepPreviousData` (mismo patrón que ya
     usan `AgendaTecnicoView`/`PanelAdministrativoView`) en vez de bloquear
     todo el formulario en cada paso.
+
+## Estado de los puntos 8–10 (Sprint 17)
+
+La pantalla existe: `/reservar` (`src/features/reserva/`), para admin y
+cliente. El técnico no la ve: el turno quedaría a su nombre como cliente.
+
+| # | Resolución |
+|---|---|
+| 8 | El 409 muestra el mensaje del backend y sus sugerencias como botones "Reservar a las 09:30 en su lugar" (o "el vie 26 a las …" si caen otro día). Un click reintenta con ese horario; las alternativas siguen a la vista con spinner en la elegida hasta la respuesta. Tras el 409 la grilla se vuelve a pedir. |
+| 9 | Sin UI optimista: botón deshabilitado + spinner "Reservando…", formulario bloqueado (`fieldset disabled`) y confirmación recién con el 201, armada con los datos que devolvió el servidor. Los horarios se precargan apenas bahía+servicio+técnico están elegidos, y el día siguiente queda en caché. |
+| 10 | Los tres catálogos (`GET /bahias`, `/servicios`, `/technicians`) se piden en paralelo al abrir, no en cadena; la cadena es solo de habilitación. La grilla usa `keepPreviousData` y deshabilita los horarios mientras muestra datos de la combinación anterior. |
+
+Otros detalles:
+- Horarios en la zona del taller (`VITE_TZ_NEGOCIO`). Si el navegador está
+  en otra zona se avisa en el subtítulo.
+- `<select>` nativos en vez del Select de base-ui: en el celular abren el
+  selector del sistema.
+- El admin reserva siempre a nombre de un cliente (paso "1. Cliente"): uno
+  existente, buscado por nombre, correo o teléfono, o uno nuevo con sus
+  datos de perfil: nombre, correo, teléfono (opcional, para el recordatorio)
+  y ciudad. Sin contraseña: el admin no la define ni la ve. El cliente se
+  registra al confirmar, antes del turno; si el turno después da 409, el
+  cliente ya creado queda elegido para el reintento en vez de volver a
+  crearse.
+- Ese cliente recibe por correo un enlace para definir su contraseña
+  (Sprint 18, `/restablecer`); la confirmación de la reserva dice si el
+  correo salió.
+
+## Sprint 18: dashboard y vista por rol
+
+- **Dashboard**: cada KPI se compara con el período anterior de igual
+  largo, con flecha y texto ("+8 pts vs. los 7 días anteriores (85%)"),
+  sin verde/rojo: el cambio se describe, no se juzga, y no depende del
+  color. Tooltips con la fecha completa y el contexto del valor ("75% (3
+  de 4)"). Un período sin turnos muestra un estado vacío con acción en vez
+  de ejes vacíos; cada gráfico sin datos propios dice por qué. Tabla con
+  caption, encabezados de fila y columna, totales en `<tfoot>` y scroll
+  alcanzable por teclado. Exportación CSV con `;` y BOM (Excel en
+  español). Los atajos Hoy / 7 / 30 días salen de `hoyISO()`, el día del
+  taller.
+- **Por rol**: admin ve el taller y puede filtrar por técnico; el técnico
+  ve "Mis indicadores" (el mismo dashboard, forzado a sus turnos por el
+  backend) y su inicio suma ese acceso; el cliente tiene "Mis turnos"
+  (próximos e historial de 90 días) y su próximo turno en el inicio.
+- **Contraseña**: "¿Olvidaste tu contraseña?" en el login y `/restablecer`
+  para el enlace del correo. La respuesta de "olvidé" es la misma exista o
+  no la cuenta.

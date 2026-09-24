@@ -27,6 +27,14 @@ import { TechniciansService } from './technicians.service';
 export class TechniciansController {
   constructor(private readonly techniciansService: TechniciansService) {}
 
+  // Lista para el formulario de reserva: cualquier autenticado tiene que
+  // poder elegir tecnico, pero GET /usuarios?rol=tecnico (usuarios-service)
+  // es solo admin porque devuelve email. Aca van solo id y nombre.
+  @Get()
+  listar() {
+    return this.techniciansService.listar();
+  }
+
   // @Roles no alcanza para esta ruta: el permiso no depende solo del rol
   // sino de DE QUIEN es la agenda. Con @Roles(TECNICO) a secas, cualquier
   // tecnico podria leer la agenda de todos los demas pasando otro id en la

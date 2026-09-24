@@ -44,6 +44,10 @@ export class Usuario {
   })
   telefono?: string | null;
 
+  // Migracion 012 (Sprint 17). Tipo explicito por lo mismo que telefono.
+  @Column({ type: 'text', nullable: true })
+  ciudad?: string | null;
+
   @CreateDateColumn({ name: 'creado_en' })
   creadoEn: Date;
 

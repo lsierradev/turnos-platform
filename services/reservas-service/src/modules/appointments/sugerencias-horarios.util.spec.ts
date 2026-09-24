@@ -1,5 +1,8 @@
 import { fechaEnZona, partesEnZona } from '../../common/zona-horaria.util';
-import { sugerirHorarios } from './sugerencias-horarios.util';
+import {
+  horariosLibresDelDia,
+  sugerirHorarios,
+} from './sugerencias-horarios.util';
 
 // Lunes fijo con offset explicito, para que los tests no dependan del dia
 // ni de la zona del proceso. El horario laboral de sugerirHorarios es el de
@@ -152,5 +155,82 @@ describe('sugerirHorarios', () => {
         new Date('2024-01-09T08:00:00+09:00'),
       );
     });
+  });
+});
+
+describe('horariosLibresDelDia', () => {
+  const FECHA = '2024-01-08';
+  const ANTES = new Date('2024-01-01T00:00:00Z');
+
+  it('recorre la jornada local de 15 en 15 hasta que el turno ya no entra', () => {
+    const libres = horariosLibresDelDia({
+      fecha: FECHA,
+      duracionMinutos: 30,
+      turnosOcupados: [],
+      ahora: ANTES,
+      zonaHoraria: BOGOTA,
+    });
+
+    // 08:00 ... 17:30 locales: 39 inicios. 17:45 + 30 min pasaria las 18.
+    expect(libres).toHaveLength(39);
+    expect(libres[0].inicio).toEqual(new Date('2024-01-08T08:00:00-05:00'));
+    expect(libres.at(-1)!.inicio).toEqual(
+      new Date('2024-01-08T17:30:00-05:00'),
+    );
+    expect(libres.at(-1)!.fin).toEqual(new Date('2024-01-08T18:00:00-05:00'));
+  });
+
+  it('saca los que se solapan con un turno, pegados incluidos no', () => {
+    const libres = horariosLibresDelDia({
+      fecha: FECHA,
+      duracionMinutos: 30,
+      turnosOcupados: [
+        {
+          inicio: new Date('2024-01-08T09:00:00-05:00'),
+          fin: new Date('2024-01-08T09:30:00-05:00'),
+        },
+      ],
+      ahora: ANTES,
+      zonaHoraria: BOGOTA,
+    });
+    const horas = libres.map((r) => partesEnZona(r.inicio, BOGOTA));
+    const hhmm = horas.map((p) => p.hora * 60 + p.minuto);
+
+    // 08:45, 09:00 y 09:15 pisan el turno; 08:30 termina justo a las 09:00
+    // y 09:30 empieza cuando termina: rangos [) que se tocan no chocan.
+    expect(hhmm).toContain(8 * 60 + 30);
+    expect(hhmm).toContain(9 * 60 + 30);
+    expect(hhmm).not.toContain(8 * 60 + 45);
+    expect(hhmm).not.toContain(9 * 60);
+    expect(hhmm).not.toContain(9 * 60 + 15);
+  });
+
+  it('no ofrece horarios que ya empezaron', () => {
+    const libres = horariosLibresDelDia({
+      fecha: FECHA,
+      duracionMinutos: 30,
+      turnosOcupados: [],
+      ahora: new Date('2024-01-08T16:50:00-05:00'),
+      zonaHoraria: BOGOTA,
+    });
+
+    expect(libres.map((r) => fechaEnZona(r.inicio, BOGOTA))).toEqual([
+      FECHA,
+      FECHA,
+      FECHA,
+    ]);
+    expect(libres[0].inicio).toEqual(new Date('2024-01-08T17:00:00-05:00'));
+  });
+
+  it('la jornada es la de la zona pedida, no la del proceso', () => {
+    const [primero] = horariosLibresDelDia({
+      fecha: FECHA,
+      duracionMinutos: 60,
+      turnosOcupados: [],
+      ahora: ANTES,
+      zonaHoraria: 'Asia/Tokyo',
+    });
+
+    expect(primero.inicio).toEqual(new Date('2024-01-08T08:00:00+09:00'));
   });
 });

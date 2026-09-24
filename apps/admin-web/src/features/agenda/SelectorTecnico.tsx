@@ -4,7 +4,7 @@ import { ChevronsUpDown } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { EstadoCargando, EstadoError } from '@/components/estados';
 import { buttonVariants } from '@/components/ui/button';
-import { BuscadorTecnicos } from './BuscadorTecnicos';
+import { BuscadorPersonas } from '@/components/BuscadorPersonas';
 import { useTecnicosQuery } from './useTecnicosQuery';
 
 /**
@@ -42,8 +42,8 @@ export function SelectorTecnico({
             ) : tecnicos.isError ? (
               <EstadoError error={tecnicos.error} onReintentar={tecnicos.refetch} />
             ) : (
-              <BuscadorTecnicos
-                tecnicos={tecnicos.data}
+              <BuscadorPersonas
+                personas={tecnicos.data}
                 seleccionadoId={tecnicoId}
                 autoFocus
                 alto="max-h-72"

@@ -13,9 +13,9 @@ import { URL_RESERVAS } from '../playwright.config';
  * HU1 - Como cliente quiero reservar un turno para un servicio, con una
  * bahia y un tecnico, para asegurarme un horario de atencion.
  *
- * Se prueba a nivel API y no por navegador porque admin-web NO tiene todavia
- * un flujo de reserva (sus rutas son /, /agenda/:id, /admin y /dashboard; ver
- * UX-NOTES.md, que documenta ese hueco). El recorrido igual es end-to-end
+ * Se prueba a nivel API: cubre reglas (404, 400, 401, 403) que la pantalla
+ * no deja ni intentar. El recorrido por navegador, desde Sprint 17, esta en
+ * reserva-flujo.spec.ts. Este igual es end-to-end
  * real: login contra usuarios-service, reserva contra reservas-service y
  * lectura de vuelta por la agenda, sobre la misma Postgres, sin mocks.
  */

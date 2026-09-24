@@ -1,4 +1,4 @@
-import { IsOptional, Matches } from 'class-validator';
+import { IsOptional, IsUUID, Matches } from 'class-validator';
 
 // Solo fecha (YYYY-MM-DD), no un ISO 8601 completo: el rango del dashboard
 // es de dias enteros. Aceptar un instante con hora abriria la puerta a
@@ -15,4 +15,10 @@ export class KpisQueryDto {
   @IsOptional()
   @Matches(FORMATO_FECHA, { message: 'to debe tener el formato YYYY-MM-DD' })
   to?: string;
+
+  // Sprint 18: KPIs de un solo tecnico. Un admin lo elige; para el rol
+  // tecnico el controller lo pisa con su propio id.
+  @IsOptional()
+  @IsUUID()
+  tecnicoId?: string;
 }

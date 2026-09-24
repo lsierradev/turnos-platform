@@ -184,6 +184,13 @@ export class BahiasService {
     private readonly cache: RedisCacheService,
   ) {}
 
+  /** Bahias en servicio, para elegir una al reservar. */
+  listarActivas(): Promise<{ id: string; nombre: string }[]> {
+    return this.dataSource.query(
+      'SELECT id, nombre FROM bahias WHERE activa ORDER BY nombre, id',
+    );
+  }
+
   async carga(query: CargaQueryDto): Promise<CargaResponse> {
     const zona = zonaHorariaNegocio();
     const { desde, hasta } = this.rango(query, zona);

@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { ContrasenaService } from './contrasena.service';
 import { RolUsuario, Usuario } from './entities/usuario.entity';
 
 const SALT_ROUNDS = 10;
@@ -48,10 +49,11 @@ async function probarPostgres(
 
 export interface CrearUsuarioInput {
   email: string;
-  password: string;
+  password?: string;
   nombre: string;
   rol?: RolUsuario;
   telefono?: string;
+  ciudad?: string;
 }
 
 @Injectable()
@@ -106,6 +108,7 @@ export class UsuariosService {
         'nombre',
         'rol',
         'telefono',
+        'ciudad',
         'creadoEn',
         'actualizadoEn',
       ],
@@ -113,14 +116,36 @@ export class UsuariosService {
   }
 
   async create(input: CrearUsuarioInput): Promise<Usuario> {
-    const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
+    // Sin password (cliente dado de alta por un admin al reservar), la
+    // contrasena "por defecto" es un secreto al azar que nadie conoce: el
+    // usuario define la suya con el enlace que le llega por correo
+    // (UsuariosController.crear). password_hash es NOT NULL, y un hash
+    // vacio o fijo seria una contrasena adivinable.
+    const password = input.password ?? ContrasenaService.contrasenaInicial();
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
     const usuario = this.usuariosRepository.create({
       email: input.email,
       passwordHash,
       nombre: input.nombre,
       rol: input.rol ?? RolUsuario.CLIENTE,
       telefono: input.telefono,
+      ciudad: input.ciudad?.trim() || null,
     });
-    return this.usuariosRepository.save(usuario);
+    try {
+      return await this.usuariosRepository.save(usuario);
+    } catch (error) {
+      // usuarios_email_key. El filtro global ya lo convertia en 409, pero
+      // con el mensaje crudo de Postgres; desde Sprint 17 el admin da de
+      // alta clientes desde el formulario de reserva y necesita saber que
+      // hacer (buscarlo entre los existentes).
+      const codigo = (error as { driverError?: { code?: string } }).driverError
+        ?.code;
+      if (error instanceof QueryFailedError && codigo === '23505') {
+        throw new ConflictException(
+          `Ya existe un usuario con el correo ${input.email}.`,
+        );
+      }
+      throw error;
+    }
   }
 }

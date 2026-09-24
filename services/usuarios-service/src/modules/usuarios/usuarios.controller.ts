@@ -10,13 +10,17 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard, Rol, Roles, RolesGuard } from '@turnos-platform/auth';
 import type { Response } from 'express';
+import { ContrasenaService } from './contrasena.service';
 import { CrearUsuarioDto } from './dto/crear-usuario.dto';
 import { ListarUsuariosQueryDto } from './dto/listar-usuarios-query.dto';
 import { UsuariosService } from './usuarios.service';
 
 @Controller('usuarios')
 export class UsuariosController {
-  constructor(private readonly usuariosService: UsuariosService) {}
+  constructor(
+    private readonly usuariosService: UsuariosService,
+    private readonly contrasenaService: ContrasenaService,
+  ) {}
 
   @Get('health')
   health() {
@@ -43,6 +47,14 @@ export class UsuariosController {
   async crear(@Body() dto: CrearUsuarioDto) {
     const usuario = await this.usuariosService.create(dto);
     const { passwordHash: _passwordHash, ...usuarioSinPassword } = usuario;
+
+    // Sin password (Sprint 18): la cuenta nace con una al azar que nadie
+    // conoce y el usuario recibe por correo el enlace para definir la suya.
+    // `invitacion.enviada` le dice al admin si el correo salio de verdad.
+    if (!dto.password) {
+      const invitacion = await this.contrasenaService.emitir(usuario, 'alta');
+      return { ...usuarioSinPassword, invitacion };
+    }
     return usuarioSinPassword;
   }
 

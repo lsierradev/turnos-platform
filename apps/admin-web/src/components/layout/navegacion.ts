@@ -1,7 +1,9 @@
 import {
   CalendarClock,
+  CalendarPlus,
   ChartColumn,
   House,
+  ListChecks,
   Warehouse,
   type LucideIcon,
 } from 'lucide-react';
@@ -30,10 +32,16 @@ export function itemsPara(usuario: UsuarioSesion | null): ItemNavegacion[] {
     icono: House,
     exacto: true,
   };
+  const reservar: ItemNavegacion = {
+    to: '/reservar',
+    etiqueta: 'Reservar',
+    icono: CalendarPlus,
+  };
   switch (usuario?.rol) {
     case 'admin':
       return [
         inicio,
+        reservar,
         { to: '/agenda', etiqueta: 'Agenda', icono: CalendarClock },
         { to: '/admin', etiqueta: 'Panel', icono: Warehouse },
         { to: '/dashboard', etiqueta: 'Dashboard', icono: ChartColumn },
@@ -46,6 +54,16 @@ export function itemsPara(usuario: UsuarioSesion | null): ItemNavegacion[] {
           etiqueta: 'Agenda',
           icono: CalendarClock,
         },
+        // Sprint 18: el mismo dashboard, limitado a sus turnos (el backend
+        // fuerza el filtro por su id).
+        { to: '/dashboard', etiqueta: 'Mis indicadores', icono: ChartColumn },
+      ];
+    // El tecnico no reserva: el turno quedaria a su nombre como cliente.
+    case 'cliente':
+      return [
+        inicio,
+        reservar,
+        { to: '/mis-turnos', etiqueta: 'Mis turnos', icono: ListChecks },
       ];
     default:
       return [inicio];

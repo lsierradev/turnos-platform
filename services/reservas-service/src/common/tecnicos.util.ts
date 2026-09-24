@@ -15,16 +15,19 @@ const ROL_TECNICO = 'tecnico';
  * dia usuarios-service pasa a tener su propia base, este chequeo deberia
  * convertirse en una llamada HTTP a ese servicio.
  */
-export async function buscarTecnico(
+export async function buscarUsuario(
   dataSource: DataSource,
-  tecnicoId: string,
+  usuarioId: string,
 ): Promise<TecnicoRow | null> {
   const filas: TecnicoRow[] = await dataSource.query(
     'SELECT id, rol FROM usuarios WHERE id = $1',
-    [tecnicoId],
+    [usuarioId],
   );
   return filas[0] ?? null;
 }
+
+/** Alias con nombre de intencion: el llamador despues chequea el rol. */
+export const buscarTecnico = buscarUsuario;
 
 export function esRolTecnico(rol: string): boolean {
   return rol === ROL_TECNICO;

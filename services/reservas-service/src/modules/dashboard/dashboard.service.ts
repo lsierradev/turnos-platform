@@ -88,6 +88,7 @@ const SQL_KPIS = `
   FROM turnos
   WHERE lower(rango_tiempo) >= $1
     AND lower(rango_tiempo) <  $2
+    AND ($4::uuid IS NULL OR tecnico_id = $4)
   GROUP BY 1
   ORDER BY 1
 `;
@@ -127,8 +128,17 @@ export interface KpisResumen {
 
 export interface KpisResponse {
   rango: { from: string; to: string };
+  zonaHoraria: string;
+  /** null = el taller entero. */
+  tecnicoId: string | null;
   resumen: KpisResumen;
   serie: KpiDia[];
+  /**
+   * El periodo inmediatamente anterior, de la misma cantidad de dias
+   * (Sprint 18): contra que se compara cada KPI. Para "hoy" es ayer; para
+   * los ultimos 7 dias, los 7 de antes.
+   */
+  anterior: { rango: { from: string; to: string }; resumen: KpisResumen };
 }
 
 // Tasa de asistencia = atendidos / (atendidos + no_asistio).
@@ -165,9 +175,15 @@ export class DashboardService {
     private readonly cache: RedisCacheService,
   ) {}
 
+  /**
+   * @param query.tecnicoId solo los turnos de ese tecnico (el controller lo
+   *   fuerza al propio para el rol tecnico). Sin el, el taller entero.
+   */
   async kpis(query: KpisQueryDto): Promise<KpisResponse> {
     const zona = zonaHorariaNegocio();
-    const { from, to, desde, hasta } = this.rango(query, zona);
+    const { from, to, fromAnterior, toAnterior, desdeAnterior, hasta } =
+      this.rango(query, zona);
+    const tecnicoId = query.tecnicoId ?? null;
 
     // La clave incluye el rango: dos admins mirando periodos distintos no
     // deben compartir entrada. Con el rango por defecto (hoy) todos los
@@ -175,21 +191,27 @@ export class DashboardService {
     // hace falta abaratar. La zona tambien va en la clave: el mismo from/to
     // cubre instantes distintos segun TZ_NEGOCIO, y durante un cambio de
     // configuracion conviven instancias con valores distintos sobre el
-    // mismo Redis.
-    const claveCache = `kpis:${zona}:${from}:${to}`;
+    // mismo Redis. Y el tecnico: sin el, un tecnico veria los numeros del
+    // taller entero que dejo cacheados un admin (o al reves).
+    const claveCache = `kpis:${zona}:${from}:${to}:${tecnicoId ?? 'todos'}`;
     const cacheado = await this.cache.obtener<KpisResponse>(claveCache);
     if (cacheado) {
       return cacheado;
     }
 
+    // UNA consulta para los dos periodos: la ventana arranca en el inicio
+    // del periodo anterior y el reparto se hace en Node por fecha. Mismo
+    // costo de ida y vuelta que antes, con el doble de dias escaneados por
+    // el mismo indice.
     const filas = await this.dataSource.transaction(async (manager) => {
       await manager.query(
         `SET LOCAL statement_timeout = ${TIMEOUT_CONSULTA_MS}`,
       );
       return (await manager.query(SQL_KPIS, [
-        desde,
+        desdeAnterior,
         hasta,
         zona,
+        tecnicoId,
       ])) as FilaKpis[];
     });
 
@@ -198,73 +220,20 @@ export class DashboardService {
       porDia.set(fila.dia, fila);
     }
 
-    const serie: KpiDia[] = [];
-    const resumen: KpisResumen = {
-      turnosTotales: 0,
-      turnosAtendidos: 0,
-      turnosNoAsistio: 0,
-      turnosCancelados: 0,
-      turnosProgramados: 0,
-      turnosMedidos: 0,
-      tasaAsistencia: null,
-      minutosPromedioServicio: null,
+    const actual = acumular(porDia, from, to);
+    const previo = acumular(porDia, fromAnterior, toAnterior);
+
+    const respuesta: KpisResponse = {
+      rango: { from, to },
+      zonaHoraria: zona,
+      tecnicoId,
+      resumen: actual.resumen,
+      serie: actual.serie,
+      anterior: {
+        rango: { from: fromAnterior, to: toAnterior },
+        resumen: previo.resumen,
+      },
     };
-    let segundosTotales = 0;
-
-    // Se itera el rango completo, no las filas devueltas: los dias sin
-    // ningun turno tienen que aparecer en la serie como ceros. Si se
-    // omitieran, el grafico uniria con una linea recta el dia anterior con
-    // el siguiente y un feriado sin actividad se leeria como actividad
-    // normal interpolada.
-    //
-    // Se itera por fechas de calendario y no sumando 24 h a un instante: en
-    // una zona con horario de verano hay dias de 23 y de 25 horas.
-    for (let fecha = from; fecha <= to; fecha = sumarDiasFecha(fecha, 1)) {
-      const fila = porDia.get(fecha);
-
-      const atendidos = fila?.atendidos ?? 0;
-      const noAsistio = fila?.no_asistio ?? 0;
-      const cancelados = fila?.cancelados ?? 0;
-      const programados = fila?.programados ?? 0;
-      const medidos = fila?.medidos ?? 0;
-      // sum() sobre un double vuelve como string desde el driver pg (que
-      // prefiere preservar la precision antes que degradarla a Number).
-      const segundos = Number(fila?.segundos_servicio ?? 0);
-
-      serie.push({
-        fecha,
-        atendidos,
-        noAsistio,
-        cancelados,
-        programados,
-        turnosMedidos: medidos,
-        tasaAsistencia: calcularTasaAsistencia(atendidos, noAsistio),
-        minutosPromedioServicio: promedioMinutos(segundos, medidos),
-      });
-
-      resumen.turnosAtendidos += atendidos;
-      resumen.turnosNoAsistio += noAsistio;
-      resumen.turnosCancelados += cancelados;
-      resumen.turnosProgramados += programados;
-      resumen.turnosMedidos += medidos;
-      segundosTotales += segundos;
-    }
-
-    resumen.turnosTotales =
-      resumen.turnosAtendidos +
-      resumen.turnosNoAsistio +
-      resumen.turnosCancelados +
-      resumen.turnosProgramados;
-    resumen.tasaAsistencia = calcularTasaAsistencia(
-      resumen.turnosAtendidos,
-      resumen.turnosNoAsistio,
-    );
-    resumen.minutosPromedioServicio = promedioMinutos(
-      segundosTotales,
-      resumen.turnosMedidos,
-    );
-
-    const respuesta: KpisResponse = { rango: { from, to }, resumen, serie };
     await this.cache.guardar(claveCache, respuesta, TTL_CACHE_SEGUNDOS);
     return respuesta;
   }
@@ -272,14 +241,17 @@ export class DashboardService {
   // Traduce ?from=&to= (dias inclusive, dias del TALLER) a la ventana
   // half-open [desde, hasta) que usa la consulta: desde = 00:00 local de
   // `from`, hasta = 00:00 local del dia siguiente a `to`. Mismo criterio que
-  // technicians.service.ts; nunca la hora local del proceso.
+  // technicians.service.ts; nunca la hora local del proceso. Ademas calcula
+  // el periodo anterior de la misma longitud (termina el dia antes de from).
   private rango(
     query: KpisQueryDto,
     zona: string,
   ): {
     from: string;
     to: string;
-    desde: Date;
+    fromAnterior: string;
+    toAnterior: string;
+    desdeAnterior: Date;
     hasta: Date;
   } {
     const hoy = fechaEnZona(new Date(), zona);
@@ -314,11 +286,89 @@ export class DashboardService {
       );
     }
 
+    const fromAnterior = sumarDiasFecha(from, -dias);
     return {
       from,
       to,
-      desde: inicioDelDiaEnZona(from, zona),
+      fromAnterior,
+      toAnterior: sumarDiasFecha(from, -1),
+      desdeAnterior: inicioDelDiaEnZona(fromAnterior, zona),
       hasta: inicioDelDiaEnZona(sumarDiasFecha(to, 1), zona),
     };
   }
+}
+
+/** Serie diaria y resumen de [from, to] a partir de las filas por dia. */
+function acumular(
+  porDia: Map<string, FilaKpis>,
+  from: string,
+  to: string,
+): { serie: KpiDia[]; resumen: KpisResumen } {
+  const serie: KpiDia[] = [];
+  const resumen: KpisResumen = {
+    turnosTotales: 0,
+    turnosAtendidos: 0,
+    turnosNoAsistio: 0,
+    turnosCancelados: 0,
+    turnosProgramados: 0,
+    turnosMedidos: 0,
+    tasaAsistencia: null,
+    minutosPromedioServicio: null,
+  };
+  let segundosTotales = 0;
+
+  // Se itera el rango completo, no las filas devueltas: los dias sin
+  // ningun turno tienen que aparecer en la serie como ceros. Si se
+  // omitieran, el grafico uniria con una linea recta el dia anterior con
+  // el siguiente y un feriado sin actividad se leeria como actividad
+  // normal interpolada.
+  //
+  // Se itera por fechas de calendario y no sumando 24 h a un instante: en
+  // una zona con horario de verano hay dias de 23 y de 25 horas.
+  for (let fecha = from; fecha <= to; fecha = sumarDiasFecha(fecha, 1)) {
+    const fila = porDia.get(fecha);
+
+    const atendidos = fila?.atendidos ?? 0;
+    const noAsistio = fila?.no_asistio ?? 0;
+    const cancelados = fila?.cancelados ?? 0;
+    const programados = fila?.programados ?? 0;
+    const medidos = fila?.medidos ?? 0;
+    // sum() sobre un double vuelve como string desde el driver pg (que
+    // prefiere preservar la precision antes que degradarla a Number).
+    const segundos = Number(fila?.segundos_servicio ?? 0);
+
+    serie.push({
+      fecha,
+      atendidos,
+      noAsistio,
+      cancelados,
+      programados,
+      turnosMedidos: medidos,
+      tasaAsistencia: calcularTasaAsistencia(atendidos, noAsistio),
+      minutosPromedioServicio: promedioMinutos(segundos, medidos),
+    });
+
+    resumen.turnosAtendidos += atendidos;
+    resumen.turnosNoAsistio += noAsistio;
+    resumen.turnosCancelados += cancelados;
+    resumen.turnosProgramados += programados;
+    resumen.turnosMedidos += medidos;
+    segundosTotales += segundos;
+  }
+
+  resumen.turnosTotales =
+    resumen.turnosAtendidos +
+    resumen.turnosNoAsistio +
+    resumen.turnosCancelados +
+    resumen.turnosProgramados;
+  resumen.tasaAsistencia = calcularTasaAsistencia(
+    resumen.turnosAtendidos,
+    resumen.turnosNoAsistio,
+  );
+  resumen.minutosPromedioServicio = promedioMinutos(
+    segundosTotales,
+    resumen.turnosMedidos,
+  );
+
+  return { serie, resumen };
 }

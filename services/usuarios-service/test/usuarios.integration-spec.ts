@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { createHash, randomBytes } from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import * as request from 'supertest';
 import { DataSource } from 'typeorm';
@@ -94,8 +95,15 @@ describirSiHayDb('Usuarios (integration)', () => {
   afterAll(async () => {
     if (dataSource) {
       await dataSource.query(
-        `DELETE FROM usuarios WHERE id = $1 OR id = $2 OR email = $3`,
-        [adminId, clienteId, 'creado-por-integration-test@turnos.dev'],
+        `DELETE FROM usuarios WHERE id = $1 OR id = $2 OR email = ANY($3)`,
+        [
+          adminId,
+          clienteId,
+          [
+            'creado-por-integration-test@turnos.dev',
+            'invitado-integration-test@turnos.dev',
+          ],
+        ],
       );
     }
     await app?.close();
@@ -213,6 +221,99 @@ describirSiHayDb('Usuarios (integration)', () => {
           (usuario: { passwordHash?: string }) => !usuario.passwordHash,
         ),
       ).toBe(true);
+    });
+  });
+
+  describe('contrasena por correo (Sprint 18)', () => {
+    const email = 'invitado-integration-test@turnos.dev';
+
+    it('un alta sin password nace con una contrasena al azar y un enlace de alta', async () => {
+      const { body } = await request(app.getHttpServer())
+        .post('/usuarios')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email, nombre: 'Invitado', ciudad: 'Cali' })
+        .expect(201);
+
+      expect(body.ciudad).toBe('Cali');
+      // Sin SendGrid en el entorno de test el correo queda en el log.
+      expect(body.invitacion).toEqual({ enviado: false });
+
+      const tokens = await dataSource.query(
+        'SELECT motivo, usado_en, expira_en FROM tokens_contrasena WHERE usuario_id = $1',
+        [body.id],
+      );
+      expect(tokens).toHaveLength(1);
+      expect(tokens[0].motivo).toBe('alta');
+      expect(tokens[0].usado_en).toBeNull();
+
+      // Nadie conoce la contrasena inicial: ni una vacia ni una obvia entran.
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email, password: 'password123' })
+        .expect(401);
+    });
+
+    it('el enlace define la contrasena una sola vez y despues se puede entrar', async () => {
+      // El token real solo viaja por correo: el test siembra uno propio con
+      // su hash, igual que lo guarda el servicio.
+      const token = randomBytes(32).toString('base64url');
+      const [{ id }] = await dataSource.query(
+        'SELECT id FROM usuarios WHERE email = $1',
+        [email],
+      );
+      await dataSource.query(
+        `INSERT INTO tokens_contrasena (usuario_id, token_hash, motivo, expira_en)
+         VALUES ($1, $2, 'alta', now() + interval '1 hour')`,
+        [id, createHash('sha256').update(token).digest('hex')],
+      );
+
+      await request(app.getHttpServer())
+        .post('/auth/restablecer')
+        .send({ token, password: 'mi-clave-nueva' })
+        .expect(204);
+
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email, password: 'mi-clave-nueva' })
+        .expect(200);
+
+      // Usado: no sirve una segunda vez.
+      await request(app.getHttpServer())
+        .post('/auth/restablecer')
+        .send({ token, password: 'otra-clave-123' })
+        .expect(400);
+    });
+
+    it('olvide responde igual exista o no el correo, y frena los pedidos seguidos', async () => {
+      // Los enlaces de los tests anteriores son de hace segundos: dentro del
+      // freno de 1 minuto entre pedidos.
+      await dataSource.query(
+        `UPDATE tokens_contrasena SET creado_en = now() - interval '5 minutes'
+          WHERE usuario_id = (SELECT id FROM usuarios WHERE email = $1)`,
+        [email],
+      );
+
+      await request(app.getHttpServer())
+        .post('/auth/olvide')
+        .send({ email: 'nadie-integration@turnos.dev' })
+        .expect(202);
+      await request(app.getHttpServer())
+        .post('/auth/olvide')
+        .send({ email })
+        .expect(202);
+      // El segundo pedido inmediato tambien da 202, pero no genera otro.
+      await request(app.getHttpServer())
+        .post('/auth/olvide')
+        .send({ email })
+        .expect(202);
+
+      const [{ n }] = await dataSource.query(
+        `SELECT count(*)::int AS n FROM tokens_contrasena t
+           JOIN usuarios u ON u.id = t.usuario_id
+          WHERE u.email = $1 AND t.motivo = 'olvido'`,
+        [email],
+      );
+      expect(n).toBe(1);
     });
   });
 });

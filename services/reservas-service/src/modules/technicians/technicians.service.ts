@@ -17,6 +17,12 @@ export class TechniciansService {
     private readonly dataSource: DataSource,
   ) {}
 
+  async listar(): Promise<{ id: string; nombre: string }[]> {
+    return this.dataSource.query(
+      `SELECT id, nombre FROM usuarios WHERE rol = 'tecnico' ORDER BY nombre, id`,
+    );
+  }
+
   /** @param fecha dia de negocio, YYYY-MM-DD (ver fechaDeNegocio). */
   async agendaDelDia(tecnicoId: string, fecha: string): Promise<Turno[]> {
     const tecnico = await buscarTecnico(this.dataSource, tecnicoId);

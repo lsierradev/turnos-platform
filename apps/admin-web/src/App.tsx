@@ -5,12 +5,15 @@ import { PanelAdministrativoView } from '@/features/admin-panel/PanelAdministrat
 import { AgendaTecnicoView } from '@/features/agenda/AgendaTecnicoView';
 import { SeleccionTecnicoView } from '@/features/agenda/SeleccionTecnicoView';
 import { AuthProvider } from '@/features/auth/AuthProvider';
+import { OlvideView, RestablecerView } from '@/features/auth/ContrasenaViews';
 import { LoginView } from '@/features/auth/LoginView';
 import { RutaProtegida } from '@/features/auth/RutaProtegida';
 import { DashboardView } from '@/features/dashboard/DashboardView';
 import { DesignView } from '@/features/design/DesignView';
 import { HomeView } from '@/features/home/HomeView';
 import { NoEncontradoView } from '@/features/home/NoEncontradoView';
+import { MisTurnosView } from '@/features/mis-turnos/MisTurnosView';
+import { ReservaView } from '@/features/reserva/ReservaView';
 import { esReintentable } from '@/lib/errores';
 import { TemaProvider } from '@/lib/tema';
 
@@ -36,6 +39,9 @@ export function App() {
           <AuthProvider>
             <Routes>
               <Route path="/login" element={<LoginView />} />
+              {/* Publicas: quien las usa todavia no puede entrar. */}
+              <Route path="/olvide" element={<OlvideView />} />
+              <Route path="/restablecer" element={<RestablecerView />} />
 
               <Route element={<RutaProtegida />}>
                 <Route element={<AppLayout />}>
@@ -45,6 +51,8 @@ export function App() {
                     path="/agenda/:tecnicoId"
                     element={<AgendaTecnicoView />}
                   />
+                  <Route path="/reservar" element={<ReservaView />} />
+                  <Route path="/mis-turnos" element={<MisTurnosView />} />
                   <Route path="/admin" element={<PanelAdministrativoView />} />
                   <Route path="/dashboard" element={<DashboardView />} />
                   {/* Referencia interna del sistema de diseno (Sprint 13). */}

@@ -122,14 +122,16 @@ export async function sembrar(): Promise<DatosSembrados> {
     const tecnicoEmail = `tecnico-e2e-${sufijo}@turnos.dev`;
     const tecnico = await db.query(
       `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ($1, $2, 'Tecnico E2E', 'tecnico') RETURNING id`,
-      [tecnicoEmail, passwordHash],
+       VALUES ($1, $2, $3, 'tecnico') RETURNING id`,
+      // Con sufijo: el formulario de reserva lo elige por nombre, y una
+      // corrida anterior que no llego a limpiar dejaria dos iguales.
+      [tecnicoEmail, passwordHash, `Tecnico E2E ${sufijo}`],
     );
 
     const otroTecnico = await db.query(
       `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ($1, $2, 'Otro tecnico E2E', 'tecnico') RETURNING id`,
-      [`tecnico2-e2e-${sufijo}@turnos.dev`, passwordHash],
+       VALUES ($1, $2, $3, 'tecnico') RETURNING id`,
+      [`tecnico2-e2e-${sufijo}@turnos.dev`, passwordHash, `Otro tecnico E2E ${sufijo}`],
     );
 
     return {
@@ -174,6 +176,45 @@ export async function limpiar(datos: DatosSembrados): Promise<void> {
       ],
     ]);
   });
+}
+
+/**
+ * Borra usuarios que creo la propia prueba por la pantalla (p. ej. el
+ * cliente que da de alta un admin al reservar), con sus turnos. Va despues
+ * de limpiar(): esos usuarios no estan en DatosSembrados.
+ */
+export async function borrarUsuariosPorEmail(emails: string[]): Promise<void> {
+  await conConexion(async (db) => {
+    await db.query(
+      `DELETE FROM notificaciones WHERE turno_id IN (
+         SELECT t.id FROM turnos t JOIN usuarios u ON u.id = t.usuario_id
+         WHERE u.email = ANY($1))`,
+      [emails],
+    );
+    await db.query(
+      'DELETE FROM turnos WHERE usuario_id IN (SELECT id FROM usuarios WHERE email = ANY($1))',
+      [emails],
+    );
+    await db.query('DELETE FROM usuarios WHERE email = ANY($1)', [emails]);
+  });
+}
+
+/**
+ * Enlace de contrasena listo para usar (Sprint 18). El real solo viaja por
+ * correo; este se guarda igual que lo guarda usuarios-service (SHA-256 del
+ * token) y devuelve el token en claro para armar la URL.
+ */
+export async function sembrarTokenContrasena(usuarioId: string): Promise<string> {
+  const { createHash, randomBytes } = await import('crypto');
+  const token = randomBytes(32).toString('base64url');
+  await conConexion((db) =>
+    db.query(
+      `INSERT INTO tokens_contrasena (usuario_id, token_hash, motivo, expira_en)
+       VALUES ($1, $2, 'alta', now() + interval '1 hour')`,
+      [usuarioId, createHash('sha256').update(token).digest('hex')],
+    ),
+  );
+  return token;
 }
 
 export interface TurnoSembrado {

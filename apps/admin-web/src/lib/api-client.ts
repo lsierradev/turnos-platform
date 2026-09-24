@@ -165,17 +165,27 @@ function mensajeDeError(body: unknown, status: number): string {
  */
 export const STATUS_SIN_CONEXION = 0;
 
+interface Envio {
+  method: 'POST' | 'PATCH';
+  body: unknown;
+}
+
 async function apiFetch<T>(
   path: string,
   reintentando = false,
   base = BASE_URL,
+  envio?: Envio,
 ): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (tokens) headers.Authorization = `Bearer ${tokens.accessToken}`;
+  if (envio) headers['Content-Type'] = 'application/json';
+
   let respuesta: Response;
   try {
     respuesta = await fetch(`${base}${path}`, {
-      headers: tokens
-        ? { Authorization: `Bearer ${tokens.accessToken}` }
-        : undefined,
+      method: envio?.method ?? 'GET',
+      headers,
+      body: envio ? JSON.stringify(envio.body) : undefined,
     });
   } catch (error) {
     throw new ApiError(
@@ -191,7 +201,9 @@ async function apiFetch<T>(
   if (respuesta.status === 401 && !reintentando && tokens) {
     const nuevo = await refrescarToken();
     if (nuevo) {
-      return apiFetch<T>(path, true, base);
+      // Reintentar un POST es seguro solo porque el 401 lo corta el guard
+      // ANTES de llegar al servicio: la primera request no creo nada.
+      return apiFetch<T>(path, true, base, envio);
     }
   }
 
@@ -351,11 +363,193 @@ export interface KpisResumen {
 
 export interface KpisResponse {
   rango: { from: string; to: string };
+  zonaHoraria: string;
+  /** null = el taller entero. */
+  tecnicoId: string | null;
   resumen: KpisResumen;
   serie: KpiDia[];
+  /** Periodo anterior de igual largo (Sprint 18), para comparar. */
+  anterior: { rango: { from: string; to: string }; resumen: KpisResumen };
 }
 
-export function getKpis(from: string, to: string): Promise<KpisResponse> {
-  const query = new URLSearchParams({ from, to }).toString();
+/**
+ * @param tecnicoId admin: filtra por ese tecnico. Para un tecnico el backend
+ *   lo ignora y devuelve siempre los suyos.
+ */
+export function getKpis(from: string, to: string, tecnicoId?: string): Promise<KpisResponse> {
+  const query = new URLSearchParams(tecnicoId ? { from, to, tecnicoId } : { from, to }).toString();
   return apiFetch<KpisResponse>(`/dashboard/kpis?${query}`);
+}
+
+// --- Mis turnos (Sprint 18) --------------------------------------------
+
+export interface MiTurno {
+  id: string;
+  inicio: string;
+  fin: string;
+  estado: TurnoAgenda['estado'];
+  bahia: string;
+  servicio: { nombre: string; categoria: ServicioResumen['categoria'] };
+  tecnico: string | null;
+}
+
+/** Los turnos de quien esta logueado: proximos y ultimos 90 dias. */
+export function getMisTurnos(): Promise<MiTurno[]> {
+  return apiFetch<MiTurno[]>('/appointments/mios');
+}
+
+// --- Reserva (Sprint 17) -----------------------------------------------
+
+export interface Opcion {
+  id: string;
+  nombre: string;
+}
+
+/** Bahias en servicio (cualquier autenticado). */
+export function getBahias(): Promise<Opcion[]> {
+  return apiFetch<Opcion[]>('/bahias');
+}
+
+export interface Servicio extends ServicioResumen {
+  precio: string | number;
+  activo: boolean;
+}
+
+export function getServicios(): Promise<Servicio[]> {
+  return apiFetch<Servicio[]>('/servicios');
+}
+
+/**
+ * Tecnicos para reservar: id y nombre, desde reservas-service. No es
+ * getTecnicos() (usuarios-service, solo admin, trae email).
+ */
+export function getTecnicosReservables(): Promise<Opcion[]> {
+  return apiFetch<Opcion[]>('/technicians');
+}
+
+export interface DisponibilidadParams {
+  bahiaId: string;
+  servicioId: string;
+  tecnicoId: string;
+  fecha: string;
+  /** Solo admin: descontar los turnos de ese cliente en vez de los propios. */
+  clienteId?: string;
+}
+
+export interface DisponibilidadResponse {
+  fecha: string;
+  zonaHoraria: string;
+  duracionMinutos: number;
+  jornada: { apertura: string; cierre: string };
+  horarios: RangoTiempo[];
+}
+
+export function getDisponibilidad(
+  params: DisponibilidadParams,
+): Promise<DisponibilidadResponse> {
+  const { clienteId, ...resto } = params;
+  const query = new URLSearchParams(clienteId ? { ...resto, clienteId } : resto).toString();
+  return apiFetch<DisponibilidadResponse>(`/appointments/disponibilidad?${query}`);
+}
+
+export interface NuevoTurno {
+  bahiaId: string;
+  servicioId: string;
+  tecnicoId: string;
+  /** Instante ISO (UTC). El fin lo calcula el servidor. */
+  inicio: string;
+  /** Solo admin: a nombre de que cliente (si falta, de quien reserva). */
+  clienteId?: string;
+}
+
+export interface TurnoCreado {
+  id: string;
+  bahiaId: string;
+  servicioId: string;
+  tecnicoId: string;
+  usuarioId: string;
+  estado: TurnoAgenda['estado'];
+  rangoTiempo: RangoTiempo;
+}
+
+export function crearTurno(turno: NuevoTurno): Promise<TurnoCreado> {
+  return apiFetch<TurnoCreado>('/appointments', false, BASE_URL, {
+    method: 'POST',
+    body: turno,
+  });
+}
+
+/**
+ * Sugerencias del 409 de POST /appointments (UX-NOTES punto 8). El cuerpo
+ * viene entero en ApiError.body; esto lo valida en vez de confiar en la
+ * forma.
+ */
+export function sugerenciasDeConflicto(error: unknown): RangoTiempo[] | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const body = error.body as { sugerencias?: unknown } | undefined;
+  // Un 409 sin sugerencias no es un choque de horario (p. ej. un correo
+  // repetido al dar de alta un cliente).
+  if (!Array.isArray(body?.sugerencias)) return null;
+  return body.sugerencias.filter(
+    (s): s is RangoTiempo =>
+      typeof s?.inicio === 'string' && typeof s?.fin === 'string',
+  );
+}
+
+// --- Clientes (usuarios-service, solo admin; Sprint 17) ------------------
+
+export interface Cliente {
+  id: string;
+  email: string;
+  nombre: string;
+  rol: 'cliente';
+  /** Descifrado por usuarios-service (se guarda cifrado). */
+  telefono: string | null;
+  ciudad: string | null;
+  /**
+   * Solo en la respuesta del alta (Sprint 18): si salio el correo para que
+   * defina su contrasena. false = SendGrid sin configurar (quedo en el log).
+   */
+  invitacion?: { enviado: boolean };
+}
+
+export function getClientes(): Promise<Cliente[]> {
+  return apiFetch<Cliente[]>('/usuarios?rol=cliente', false, AUTH_URL);
+}
+
+export interface DatosClienteNuevo {
+  nombre: string;
+  email: string;
+  telefono?: string;
+  ciudad: string;
+}
+
+/**
+ * Alta de un cliente con sus datos de perfil. Sin contrasena: usuarios-
+ * service le asigna una al azar que nadie conoce, asi que la cuenta todavia
+ * no sirve para entrar.
+ */
+export function crearCliente(datos: DatosClienteNuevo): Promise<Cliente> {
+  return apiFetch<Cliente>('/usuarios', false, AUTH_URL, {
+    method: 'POST',
+    body: { ...datos, rol: 'cliente' },
+  });
+}
+
+// --- Contrasena (usuarios-service, publicos; Sprint 18) -------------------
+
+/** "Olvide mi contrasena". Responde igual exista o no el correo. */
+export function solicitarRestablecimiento(email: string): Promise<void> {
+  return apiFetch<void>('/auth/olvide', false, AUTH_URL, {
+    method: 'POST',
+    body: { email },
+  });
+}
+
+/** Define la contrasena con el token del enlace que llego por correo. */
+export function restablecerContrasena(token: string, password: string): Promise<void> {
+  return apiFetch<void>('/auth/restablecer', false, AUTH_URL, {
+    method: 'POST',
+    body: { token, password },
+  });
 }

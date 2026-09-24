@@ -71,8 +71,9 @@ describe('DashboardService', () => {
 
       // El primer query() de la transaccion es el SET LOCAL statement_timeout.
       const [sql, params] = queryKpis.mock.calls[1];
-      // 00:00 en Bogota (UTC-5) = 05:00Z.
-      expect(params[0]).toEqual(new Date('2024-01-08T05:00:00.000Z'));
+      // 00:00 en Bogota (UTC-5) = 05:00Z. La ventana arranca en el periodo
+      // ANTERIOR (06 y 07 de enero, mismos 2 dias) para comparar.
+      expect(params[0]).toEqual(new Date('2024-01-06T05:00:00.000Z'));
       expect(params[1]).toEqual(new Date('2024-01-10T05:00:00.000Z'));
       // Y el agrupado por dia usa la misma zona, no la de la sesion.
       expect(params[2]).toBe('America/Bogota');
@@ -326,10 +327,10 @@ describe('DashboardService', () => {
       await service.kpis({ from: '2024-01-08', to: '2024-01-09' });
 
       expect(cache.obtener).toHaveBeenCalledWith(
-        'kpis:America/Bogota:2024-01-08:2024-01-09',
+        'kpis:America/Bogota:2024-01-08:2024-01-09:todos',
       );
       expect(cache.guardar).toHaveBeenCalledWith(
-        'kpis:America/Bogota:2024-01-08:2024-01-09',
+        'kpis:America/Bogota:2024-01-08:2024-01-09:todos',
         expect.objectContaining({
           rango: { from: '2024-01-08', to: '2024-01-09' },
         }),
@@ -348,5 +349,61 @@ describe('DashboardService', () => {
     // consultas a la tabla caliente de reservas.
     expect(queryKpis).toHaveBeenCalledTimes(2);
     expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  describe('periodo anterior (Sprint 18)', () => {
+    it('resume el periodo de igual largo que termina el dia antes', async () => {
+      queryKpis.mockResolvedValue([
+        fila('2024-01-01', { atendidos: 1, no_asistio: 1 }),
+        fila('2024-01-07', { atendidos: 2, no_asistio: 2 }),
+        fila('2024-01-08', { atendidos: 9, no_asistio: 1 }),
+      ]);
+
+      const r = await service.kpis({ from: '2024-01-08', to: '2024-01-14' });
+
+      expect(r.anterior.rango).toEqual({
+        from: '2024-01-01',
+        to: '2024-01-07',
+      });
+      expect(r.anterior.resumen.turnosAtendidos).toBe(3);
+      expect(r.anterior.resumen.tasaAsistencia).toBe(0.5);
+      // Lo del periodo anterior no se cuela en el actual.
+      expect(r.resumen.turnosAtendidos).toBe(9);
+      expect(r.serie.map((d) => d.fecha)[0]).toBe('2024-01-08');
+      expect(r.serie).toHaveLength(7);
+    });
+
+    it('para un solo dia compara contra el dia anterior', async () => {
+      const r = await service.kpis({ from: '2024-01-08', to: '2024-01-08' });
+
+      expect(r.anterior.rango).toEqual({
+        from: '2024-01-07',
+        to: '2024-01-07',
+      });
+    });
+  });
+
+  describe('por tecnico (Sprint 18)', () => {
+    it('filtra la consulta por tecnico y lo separa en la cache', async () => {
+      const r = await service.kpis({
+        from: '2024-01-08',
+        to: '2024-01-08',
+        tecnicoId: 't-1',
+      });
+
+      const [sql, params] = queryKpis.mock.calls[1];
+      expect(sql).toContain('tecnico_id = $4');
+      expect(params[3]).toBe('t-1');
+      expect(r.tecnicoId).toBe('t-1');
+      expect(cache.obtener).toHaveBeenCalledWith(
+        'kpis:America/Bogota:2024-01-08:2024-01-08:t-1',
+      );
+    });
+
+    it('sin tecnico manda null (el taller entero)', async () => {
+      await service.kpis({ from: '2024-01-08', to: '2024-01-08' });
+
+      expect(queryKpis.mock.calls[1][1][3]).toBeNull();
+    });
   });
 });

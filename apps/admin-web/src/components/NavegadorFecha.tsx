@@ -12,6 +12,8 @@ import { hoyISO, sumarDiasISO } from '@/lib/dates';
  *
  * Para la semana: `paso` 7, `hoy` = lunes de esta semana y `etiquetaHoy`
  * "Esta semana".
+ *
+ * `minimo`: primer dia navegable (la reserva no va hacia el pasado).
  */
 export function NavegadorFecha({
   fecha,
@@ -21,6 +23,7 @@ export function NavegadorFecha({
   hoy = hoyISO(),
   etiquetaHoy = 'Hoy',
   etiqueta = fecha,
+  minimo,
 }: {
   fecha: string;
   onCambiar: (fecha: string) => void;
@@ -29,6 +32,7 @@ export function NavegadorFecha({
   hoy?: string;
   etiquetaHoy?: string;
   etiqueta?: string;
+  minimo?: string;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -36,6 +40,7 @@ export function NavegadorFecha({
         <Button
           variant="outline"
           size="sm"
+          disabled={minimo !== undefined && sumarDiasISO(fecha, -paso) < minimo}
           onClick={() => onCambiar(sumarDiasISO(fecha, -paso))}
         >
           <ChevronLeft aria-hidden />

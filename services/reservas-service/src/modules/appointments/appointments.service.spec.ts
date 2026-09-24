@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -506,5 +507,143 @@ describe('AppointmentsService', () => {
     // Not(EstadoTurno.CANCELADO) de TypeORM.
     expect(where.estado.type).toBe('not');
     expect(where.estado.value).toBe(EstadoTurno.CANCELADO);
+  });
+
+  describe('recursos fuera de servicio (Sprint 17)', () => {
+    it('no reserva en una bahia inactiva', async () => {
+      bahiasRepository.findOne.mockResolvedValue({ ...bahia, activa: false });
+
+      await expect(service.create(dto, 'u-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(turnosRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('no reserva un servicio dado de baja', async () => {
+      serviciosService.findOne.mockResolvedValue({
+        ...servicio,
+        activo: false,
+      });
+
+      await expect(service.create(dto, 'u-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(turnosRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('disponibilidad', () => {
+    const fecha = horaLocalBogota(9).slice(0, 10);
+    const consulta = {
+      bahiaId: bahia.id,
+      servicioId: servicio.id,
+      tecnicoId: 't-1',
+      fecha,
+    };
+
+    it('ofrece la jornada del dia menos lo ocupado, con la duracion del servicio', async () => {
+      turnosRepository.find.mockResolvedValue([
+        {
+          rangoTiempo: {
+            inicio: new Date(`${fecha}T08:00:00-05:00`),
+            fin: new Date(`${fecha}T12:00:00-05:00`),
+          },
+        } as Turno,
+      ]);
+
+      const r = await service.disponibilidad(consulta, 'u-1');
+
+      expect(r.fecha).toBe(fecha);
+      expect(r.zonaHoraria).toBe('America/Bogota');
+      expect(r.duracionMinutos).toBe(30);
+      expect(r.jornada).toEqual({ apertura: '08:00', cierre: '18:00' });
+      expect(r.horarios[0].inicio).toEqual(new Date(`${fecha}T12:00:00-05:00`));
+      // 12:00 ... 17:30
+      expect(r.horarios).toHaveLength(23);
+    });
+
+    it('cuenta como ocupado lo de la bahia, lo del tecnico y lo del propio usuario, sin cancelados', async () => {
+      turnosRepository.find.mockResolvedValue([]);
+
+      await service.disponibilidad(consulta, 'u-1');
+
+      const where = turnosRepository.find.mock.calls[0][0]?.where as Record<
+        string,
+        unknown
+      >[];
+      expect(where).toHaveLength(3);
+      expect(where[0].bahiaId).toBe(bahia.id);
+      expect(where[1].tecnicoId).toBe('t-1');
+      expect(where[2].usuarioId).toBe('u-1');
+      for (const rama of where) {
+        expect((rama.estado as { type: string }).type).toBe('not');
+      }
+    });
+
+    it('rechaza una fecha que no existe', async () => {
+      await expect(
+        service.disponibilidad({ ...consulta, fecha: '2026-02-31' }, 'u-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(turnosRepository.find).not.toHaveBeenCalled();
+    });
+
+    it('valida los recursos igual que la reserva', async () => {
+      dataSource.query.mockResolvedValue([{ id: 't-1', rol: 'cliente' }]);
+
+      await expect(
+        service.disponibilidad(consulta, 'u-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('reserva a nombre de un cliente (Sprint 17)', () => {
+    const admin = { sub: 'admin-1', rol: 'admin' };
+
+    it('sin clienteId el turno es de quien reserva', async () => {
+      await expect(
+        service.resolverTitular({ sub: 'u-1', rol: 'cliente' }),
+      ).resolves.toEqual({ usuarioId: 'u-1', paraCliente: false });
+      expect(dataSource.query).not.toHaveBeenCalled();
+    });
+
+    it('un admin puede reservar para un cliente existente', async () => {
+      dataSource.query.mockResolvedValue([{ id: 'c-1', rol: 'cliente' }]);
+
+      await expect(service.resolverTitular(admin, 'c-1')).resolves.toEqual({
+        usuarioId: 'c-1',
+        paraCliente: true,
+      });
+    });
+
+    it('un cliente no puede reservar a nombre de otro: 403', async () => {
+      await expect(
+        service.resolverTitular({ sub: 'u-1', rol: 'cliente' }, 'c-2'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('404 si el id no es de un cliente (p. ej. un tecnico)', async () => {
+      dataSource.query.mockResolvedValue([{ id: 't-1', rol: 'tecnico' }]);
+
+      await expect(
+        service.resolverTitular(admin, 't-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('el 409 por solapamiento del cliente habla del cliente, no de "vos"', async () => {
+      turnosRepository.create.mockReturnValue({} as Turno);
+      turnosRepository.save.mockRejectedValue(
+        crearQueryFailedError({ constraint: 'turnos_usuario_rango_excl' }),
+      );
+      turnosRepository.find.mockResolvedValue([]);
+
+      const error = await service.create(dto, 'c-1', true).catch((e) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse().message).toBe(
+        'El cliente ya tiene otro turno reservado en ese horario.',
+      );
+      expect(turnosRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ usuarioId: 'c-1' }),
+      );
+    });
   });
 });

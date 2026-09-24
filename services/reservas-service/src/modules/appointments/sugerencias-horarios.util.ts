@@ -100,3 +100,58 @@ export function sugerirHorarios(params: SugerirHorariosParams): RangoTiempo[] {
     .slice(0, cantidad)
     .map((c) => c.rango);
 }
+
+export interface HorariosLibresParams {
+  /** Dia del taller, YYYY-MM-DD. */
+  fecha: string;
+  duracionMinutos: number;
+  turnosOcupados: RangoTiempo[];
+  /** Los horarios que ya empezaron no se ofrecen. */
+  ahora: Date;
+  zonaHoraria?: string;
+  horaApertura?: number;
+  horaCierre?: number;
+  pasoMinutos?: number;
+}
+
+/**
+ * Todos los horarios reservables de UN dia, en orden: la grilla que muestra
+ * el formulario de reserva. Mismos criterios que sugerirHorarios y que
+ * validarHorarioReservable (jornada local, paso de 15 min, sin pasado): si
+ * se separaran, la pantalla ofreceria horarios que el POST despues rechaza.
+ */
+export function horariosLibresDelDia(
+  params: HorariosLibresParams,
+): RangoTiempo[] {
+  const {
+    fecha,
+    duracionMinutos,
+    turnosOcupados,
+    ahora,
+    zonaHoraria = zonaHorariaNegocio(),
+    horaApertura = HORA_APERTURA_DEFAULT,
+    horaCierre = HORA_CIERRE_DEFAULT,
+    pasoMinutos = PASO_MINUTOS_DEFAULT,
+  } = params;
+
+  const duracionMs = duracionMinutos * 60_000;
+  const pasoMs = pasoMinutos * 60_000;
+  const cierre = instanteEnZona(fecha, horaCierre, 0, zonaHoraria).getTime();
+  const libres: RangoTiempo[] = [];
+
+  for (
+    let t = instanteEnZona(fecha, horaApertura, 0, zonaHoraria).getTime();
+    t + duracionMs <= cierre;
+    t += pasoMs
+  ) {
+    if (t < ahora.getTime()) continue;
+    const rango: RangoTiempo = {
+      inicio: new Date(t),
+      fin: new Date(t + duracionMs),
+    };
+    if (!turnosOcupados.some((turno) => seSolapan(rango, turno))) {
+      libres.push(rango);
+    }
+  }
+  return libres;
+}

@@ -1,12 +1,17 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Not, QueryFailedError, Raw, Repository } from 'typeorm';
-import { buscarTecnico, esRolTecnico } from '../../common/tecnicos.util';
+import {
+  buscarTecnico,
+  buscarUsuario,
+  esRolTecnico,
+} from '../../common/tecnicos.util';
 import {
   fechaEnZona,
   inicioDelDiaEnZona,
@@ -19,10 +24,12 @@ import { EstadoTurno, Turno } from '../../entities/turno.entity';
 import { ServiciosService } from '../servicios/servicios.service';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
+import { DisponibilidadQueryDto } from './dto/disponibilidad-query.dto';
 import {
   DIAS_BUSQUEDA_DEFAULT,
   HORA_APERTURA_DEFAULT,
   HORA_CIERRE_DEFAULT,
+  horariosLibresDelDia,
   sugerirHorarios,
 } from './sugerencias-horarios.util';
 
@@ -32,6 +39,9 @@ import {
 const CODIGO_EXCLUSION_VIOLATION = '23P01';
 const CONSTRAINT_TECNICO = 'turnos_tecnico_rango_excl';
 const CONSTRAINT_USUARIO = 'turnos_usuario_rango_excl';
+// Valores de rol_usuario (tabla de usuarios-service; ver tecnicos.util.ts).
+const ROL_ADMIN = 'admin';
+const ROL_CLIENTE = 'cliente';
 
 function esErrorDeSolapamiento(error: unknown): boolean {
   if (!(error instanceof QueryFailedError)) {
@@ -57,6 +67,7 @@ type FiltroRecurso =
 function interpretarConflicto(
   constraint: string | undefined,
   ids: { bahiaId: string; tecnicoId: string; usuarioId: string },
+  paraCliente = false,
 ): { mensaje: string; filtro: FiltroRecurso } {
   if (constraint === CONSTRAINT_TECNICO) {
     return {
@@ -66,7 +77,9 @@ function interpretarConflicto(
   }
   if (constraint === CONSTRAINT_USUARIO) {
     return {
-      mensaje: 'Ya tenes otro turno reservado en ese horario.',
+      mensaje: paraCliente
+        ? 'El cliente ya tiene otro turno reservado en ese horario.'
+        : 'Ya tenes otro turno reservado en ese horario.',
       filtro: { usuarioId: ids.usuarioId },
     };
   }
@@ -117,6 +130,43 @@ function validarHorarioReservable(inicio: Date, fin: Date): void {
   }
 }
 
+function dosDigitos(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+// Tope de "Mis turnos": un cliente no tiene cientos en 90 dias; si los
+// tuviera, la lista igual no se leeria entera.
+const MAX_MIS_TURNOS = 100;
+
+interface FilaMiTurno {
+  id: string;
+  inicio: Date;
+  fin: Date;
+  estado: EstadoTurno;
+  bahiaNombre: string;
+  servicioNombre: string;
+  servicioCategoria: string;
+  tecnicoNombre: string | null;
+}
+
+export interface MiTurno {
+  id: string;
+  inicio: string;
+  fin: string;
+  estado: EstadoTurno;
+  bahia: string;
+  servicio: { nombre: string; categoria: string };
+  tecnico: string | null;
+}
+
+export interface DisponibilidadResponse {
+  fecha: string;
+  zonaHoraria: string;
+  duracionMinutos: number;
+  jornada: { apertura: string; cierre: string };
+  horarios: { inicio: Date; fin: Date }[];
+}
+
 @Injectable()
 export class AppointmentsService {
   constructor(
@@ -128,22 +178,140 @@ export class AppointmentsService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async create(dto: CreateAppointmentDto, usuarioId: string): Promise<Turno> {
-    const bahia = await this.bahiasRepository.findOne({
-      where: { id: dto.bahiaId },
-    });
-    if (!bahia) {
-      throw new NotFoundException(`Bahia ${dto.bahiaId} no encontrada`);
+  /**
+   * A nombre de quien queda el turno. Por defecto, de quien reserva (el
+   * `sub` del JWT, nunca un id del body). Un admin puede pasar clienteId
+   * para reservar por un cliente (Sprint 17); cualquier otro rol que lo
+   * mande recibe 403: si no, un cliente podria reservar a nombre de otro.
+   */
+  async resolverTitular(
+    usuario: { sub: string; rol: string },
+    clienteId?: string,
+  ): Promise<{ usuarioId: string; paraCliente: boolean }> {
+    if (!clienteId || clienteId === usuario.sub) {
+      return { usuarioId: usuario.sub, paraCliente: false };
     }
-
-    const servicio = await this.serviciosService.findOne(dto.servicioId);
-
-    const tecnico = await buscarTecnico(this.dataSource, dto.tecnicoId);
-    if (!tecnico || !esRolTecnico(tecnico.rol)) {
-      throw new NotFoundException(
-        `Tecnico ${dto.tecnicoId} no encontrado o no tiene rol de tecnico`,
+    if (usuario.rol !== ROL_ADMIN) {
+      throw new ForbiddenException(
+        'Solo un administrador puede reservar a nombre de otro usuario.',
       );
     }
+    const cliente = await buscarUsuario(this.dataSource, clienteId);
+    if (!cliente || cliente.rol !== ROL_CLIENTE) {
+      throw new NotFoundException(
+        `Cliente ${clienteId} no encontrado o no tiene rol de cliente`,
+      );
+    }
+    return { usuarioId: clienteId, paraCliente: true };
+  }
+
+  /**
+   * Bahia, servicio y tecnico tienen que existir y estar en uso. Comun a la
+   * reserva y a la grilla de disponibilidad: si la grilla aceptara algo que
+   * el POST rechaza, el usuario elegiria un horario que no puede reservar.
+   *
+   * Hasta Sprint 17 una bahia o un servicio dados de baja (activa/activo =
+   * false) se podian reservar igual con solo conocer su id.
+   */
+  private async validarRecursos(ids: {
+    bahiaId: string;
+    servicioId: string;
+    tecnicoId: string;
+  }) {
+    const bahia = await this.bahiasRepository.findOne({
+      where: { id: ids.bahiaId },
+    });
+    if (!bahia || !bahia.activa) {
+      throw new NotFoundException(
+        `Bahia ${ids.bahiaId} no encontrada o fuera de servicio`,
+      );
+    }
+
+    const servicio = await this.serviciosService.findOne(ids.servicioId);
+    if (!servicio.activo) {
+      throw new NotFoundException(
+        `Servicio ${ids.servicioId} no esta disponible`,
+      );
+    }
+
+    const tecnico = await buscarTecnico(this.dataSource, ids.tecnicoId);
+    if (!tecnico || !esRolTecnico(tecnico.rol)) {
+      throw new NotFoundException(
+        `Tecnico ${ids.tecnicoId} no encontrado o no tiene rol de tecnico`,
+      );
+    }
+
+    return { bahia, servicio };
+  }
+
+  /**
+   * Horarios reservables de un dia para esa bahia + tecnico, sin pisar
+   * tampoco otro turno del propio usuario (las tres EXCLUDE de 001/006/010).
+   * Es la grilla del formulario de reserva (Sprint 17).
+   *
+   * Sin cache a proposito, a diferencia de /bahias/carga: es lo que el
+   * usuario mira justo antes de reservar, y un hueco viejo de hace 5 s es
+   * exactamente el que despues da 409. Igual puede quedar vieja entre la
+   * consulta y el POST; para eso esta el 409 con sugerencias.
+   */
+  async disponibilidad(
+    query: DisponibilidadQueryDto,
+    usuarioId: string,
+  ): Promise<DisponibilidadResponse> {
+    const { fecha } = query;
+    // 2026-02-31 pasa el formato del DTO, pero Date.UTC lo corre al 3 de
+    // marzo sin avisar.
+    if (sumarDiasFecha(fecha, 0) !== fecha) {
+      throw new BadRequestException(`La fecha ${fecha} no existe`);
+    }
+
+    const { servicio } = await this.validarRecursos(query);
+
+    const zona = zonaHorariaNegocio();
+    const desde = inicioDelDiaEnZona(fecha, zona);
+    const hasta = inicioDelDiaEnZona(sumarDiasFecha(fecha, 1), zona);
+    const enElDia = {
+      estado: Not(EstadoTurno.CANCELADO),
+      rangoTiempo: Raw(
+        (alias) => `${alias} && tstzrange(:desde, :hasta, '[)')`,
+        { desde, hasta },
+      ),
+    };
+
+    // Un OR de tres filtros: cada rama la resuelve el GiST parcial de su
+    // constraint EXCLUDE (bahia_id / tecnico_id / usuario_id primero).
+    const ocupados = await this.turnosRepository.find({
+      where: [
+        { ...enElDia, bahiaId: query.bahiaId },
+        { ...enElDia, tecnicoId: query.tecnicoId },
+        { ...enElDia, usuarioId },
+      ],
+    });
+
+    return {
+      fecha,
+      zonaHoraria: zona,
+      duracionMinutos: servicio.duracionMinutos,
+      jornada: {
+        apertura: `${dosDigitos(HORA_APERTURA_DEFAULT)}:00`,
+        cierre: `${dosDigitos(HORA_CIERRE_DEFAULT)}:00`,
+      },
+      horarios: horariosLibresDelDia({
+        fecha,
+        duracionMinutos: servicio.duracionMinutos,
+        turnosOcupados: ocupados.map((t) => t.rangoTiempo),
+        ahora: new Date(),
+        zonaHoraria: zona,
+      }),
+    };
+  }
+
+  async create(
+    dto: CreateAppointmentDto,
+    usuarioId: string,
+    paraCliente = false,
+  ): Promise<Turno> {
+    const { servicio } = await this.validarRecursos(dto);
 
     const inicio = new Date(dto.inicio);
     const fin = new Date(inicio.getTime() + servicio.duracionMinutos * 60_000);
@@ -167,11 +335,11 @@ export class AppointmentsService {
         // huecos de la bahia cuando el que esta ocupado es el cliente
         // devolveria horarios que vuelven a dar 409.
         const constraint = nombreConstraintViolada(error);
-        const { mensaje, filtro } = interpretarConflicto(constraint, {
-          bahiaId: dto.bahiaId,
-          tecnicoId: dto.tecnicoId,
-          usuarioId,
-        });
+        const { mensaje, filtro } = interpretarConflicto(
+          constraint,
+          { bahiaId: dto.bahiaId, tecnicoId: dto.tecnicoId, usuarioId },
+          paraCliente,
+        );
 
         const sugerencias = await this.buscarSugerencias(
           filtro,
@@ -250,6 +418,42 @@ export class AppointmentsService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Turnos del propio usuario (Sprint 18, "Mis turnos" del cliente): los
+   * que vienen y los ultimos 90 dias. Nombre del tecnico por SQL crudo,
+   * igual que el detalle de bahia (usuarios es tabla de usuarios-service).
+   */
+  async misTurnos(usuarioId: string): Promise<MiTurno[]> {
+    const filas: FilaMiTurno[] = await this.dataSource.query(
+      `SELECT t.id,
+              lower(t.rango_tiempo) AS inicio,
+              upper(t.rango_tiempo) AS fin,
+              t.estado,
+              b.nombre             AS "bahiaNombre",
+              s.nombre             AS "servicioNombre",
+              s.categoria          AS "servicioCategoria",
+              tec.nombre           AS "tecnicoNombre"
+         FROM turnos t
+         JOIN bahias b    ON b.id = t.bahia_id
+         JOIN servicios s ON s.id = t.servicio_id
+         LEFT JOIN usuarios tec ON tec.id = t.tecnico_id
+        WHERE t.usuario_id = $1
+          AND lower(t.rango_tiempo) >= now() - interval '90 days'
+        ORDER BY lower(t.rango_tiempo) DESC
+        LIMIT ${MAX_MIS_TURNOS}`,
+      [usuarioId],
+    );
+    return filas.map((f) => ({
+      id: f.id,
+      inicio: new Date(f.inicio).toISOString(),
+      fin: new Date(f.fin).toISOString(),
+      estado: f.estado,
+      bahia: f.bahiaNombre,
+      servicio: { nombre: f.servicioNombre, categoria: f.servicioCategoria },
+      tecnico: f.tecnicoNombre,
+    }));
   }
 
   private async buscarSugerencias(

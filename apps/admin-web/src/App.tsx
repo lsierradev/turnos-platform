@@ -9,6 +9,8 @@ import { RutaProtegida } from '@/features/auth/RutaProtegida';
 import { DashboardView } from '@/features/dashboard/DashboardView';
 import { HomeView } from '@/features/home/HomeView';
 import { ApiError } from '@/lib/api-client';
+import { TemaProvider } from '@/lib/tema';
+import { DesignView } from '@/features/design/DesignView';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,28 +40,32 @@ function LayoutPrivado() {
 
 export function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        {/* AuthProvider adentro del router: LoginView navega al entrar. */}
-        <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<LoginView />} />
+    <TemaProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          {/* AuthProvider adentro del router: LoginView navega al entrar. */}
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<LoginView />} />
 
-            <Route element={<RutaProtegida />}>
-              <Route element={<LayoutPrivado />}>
-                <Route path="/" element={<HomeView />} />
-                <Route
-                  path="/agenda/:tecnicoId"
-                  element={<AgendaTecnicoView />}
-                />
-                <Route path="/admin" element={<PanelAdministrativoView />} />
-                <Route path="/dashboard" element={<DashboardView />} />
+              <Route element={<RutaProtegida />}>
+                <Route element={<LayoutPrivado />}>
+                  <Route path="/" element={<HomeView />} />
+                  <Route
+                    path="/agenda/:tecnicoId"
+                    element={<AgendaTecnicoView />}
+                  />
+                  <Route path="/admin" element={<PanelAdministrativoView />} />
+                  <Route path="/dashboard" element={<DashboardView />} />
+                  {/* Referencia interna del sistema de diseno (Sprint 13). */}
+                  <Route path="/design" element={<DesignView />} />
+                </Route>
               </Route>
-            </Route>
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+            </Routes>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </TemaProvider>
   );
 }
 

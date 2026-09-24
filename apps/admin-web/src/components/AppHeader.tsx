@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SelectorTema } from '@/components/SelectorTema';
 import { useAuth } from '@/features/auth/AuthProvider';
 
 const ROL_LABEL: Record<string, string> = {
@@ -38,6 +39,7 @@ export function AppHeader() {
               {ROL_LABEL[usuario.rol] ?? usuario.rol}
             </Badge>
           )}
+          <SelectorTema />
           <Button variant="outline" size="sm" onClick={cerrarSesion}>
             Salir
           </Button>

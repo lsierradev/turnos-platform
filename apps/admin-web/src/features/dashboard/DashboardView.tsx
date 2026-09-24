@@ -120,7 +120,9 @@ function StatTile({
         <p
           data-testid={`${testId}-valor`}
           className={`font-heading text-3xl font-semibold ${
-            destacado ? 'text-accent' : 'text-foreground'
+            // marca-texto y no primary: el #ea580c como texto sobre la
+            // tarjeta no llega a 4.5:1.
+            destacado ? 'text-marca-texto' : 'text-foreground'
           }`}
         >
           {valor}
@@ -472,6 +474,12 @@ export function DashboardView() {
                       <Legend
                         iconType="circle"
                         wrapperStyle={{ fontSize: 12 }}
+                        // Recharts pinta el texto con el color de la serie:
+                        // el naranja de chart-1 como texto sobre la tarjeta
+                        // no llega a 4.5:1. El punto ya identifica la serie.
+                        formatter={(valor) => (
+                          <span className="text-foreground">{valor}</span>
+                        )}
                       />
                       {/*
                         El stroke del color de la tarjeta es el separador de

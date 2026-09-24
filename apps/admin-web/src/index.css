@@ -1,169 +1,476 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
 @import "@fontsource-variable/public-sans";
-@import "@fontsource-variable/fraunces";
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Sistema de diseno "TurnosPro Bahias" (Sprint 13).
+ *
+ * Tres capas, y los componentes SOLO usan la tercera:
+ *
+ *   1. Primitivos (@theme): escalas 50-950 por familia. Son la paleta, no
+ *      decisiones de uso. Viven en @theme para que existan como utilidades
+ *      (bg-naranja-100) en la pagina /design y en casos puntuales.
+ *   2. Roles (:root / .dark): que primitivo cumple cada funcion en cada
+ *      modo. El modo oscuro es un segundo mapa de roles elegido y validado
+ *      aparte, no una inversion.
+ *   3. Utilidades (@theme inline): bg-primary, text-exito-texto,
+ *      bg-estado-libre... apuntan a los roles, asi que cambian solas con el
+ *      modo.
+ *
+ * Contraste: cada par texto/fondo que se usa esta declarado en
+ * scripts/verificar-contraste.mjs, que corre en CI (pnpm test) y falla si
+ * un cambio aca rompe WCAG AA. Si se agrega un rol nuevo, agregar su par
+ * ahi -- sin eso el chequeo no lo cubre.
+ */
+
+/* static: Tailwind 4 solo emite las variables de @theme que usa alguna
+   utilidad. Los roles de :root y la pagina /design referencian TODA la
+   escala por var(), asi que tienen que existir siempre. */
+@theme static {
+  /*
+   * La paleta por defecto de Tailwind queda desactivada a proposito: si un
+   * componente escribe bg-orange-500 en vez de bg-primary, no compila la
+   * clase y se nota enseguida, en vez de colarse un naranja que no es el
+   * de la marca.
+   */
+  --color-*: initial;
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  /*
+   * Escalas generadas en OKLCH, cada una anclada EXACTA en su hex de
+   * referencia (naranja-600 = #ea580c, carbon-50 = #f8fafc,
+   * carbon-800 = #1e293b). La curva de luminosidad sigue la de Tailwind v4
+   * y el croma baja en los extremos. Correcciones de tono por familia:
+   *   - naranja: los claros tiran al ambar (durazno, no salmon) y los
+   *     oscuros al oxido (un 900 rojizo se lee "hierro"; uno marron, "barro").
+   *   - error: carmesi (#dc2626) y no rojo-naranja, para no confundirse con
+   *     el primario.
+   *   - advertencia: ambar-amarillo, por la misma razon.
+   */
+  --color-naranja-50: #fff6f2;
+  --color-naranja-100: #ffebe2;
+  --color-naranja-200: #ffd4c0;
+  --color-naranja-300: #ffb695;
+  --color-naranja-400: #ff8953;
+  --color-naranja-500: #fe6d28;
+  --color-naranja-600: #ea580c;
+  --color-naranja-700: #c24100;
+  --color-naranja-800: #9a340e;
+  --color-naranja-900: #7c2c15;
+  --color-naranja-950: #461003;
+
+  --color-carbon-50: #f8fafc;
+  --color-carbon-100: #f2f5f9;
+  --color-carbon-200: #e3e8f0;
+  --color-carbon-300: #ccd4e1;
+  --color-carbon-400: #96a0b2;
+  --color-carbon-500: #677387;
+  --color-carbon-600: #495568;
+  --color-carbon-700: #354154;
+  --color-carbon-800: #1e293b;
+  --color-carbon-900: #0f1826;
+  --color-carbon-950: #030712;
+
+  --color-exito-50: #eff9f1;
+  --color-exito-100: #ddf4e2;
+  --color-exito-200: #bae8c5;
+  --color-exito-300: #8ddaa0;
+  --color-exito-400: #54c475;
+  --color-exito-500: #35b65f;
+  --color-exito-600: #16a34a;
+  --color-exito-700: #00843c;
+  --color-exito-800: #006931;
+  --color-exito-900: #035529;
+  --color-exito-950: #002b13;
+
+  --color-advertencia-50: #fef9f1;
+  --color-advertencia-100: #fff4e2;
+  --color-advertencia-200: #fae2bb;
+  --color-advertencia-300: #f3cb8a;
+  --color-advertencia-400: #e3ac4d;
+  --color-advertencia-500: #db9c2c;
+  --color-advertencia-600: #ca8a04;
+  --color-advertencia-700: #a76e00;
+  --color-advertencia-800: #885605;
+  --color-advertencia-900: #6f4611;
+  --color-advertencia-950: #3f2301;
+
+  --color-error-50: #fcebe8;
+  --color-error-100: #ffdbd5;
+  --color-error-200: #ffbfb5;
+  --color-error-300: #ff9b8d;
+  --color-error-400: #fe6154;
+  --color-error-500: #f3443c;
+  --color-error-600: #dc2626;
+  --color-error-700: #b50e18;
+  --color-error-800: #8e0f15;
+  --color-error-900: #721315;
+  --color-error-950: #3c0003;
+
+  --color-info-50: #e4ecf9;
+  --color-info-100: #cfe1fd;
+  --color-info-200: #adccff;
+  --color-info-300: #88b4ff;
+  --color-info-400: #5691ff;
+  --color-info-500: #397bff;
+  --color-info-600: #2563eb;
+  --color-info-700: #1c4bc3;
+  --color-info-800: #193a98;
+  --color-info-900: #172f79;
+  --color-info-950: #051042;
+
+  /*
+   * Familias categoricas SIN significado semantico: existen para que los
+   * estados operativos y las series de graficos tengan tonos distintos del
+   * primario y de los semanticos. Magenta y no violeta: el violeta colapsa
+   * con el azul en tritanopia (dE 1.9), el magenta no (dE >= 15).
+   */
+  --color-magenta-50: #feecef;
+  --color-magenta-100: #ffdde4;
+  --color-magenta-200: #ffc0cf;
+  --color-magenta-300: #ff9bb6;
+  --color-magenta-400: #fd6097;
+  --color-magenta-500: #f24389;
+  --color-magenta-600: #db2777;
+  --color-magenta-700: #b4105e;
+  --color-magenta-800: #8e1149;
+  --color-magenta-900: #72143a;
+  --color-magenta-950: #3e001a;
+
+  --color-turquesa-50: #ecf4f3;
+  --color-turquesa-100: #daedea;
+  --color-turquesa-200: #b8dfd9;
+  --color-turquesa-300: #8ccec5;
+  --color-turquesa-400: #54b6aa;
+  --color-turquesa-500: #34a89b;
+  --color-turquesa-600: #0d9488;
+  --color-turquesa-700: #00776d;
+  --color-turquesa-800: #005e56;
+  --color-turquesa-900: #0a4c45;
+  --color-turquesa-950: #002521;
+
+  /* Tipografia: Inter para titulos (geometrica, se lee bien a distancia en
+     una pantalla del taller), Public Sans para texto (legible en tamanos
+     chicos y en tablas densas). */
+  --font-heading: 'Inter Variable', system-ui, sans-serif;
+  --font-sans: 'Public Sans Variable', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace;
+
+  /* Escala tipografica (razon ~1.2, base 16px). Los tamanos grandes
+     llevan interlineado mas cerrado: un titulo con el interlineado del
+     cuerpo se ve "suelto". */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+  /* Numeros de tablero: KPIs vistos desde lejos en el taller. */
+  --text-display: 3rem;
+  --text-display--line-height: 1;
+
+  /* Espaciado: base de 4px. Tailwind genera p-1 = 4px, p-2 = 8px... a
+     partir de este unico valor; la escala usada esta documentada en
+     /design. */
+  --spacing: 0.25rem;
+
+  /* Sombras con tinte carbon (no negro puro: sobre #f8fafc una sombra
+     negra se ve sucia). El color sale de --sombra-color, que en modo
+     oscuro sube de opacidad porque sobre fondo oscuro la sombra casi no se
+     percibe. */
+  --shadow-xs: 0 1px 2px 0 rgb(var(--sombra-color) / calc(var(--sombra-alfa) * 0.6));
+  --shadow-sm: 0 1px 3px 0 rgb(var(--sombra-color) / var(--sombra-alfa)),
+    0 1px 2px -1px rgb(var(--sombra-color) / var(--sombra-alfa));
+  --shadow-md: 0 4px 6px -1px rgb(var(--sombra-color) / var(--sombra-alfa)),
+    0 2px 4px -2px rgb(var(--sombra-color) / var(--sombra-alfa));
+  --shadow-lg: 0 10px 15px -3px rgb(var(--sombra-color) / var(--sombra-alfa)),
+    0 4px 6px -4px rgb(var(--sombra-color) / var(--sombra-alfa));
+  --shadow-xl: 0 20px 25px -5px rgb(var(--sombra-color) / var(--sombra-alfa)),
+    0 8px 10px -6px rgb(var(--sombra-color) / var(--sombra-alfa));
+}
+
 @theme inline {
-    --font-heading: 'Fraunces Variable', Georgia, serif;
-    --font-sans: 'Public Sans Variable', system-ui, sans-serif;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
-    --color-ring: var(--ring);
-    --color-input: var(--input);
-    --color-border: var(--border);
-    --color-destructive: var(--destructive);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-secondary: var(--secondary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-primary: var(--primary);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-popover: var(--popover);
-    --color-card-foreground: var(--card-foreground);
-    --color-card: var(--card);
-    --color-foreground: var(--foreground);
-    --color-background: var(--background);
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-marca: var(--marca);
+  --color-marca-texto: var(--marca-texto);
+
+  --color-exito: var(--exito);
+  --color-exito-texto: var(--exito-texto);
+  --color-exito-suave: var(--exito-suave);
+  --color-advertencia: var(--advertencia);
+  --color-advertencia-texto: var(--advertencia-texto);
+  --color-advertencia-suave: var(--advertencia-suave);
+  --color-error: var(--error);
+  --color-error-texto: var(--error-texto);
+  --color-error-suave: var(--error-suave);
+  --color-info: var(--info);
+  --color-info-texto: var(--info-texto);
+  --color-info-suave: var(--info-suave);
+
+  --color-estado-libre: var(--estado-libre);
+  --color-estado-libre-suave: var(--estado-libre-suave);
+  --color-estado-reservado: var(--estado-reservado);
+  --color-estado-reservado-suave: var(--estado-reservado-suave);
+  --color-estado-en-servicio: var(--estado-en-servicio);
+  --color-estado-en-servicio-suave: var(--estado-en-servicio-suave);
+  --color-estado-demorado: var(--estado-demorado);
+  --color-estado-demorado-suave: var(--estado-demorado-suave);
+  --color-estado-inactivo: var(--estado-inactivo);
+  --color-estado-inactivo-suave: var(--estado-inactivo-suave);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 /*
- * Tema "Confianza Verde" (Sprint 8). Los cuatro colores de marca vienen de
- * la imagen de diseño: verde bosque #1F3D2B, ámbar #C98A2D, gris #5B5B52 y
- * crema #F4EFE6. Se escriben en hex y no en oklch (como estaba el tema
- * neutro de shadcn) justo para que sean comparables de un vistazo contra
- * esa referencia de diseño.
+ * ROLES - modo claro.
+ *
+ * Primario: #ea580c EXACTO, pero con texto carbon-950 encima y no blanco.
+ * Blanco sobre #ea580c da 3.56:1 y no pasa AA para texto normal; carbon da
+ * 5.67:1. Es ademas el lenguaje de la senaletica de seguridad del taller
+ * (naranja + negro). Cuando el naranja tiene que ser TEXTO (links, un KPI
+ * destacado) se usa --marca-texto (naranja-700, 5.2:1 sobre blanco): el
+ * #ea580c como texto sobre blanco tampoco pasa.
+ *
+ * Accent: el carbon #1e293b. Es el resaltado fuerte (opcion activa de un
+ * select), no un hover tenue.
  */
 :root {
-    --background: #f4efe6;
-    --foreground: #16281d;
-    --card: #fffcf7;
-    --card-foreground: #16281d;
-    --popover: #fffcf7;
-    --popover-foreground: #16281d;
-    --primary: #1f3d2b;
-    --primary-foreground: #f4efe6;
-    --secondary: #e8e1d3;
-    --secondary-foreground: #1f3d2b;
-    --muted: #eae4d8;
-    --muted-foreground: #5b5b52;
-    --accent: #c98a2d;
-    --accent-foreground: #1b1508;
-    --destructive: #a32f22;
-    --border: #e0d8c8;
-    --input: #ded5c4;
-    --ring: #c98a2d;
+  color-scheme: light;
 
-    /*
-     * chart-1 y chart-2 NO son el verde/ámbar de marca tal cual: son los
-     * pasos que pasan la validación de paleta contra la superficie de las
-     * tarjetas (#fffcf7) -- banda de luminosidad, piso de croma, separación
-     * bajo daltonismo (ΔE 16.4 en protanopía) y contraste. El #1F3D2B de
-     * marca quedaba por debajo del piso de croma: sobre crema se lee como
-     * gris, no como verde.
-     *
-     * El ámbar #C98A2D se mantiene exacto al de la imagen y queda apenas
-     * debajo de 3:1 de contraste contra la tarjeta (2.87). Eso obliga a
-     * apoyo no cromático, que la vista provee: leyenda + etiquetas directas
-     * + vista de tabla. No se puede quitar ese apoyo sin volver a elegir el
-     * color.
-     *
-     * chart-3/4/5 son neutros de apoyo, NO una continuación categórica:
-     * una tercera serie de datos necesita pasar el validador primero, no
-     * tomar el siguiente slot de esta lista.
-     */
-    --chart-1: #1a6b40;
-    --chart-2: #c98a2d;
-    --chart-3: #5b5b52;
-    --chart-4: #8a8a7e;
-    --chart-5: #b4b0a3;
+  --background: var(--color-carbon-50);
+  --foreground: var(--color-carbon-900);
+  --card: var(--color-white);
+  --card-foreground: var(--color-carbon-900);
+  --popover: var(--color-white);
+  --popover-foreground: var(--color-carbon-900);
+  --primary: var(--color-naranja-600);
+  --primary-foreground: var(--color-carbon-950);
+  --secondary: var(--color-carbon-100);
+  --secondary-foreground: var(--color-carbon-800);
+  --muted: var(--color-carbon-100);
+  --muted-foreground: var(--color-carbon-600);
+  --accent: var(--color-carbon-800);
+  --accent-foreground: var(--color-carbon-50);
+  --destructive: var(--color-error-700);
+  --border: var(--color-carbon-200);
+  --input: var(--color-carbon-300);
+  --ring: var(--color-naranja-600);
 
-    --radius: 0.625rem;
-    --sidebar: #1f3d2b;
-    --sidebar-foreground: #e9e3d6;
-    --sidebar-primary: #c98a2d;
-    --sidebar-primary-foreground: #16281d;
-    --sidebar-accent: #2a5139;
-    --sidebar-accent-foreground: #f4efe6;
-    --sidebar-border: #2a5139;
-    --sidebar-ring: #c98a2d;
+  --marca: var(--color-naranja-600);
+  --marca-texto: var(--color-naranja-700);
+
+  /* Semanticos: solido (iconos, barras; >= 3:1 contra la tarjeta), texto
+     (>= 4.5:1 sobre fondo, tarjeta, muted y su propio suave) y suave
+     (fondo de avisos y badges). */
+  --exito: var(--color-exito-600);
+  --exito-texto: var(--color-exito-800);
+  --exito-suave: var(--color-exito-50);
+  --advertencia: var(--color-advertencia-700);
+  --advertencia-texto: var(--color-advertencia-800);
+  --advertencia-suave: var(--color-advertencia-50);
+  --error: var(--color-error-600);
+  --error-texto: var(--color-error-700);
+  --error-suave: var(--color-error-50);
+  --info: var(--color-info-600);
+  --info-texto: var(--color-info-700);
+  --info-suave: var(--color-info-50);
+
+  /*
+   * Estados operativos de bahias y mecanicos. Un solo juego para los dos:
+   *   libre        -> bahia libre / mecanico disponible
+   *   reservado    -> tiene un turno por empezar
+   *   en-servicio  -> atendiendo ahora (el naranja de marca: es "el taller
+   *                   trabajando")
+   *   demorado     -> se paso del tiempo del servicio
+   *   inactivo     -> fuera de servicio / ausente
+   * Validados de a pares: dE2000 >= 20 en vision normal y >= 8 en
+   * protanopia, deuteranopia y tritanopia. Aun asi, un estado NUNCA se
+   * comunica solo con color: siempre va con su etiqueta.
+   */
+  --estado-libre: var(--color-exito-600);
+  --estado-libre-suave: var(--color-exito-50);
+  --estado-reservado: var(--color-info-800);
+  --estado-reservado-suave: var(--color-info-50);
+  --estado-en-servicio: var(--color-naranja-600);
+  --estado-en-servicio-suave: var(--color-naranja-50);
+  --estado-demorado: var(--color-magenta-700);
+  --estado-demorado-suave: var(--color-magenta-50);
+  --estado-inactivo: var(--color-carbon-500);
+  --estado-inactivo-suave: var(--color-carbon-100);
+
+  /* Series categoricas de graficos, en orden de uso. Mismo criterio de
+     separacion que los estados. chart-5 es el neutro ("otros"). */
+  --chart-1: var(--color-naranja-600);
+  --chart-2: var(--color-info-800);
+  --chart-3: var(--color-turquesa-800);
+  --chart-4: var(--color-magenta-700);
+  --chart-5: var(--color-carbon-500);
+
+  --radius: 0.625rem;
+
+  --sidebar: var(--color-carbon-800);
+  --sidebar-foreground: var(--color-carbon-100);
+  --sidebar-primary: var(--color-naranja-500);
+  --sidebar-primary-foreground: var(--color-carbon-950);
+  --sidebar-accent: var(--color-carbon-700);
+  --sidebar-accent-foreground: var(--color-carbon-50);
+  --sidebar-border: var(--color-carbon-700);
+  --sidebar-ring: var(--color-naranja-500);
+
+  /* rgb sin alfa: lo consumen las --shadow-* de @theme. */
+  --sombra-color: 15 24 38;
+  --sombra-alfa: 0.1;
 }
 
 /*
- * Modo oscuro elegido, no invertido: los colores de serie se volvieron a
- * validar contra la superficie oscura de tarjeta (#1a2b20) en vez de
- * reutilizar los del modo claro. Ahí la banda de luminosidad permitida es
- * más angosta (0.48-0.67), así que el par claro directamente no pasa.
+ * ROLES - modo oscuro, pensado para las pantallas del taller: fondo casi
+ * negro pero con tinte carbon (el negro puro "vibra" con el naranja),
+ * tarjetas un paso mas claras para que la jerarquia se lea sin depender de
+ * sombras, y los colores de estado un paso mas claros que en modo claro
+ * (validados de nuevo contra esta superficie, no copiados).
  */
 .dark {
-    --background: #101a14;
-    --foreground: #f0ebe1;
-    --card: #1a2b20;
-    --card-foreground: #f0ebe1;
-    --popover: #1a2b20;
-    --popover-foreground: #f0ebe1;
-    --primary: #7fc49a;
-    --primary-foreground: #0e1a12;
-    --secondary: #24382b;
-    --secondary-foreground: #f0ebe1;
-    --muted: #24382b;
-    --muted-foreground: #a9b3ab;
-    --accent: #c98a2d;
-    --accent-foreground: #161004;
-    --destructive: #e2705f;
-    --border: #ffffff1a;
-    --input: #ffffff26;
-    --ring: #c98a2d;
+  color-scheme: dark;
 
-    --chart-1: #2b8554;
-    --chart-2: #be8829;
-    --chart-3: #8f9a91;
-    --chart-4: #6d7a70;
-    --chart-5: #4d5b52;
+  --background: var(--color-carbon-950);
+  --foreground: var(--color-carbon-50);
+  --card: var(--color-carbon-900);
+  --card-foreground: var(--color-carbon-50);
+  --popover: var(--color-carbon-900);
+  --popover-foreground: var(--color-carbon-50);
+  --primary: var(--color-naranja-500);
+  --primary-foreground: var(--color-carbon-950);
+  --secondary: var(--color-carbon-800);
+  --secondary-foreground: var(--color-carbon-50);
+  --muted: var(--color-carbon-800);
+  --muted-foreground: var(--color-carbon-400);
+  --accent: var(--color-carbon-700);
+  --accent-foreground: var(--color-carbon-50);
+  --destructive: var(--color-error-400);
+  --border: var(--color-carbon-800);
+  --input: var(--color-carbon-700);
+  --ring: var(--color-naranja-500);
 
-    --sidebar: #16261c;
-    --sidebar-foreground: #e9e3d6;
-    --sidebar-primary: #c98a2d;
-    --sidebar-primary-foreground: #16281d;
-    --sidebar-accent: #24382b;
-    --sidebar-accent-foreground: #f4efe6;
-    --sidebar-border: #ffffff1a;
-    --sidebar-ring: #c98a2d;
+  --marca: var(--color-naranja-500);
+  --marca-texto: var(--color-naranja-400);
+
+  --exito: var(--color-exito-500);
+  --exito-texto: var(--color-exito-300);
+  --exito-suave: var(--color-exito-950);
+  --advertencia: var(--color-advertencia-400);
+  --advertencia-texto: var(--color-advertencia-300);
+  --advertencia-suave: var(--color-advertencia-950);
+  --error: var(--color-error-400);
+  --error-texto: var(--color-error-300);
+  --error-suave: var(--color-error-950);
+  --info: var(--color-info-400);
+  --info-texto: var(--color-info-300);
+  --info-suave: var(--color-info-950);
+
+  --estado-libre: var(--color-exito-500);
+  --estado-libre-suave: var(--color-exito-950);
+  --estado-reservado: var(--color-info-300);
+  --estado-reservado-suave: var(--color-info-950);
+  --estado-en-servicio: var(--color-naranja-500);
+  --estado-en-servicio-suave: var(--color-naranja-950);
+  --estado-demorado: var(--color-magenta-300);
+  --estado-demorado-suave: var(--color-magenta-950);
+  --estado-inactivo: var(--color-carbon-500);
+  --estado-inactivo-suave: var(--color-carbon-800);
+
+  --chart-1: var(--color-naranja-500);
+  --chart-2: var(--color-info-300);
+  --chart-3: var(--color-turquesa-500);
+  --chart-4: var(--color-magenta-300);
+  --chart-5: var(--color-carbon-500);
+
+  --sidebar: var(--color-carbon-900);
+  --sidebar-foreground: var(--color-carbon-100);
+  --sidebar-primary: var(--color-naranja-500);
+  --sidebar-primary-foreground: var(--color-carbon-950);
+  --sidebar-accent: var(--color-carbon-800);
+  --sidebar-accent-foreground: var(--color-carbon-50);
+  --sidebar-border: var(--color-carbon-800);
+  --sidebar-ring: var(--color-naranja-500);
+
+  --sombra-color: 0 0 0;
+  --sombra-alfa: 0.45;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
   body {
     @apply bg-background text-foreground;
-    }
+  }
   html {
     @apply font-sans;
-    }
-  h1, h2, h3 {
-    @apply font-heading;
-    }
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-heading tracking-tight;
+  }
+  /* Cifras alineadas en tablas: en una agenda de horarios y en el detalle
+     de KPIs, 11:10 y 14:40 tienen que ocupar el mismo ancho. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
 }

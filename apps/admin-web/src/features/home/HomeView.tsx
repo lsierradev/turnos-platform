@@ -71,6 +71,13 @@ export function HomeView() {
               >
                 Panel administrativo
               </Button>
+              <Button
+                variant="link"
+                className="w-full"
+                onClick={() => navigate('/design')}
+              >
+                Sistema de diseno
+              </Button>
             </div>
           )}
 

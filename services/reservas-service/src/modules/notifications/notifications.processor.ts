@@ -49,6 +49,7 @@ export class NotificationsProcessor {
     await provider.enviar({
       destinatario: notificacion.destinatario,
       mensaje: job.data.mensaje,
+      ...(job.data.asunto ? { asunto: job.data.asunto } : {}),
     });
 
     await this.notificacionesRepository.update(notificacion.id, {

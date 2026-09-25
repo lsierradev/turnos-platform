@@ -20,9 +20,19 @@ import {
   MAX_DIAS_CALENDARIO_BUSQUEDA,
   minutosAHora,
 } from '../../common/horario.util';
-import { calcularAnticipo, calcularPrecio } from '../../common/precios.util';
+import {
+  evaluarCancelacion,
+  formatearAnticipacion,
+  STRIKES_PARA_PREPAGO,
+} from '../../common/politica-cancelacion.util';
+import {
+  calcularAnticipo,
+  calcularPrecio,
+  type Precio,
+} from '../../common/precios.util';
 import {
   fechaEnZona,
+  horaEnZona,
   inicioDelDiaEnZona,
   sumarDiasFecha,
   zonaHorariaNegocio,
@@ -30,8 +40,19 @@ import {
 import { Bahia } from '../../entities/bahia.entity';
 import { EstadoTurno, Turno } from '../../entities/turno.entity';
 import { HorarioService } from '../configuracion/horario.service';
+import {
+  type MotivoStrike,
+  PoliticaService,
+} from '../politica/politica.service';
 import { ServiciosService } from '../servicios/servicios.service';
+import { VehiculosService } from '../vehiculos/vehiculos.service';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto';
+import {
+  CancelarTurnoDto,
+  FinalizarAtencionDto,
+  ReprogramarTurnoDto,
+  type SolicitadoPor,
+} from './dto/ciclo-turno.dto';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { DisponibilidadQueryDto } from './dto/disponibilidad-query.dto';
 import {
@@ -49,6 +70,39 @@ const CONSTRAINT_USUARIO = 'turnos_usuario_rango_excl';
 const ROL_ADMIN = 'admin';
 const ROL_SUPERADMIN = 'superadmin';
 const ROL_CLIENTE = 'cliente';
+const ROL_TECNICO = 'tecnico';
+
+const ETIQUETA_ESTADO: Record<EstadoTurno, string> = {
+  [EstadoTurno.PROGRAMADO]: 'programado',
+  [EstadoTurno.ATENDIDO]: 'atendido',
+  [EstadoTurno.NO_ASISTIO]: 'no asistio',
+  [EstadoTurno.CANCELADO]: 'cancelado',
+};
+
+/** Lo que devuelven cancelar y reprogramar (Sprint 22). */
+export interface ResultadoCambio {
+  /** Cancelar: el turno cancelado. Reprogramar: el turno NUEVO. */
+  turno: Turno;
+  /** Se sumo un strike por hacerlo fuera de la ventana. */
+  strike: boolean;
+  /** Hasta cuando era gratis (instante). */
+  gratisHasta: string;
+}
+
+/** El detalle que el cliente lee en su perfil, en hora del taller. */
+function detalleTardio(
+  accion: 'Cancelaste' | 'Reprogramaste',
+  turno: Turno,
+  evaluacion: { anticipacionMinutos: number; ventanaHoras: number },
+): string {
+  const zona = zonaHorariaNegocio();
+  const inicio = turno.rangoTiempo.inicio;
+  return (
+    `${accion} el turno del ${fechaEnZona(inicio, zona)} a las ${horaEnZona(inicio, zona)} ` +
+    `con ${formatearAnticipacion(evaluacion.anticipacionMinutos)} de anticipacion ` +
+    `(sin strike: hasta ${evaluacion.ventanaHoras} h antes).`
+  );
+}
 
 function esErrorDeSolapamiento(error: unknown): boolean {
   if (!(error instanceof QueryFailedError)) {
@@ -158,6 +212,22 @@ interface FilaMiTurno {
   ivaCentavos: string | null;
   totalCentavos: string | null;
   tarifaIva: number | null;
+  anticipoCentavos: string | null;
+  anticipoPorStrikes: boolean;
+  canceladoPor: 'cliente' | 'taller' | null;
+  ventanaHoras: number | null;
+  vehiculoId: string | null;
+  placa: string | null;
+  marca: string | null;
+  modelo: string | null;
+  recepcionId: string | null;
+  recepcionNumero: number | null;
+  recepcionAceptadaEn: Date | null;
+  garantiaDias: number | null;
+  garantiaHasta: string | null;
+  bahiaId: string;
+  servicioId: string;
+  tecnicoId: string | null;
 }
 
 /** Precio con el que se tomo el turno (foto, Sprint 21). */
@@ -181,6 +251,22 @@ export interface MiTurno {
   taller: { id: string; nombre: string } | null;
   /** null en turnos anteriores al Sprint 21. */
   precio: PrecioTurno | null;
+  /** Sprint 22: lo que se paga por adelantado (100% con 3 strikes). */
+  anticipo: { centavos: number; porStrikes: boolean } | null;
+  vehiculo: { id: string; placa: string; marca: string; modelo: string } | null;
+  /** Quien cancelo (null si no esta cancelado o es anterior al Sprint 22). */
+  canceladoPor: 'cliente' | 'taller' | null;
+  /**
+   * Solo en un turno programado que no empezo: hasta cuando cancelarlo o
+   * reprogramarlo es gratis (instante), con la ventana del SU taller.
+   */
+  cancelacion: { gratisHasta: string; ventanaHoras: number } | null;
+  /** Constancia de recepcion: aceptada o esperando al cliente. */
+  recepcion: { id: string; numero: number; aceptada: boolean } | null;
+  /** Atendido: termino de garantia (null en dias = rige la legal). */
+  garantia: { dias: number | null; hasta: string | null } | null;
+  /** Para reprogramar con la misma bahia, servicio y tecnico. */
+  ids: { bahia: string; servicio: string; tecnico: string | null };
 }
 
 export interface TurnoSinTecnico {
@@ -214,6 +300,8 @@ export class AppointmentsService {
     private readonly dataSource: DataSource,
     private readonly db: ContextoDb,
     private readonly horarios: HorarioService,
+    private readonly politica: PoliticaService,
+    private readonly vehiculos: VehiculosService,
   ) {}
 
   // Repositorios del request (transaccion con RLS, Sprint 20); fuera de un
@@ -394,6 +482,10 @@ export class AppointmentsService {
     usuarioId: string,
     paraCliente = false,
     titularEsCliente = paraCliente,
+    opciones: {
+      /** Reprogramar conserva el precio con el que se tomo el turno. */
+      precio?: Precio;
+    } = {},
   ): Promise<Turno> {
     const tallerId = this.db.tallerActual();
     const { servicio } = await this.validarRecursos(dto);
@@ -406,16 +498,40 @@ export class AppointmentsService {
     const horario = await this.horarios.obtener(fecha, fecha);
     validarHorarioReservable(inicio, fin, horario, zona);
 
+    // El vehiculo tiene que ser del titular del turno: el admin que reserva
+    // por un cliente no puede colgarle el carro de otro.
+    if (dto.vehiculoId) {
+      const vehiculo = await this.vehiculos.obtener(dto.vehiculoId);
+      if (vehiculo.usuarioId !== usuarioId || !vehiculo.activo) {
+        throw new BadRequestException(
+          'El vehiculo no es del titular del turno o esta dado de baja.',
+        );
+      }
+    }
+
     // Foto del precio (Sprint 21): el turno queda con el precio y el IVA de
     // HOY, aunque manana cambien el servicio o la configuracion fiscal.
-    const precio = calcularPrecio(
-      servicio.precioBaseCentavos,
-      servicio.tarifaIva,
-      await this.serviciosService.responsableIva(tallerId),
-    );
-    const anticipo = servicio.requiereAnticipo
-      ? calcularAnticipo(precio.totalCentavos, servicio.porcentajeAnticipo)
-      : null;
+    const precio =
+      opciones.precio ??
+      calcularPrecio(
+        servicio.precioBaseCentavos,
+        servicio.tarifaIva,
+        await this.serviciosService.responsableIva(tallerId),
+      );
+
+    // Sprint 22: con 3 strikes vigentes EN ESTE TALLER, el cliente reserva
+    // pagando el 100% por adelantado. Se marca aca (anticipo = total); el
+    // cobro llega en el Sprint 24.
+    const prepagoPorStrikes =
+      tallerId !== null &&
+      titularEsCliente &&
+      (await this.politica.strikesVigentes(tallerId, usuarioId)) >=
+        STRIKES_PARA_PREPAGO;
+    const anticipo = prepagoPorStrikes
+      ? precio.totalCentavos
+      : servicio.requiereAnticipo
+        ? calcularAnticipo(precio.totalCentavos, servicio.porcentajeAnticipo)
+        : null;
 
     const turno = this.turnos.create({
       ...(tallerId ? { tallerId } : {}),
@@ -423,12 +539,14 @@ export class AppointmentsService {
       servicioId: dto.servicioId,
       tecnicoId: dto.tecnicoId,
       usuarioId,
+      vehiculoId: dto.vehiculoId ?? null,
       rangoTiempo: { inicio, fin },
       precioBaseCentavos: precio.baseCentavos,
       ivaCentavos: precio.ivaCentavos,
       totalCentavos: precio.totalCentavos,
       tarifaIva: precio.tarifaIva,
       anticipoCentavos: anticipo,
+      anticipoPorStrikes: prepagoPorStrikes,
     });
 
     try {
@@ -479,12 +597,54 @@ export class AppointmentsService {
   // Cierre del turno (RF-04): es lo que convierte un turno agendado en un
   // dato medible. Sin este endpoint las columnas de 009 nunca se llenan y
   // GET /dashboard/kpis devuelve un dashboard vacio para siempre.
-  async actualizarEstado(id: string, dto: ActualizarEstadoDto): Promise<Turno> {
-    const turno = await this.turnos.findOne({ where: { id } });
-    // Un turno de otro taller no existe para este request (RLS lo oculta
-    // salvo que sea del propio usuario; el cierre es del personal del taller).
-    if (!turno || this.esDeOtroTaller(turno.tallerId)) {
-      throw new NotFoundException(`Turno ${id} no encontrado`);
+  async actualizarEstado(
+    id: string,
+    dto: ActualizarEstadoDto,
+    usuario: { sub: string; rol: string } = { sub: '', rol: ROL_ADMIN },
+  ): Promise<Turno> {
+    const turno = await this.turnoDelPersonal(id, usuario);
+
+    // Sprint 22: el tecnico cierra SUS turnos pendientes, como atendido o
+    // no asistio. Corregir un cierre (y con eso anular o no un strike) o
+    // cancelar es del admin.
+    if (usuario.rol === ROL_TECNICO) {
+      if (turno.estado !== EstadoTurno.PROGRAMADO) {
+        throw new ForbiddenException(
+          'El turno ya esta cerrado. Para corregirlo, pedile al administrador.',
+        );
+      }
+      if (
+        dto.estado !== EstadoTurno.ATENDIDO &&
+        dto.estado !== EstadoTurno.NO_ASISTIO
+      ) {
+        throw new ForbiddenException(
+          'El tecnico cierra el turno como atendido o no asistio; cancelar es del administrador.',
+        );
+      }
+    }
+
+    // Reactivar el turno viejo de una reprogramacion dejaria al cliente con
+    // dos turnos por el mismo servicio.
+    if (
+      turno.estado === EstadoTurno.CANCELADO &&
+      turno.reprogramadoA &&
+      dto.estado !== EstadoTurno.CANCELADO
+    ) {
+      throw new ConflictException(
+        'Ese turno se reprogramo: el vigente es el nuevo. Reactivarlo lo duplicaria.',
+      );
+    }
+
+    // No asistio es un hecho, no una prediccion: antes de la hora del turno
+    // el cliente todavia puede llegar. Y suma un strike.
+    if (
+      dto.estado === EstadoTurno.NO_ASISTIO &&
+      turno.estado !== EstadoTurno.NO_ASISTIO &&
+      turno.rangoTiempo.inicio.getTime() > Date.now()
+    ) {
+      throw new BadRequestException(
+        'Todavia no es la hora del turno: no se puede marcar que no asistio.',
+      );
     }
 
     const atencionInicio = dto.atencionInicio
@@ -514,9 +674,47 @@ export class AppointmentsService {
     turno.estado = dto.estado;
     turno.atencionInicio = esAtendido ? atencionInicio : null;
     turno.atencionFin = esAtendido ? atencionFin : null;
+    if (dto.notas !== undefined) turno.notasAtencion = dto.notas.trim() || null;
 
+    // Cancelar por esta via es siempre del taller: nunca suma strike.
+    if (dto.estado === EstadoTurno.CANCELADO) {
+      if (estadoAnterior !== EstadoTurno.CANCELADO) {
+        turno.canceladoPor = 'taller';
+        turno.canceladoEn = new Date();
+        turno.motivoCancelacion =
+          dto.motivo?.trim() || 'Cancelado por el taller';
+      }
+    } else {
+      // Reactivado: los datos de la cancelacion ya no aplican (017 lo exige).
+      turno.canceladoPor = null;
+      turno.canceladoEn = null;
+      turno.motivoCancelacion = null;
+      turno.reprogramadoA = null;
+    }
+
+    // Garantia (Decreto 735 de 2013): foto del termino del servicio al
+    // cerrar como atendido, contada desde el dia de entrega.
+    if (esAtendido) {
+      const servicio = turno.servicioId
+        ? await this.serviciosService.findOne(turno.servicioId)
+        : null;
+      const dias = servicio?.garantiaDias ?? null;
+      turno.garantiaDias = dias;
+      turno.garantiaHasta =
+        dias === null
+          ? null
+          : sumarDiasFecha(
+              fechaEnZona(atencionFin ?? new Date(), zonaHorariaNegocio()),
+              dias,
+            );
+    } else {
+      turno.garantiaDias = null;
+      turno.garantiaHasta = null;
+    }
+
+    let guardado: Turno;
     try {
-      return await this.db.conSavepoint(() => this.turnos.save(turno));
+      guardado = await this.db.conSavepoint(() => this.turnos.save(turno));
     } catch (error) {
       // Desde 011 un cancelado libera su horario. Reactivarlo (sacarlo de
       // "cancelado") vuelve a hacerlo competir en las EXCLUDE: si otro
@@ -540,6 +738,327 @@ export class AppointmentsService {
       }
       throw error;
     }
+
+    // Strikes (Sprint 22). El taller que cancela o no atiende nunca suma:
+    // solo el no-show del CLIENTE. Corregir un no asistio anula su strike.
+    if (
+      dto.estado === EstadoTurno.NO_ASISTIO &&
+      estadoAnterior !== EstadoTurno.NO_ASISTIO
+    ) {
+      await this.strikeSiEsCliente(turno, 'no_asistio', () => {
+        const zona = zonaHorariaNegocio();
+        return `No asististe al turno del ${fechaEnZona(turno.rangoTiempo.inicio, zona)} a las ${horaEnZona(turno.rangoTiempo.inicio, zona)}.`;
+      });
+    } else if (
+      estadoAnterior === EstadoTurno.NO_ASISTIO &&
+      dto.estado !== EstadoTurno.NO_ASISTIO
+    ) {
+      await this.politica.anularPorCorreccion(
+        turno.id,
+        usuario.sub,
+        `El taller corrigio el cierre del turno: quedo como ${ETIQUETA_ESTADO[dto.estado]}.`,
+      );
+    }
+    return guardado;
+  }
+
+  /**
+   * El turno, si es del taller de la sesion y (para un tecnico) esta
+   * asignado a el. 404 en cualquier otro caso: no se confirma que exista.
+   */
+  private async turnoDelPersonal(
+    id: string,
+    usuario: { sub: string; rol: string },
+  ): Promise<Turno> {
+    const turno = await this.turnos.findOne({ where: { id } });
+    // Un turno de otro taller no existe para este request (RLS lo oculta
+    // salvo que sea del propio usuario; el cierre es del personal del taller).
+    if (
+      !turno ||
+      this.esDeOtroTaller(turno.tallerId) ||
+      (usuario.rol === ROL_TECNICO && turno.tecnicoId !== usuario.sub)
+    ) {
+      throw new NotFoundException(`Turno ${id} no encontrado`);
+    }
+    return turno;
+  }
+
+  /** Strike al titular, si es un cliente (no a un admin que se reservo). */
+  private async strikeSiEsCliente(
+    turno: Turno,
+    motivo: MotivoStrike,
+    detalle: () => string,
+  ): Promise<boolean> {
+    if (!turno.usuarioId) return false;
+    const titular = await buscarUsuario(this.sql, turno.usuarioId);
+    if (titular?.rol !== ROL_CLIENTE) return false;
+    const id = await this.politica.registrarStrike({
+      tallerId: turno.tallerId,
+      usuarioId: turno.usuarioId,
+      turnoId: turno.id,
+      motivo,
+      detalle: detalle(),
+    });
+    return id !== null;
+  }
+
+  // ------------------------------------------------ cancelar y reprogramar
+
+  /**
+   * El turno que el usuario puede cancelar o reprogramar: el cliente, uno
+   * propio; el admin, cualquiera del taller. Tiene que seguir programado.
+   */
+  private async turnoCancelable(
+    id: string,
+    usuario: { sub: string; rol: string },
+  ): Promise<Turno> {
+    const turno = await this.turnos.findOne({ where: { id } });
+    const esCliente = usuario.rol === ROL_CLIENTE;
+    if (
+      !turno ||
+      (esCliente && turno.usuarioId !== usuario.sub) ||
+      (!esCliente && this.esDeOtroTaller(turno.tallerId))
+    ) {
+      throw new NotFoundException(`Turno ${id} no encontrado`);
+    }
+    // El cliente puede ver turnos propios de cualquier taller, pero
+    // modificar solo en el de la sesion (RLS de 015): X-Taller del turno.
+    if (esCliente && this.esDeOtroTaller(turno.tallerId)) {
+      throw new BadRequestException(
+        'Ese turno es de otro taller: elegi ese taller para modificarlo.',
+      );
+    }
+    if (turno.estado !== EstadoTurno.PROGRAMADO) {
+      throw new BadRequestException(
+        `El turno ya esta ${ETIQUETA_ESTADO[turno.estado]}.`,
+      );
+    }
+    // Empezado, el cliente ya no cancela: si no vino, es un no asistio (lo
+    // cierra el taller). El taller si puede cancelar uno que no pudo atender.
+    if (esCliente && turno.rangoTiempo.inicio.getTime() <= Date.now()) {
+      throw new BadRequestException(
+        'El turno ya empezo: no se puede cancelar ni reprogramar.',
+      );
+    }
+    return turno;
+  }
+
+  /** Quien pidio el cambio: el cliente logueado siempre es 'cliente'. */
+  private quienPide(
+    usuario: { rol: string },
+    solicitadoPor?: SolicitadoPor,
+  ): SolicitadoPor {
+    return usuario.rol === ROL_CLIENTE
+      ? 'cliente'
+      : (solicitadoPor ?? 'taller');
+  }
+
+  /**
+   * Politica aplicada a un cambio del cliente: gratis dentro de la ventana
+   * del taller, strike fuera de ella. Hora del taller en el detalle.
+   */
+  private async evaluarCambio(turno: Turno) {
+    const { ventanaHoras } = await this.politica.obtener(turno.tallerId);
+    return {
+      ventanaHoras,
+      ...evaluarCancelacion({
+        inicioTurno: turno.rangoTiempo.inicio,
+        ahora: new Date(),
+        ventanaHoras,
+        zona: zonaHorariaNegocio(),
+      }),
+    };
+  }
+
+  async cancelar(
+    id: string,
+    dto: CancelarTurnoDto,
+    usuario: { sub: string; rol: string },
+  ): Promise<ResultadoCambio> {
+    const turno = await this.turnoCancelable(id, usuario);
+    const quien = this.quienPide(usuario, dto.solicitadoPor);
+    const evaluacion = await this.evaluarCambio(turno);
+
+    turno.estado = EstadoTurno.CANCELADO;
+    turno.canceladoPor = quien;
+    turno.canceladoEn = new Date();
+    turno.motivoCancelacion =
+      dto.motivo?.trim() ||
+      (quien === 'cliente'
+        ? 'Cancelado por el cliente'
+        : 'Cancelado por el taller');
+    const guardado = await this.turnos.save(turno);
+
+    const strike =
+      quien === 'cliente' && !evaluacion.gratis
+        ? await this.strikeSiEsCliente(turno, 'cancelacion_tardia', () =>
+            detalleTardio('Cancelaste', turno, evaluacion),
+          )
+        : false;
+    return {
+      turno: guardado,
+      strike,
+      gratisHasta: evaluacion.limite.toISOString(),
+    };
+  }
+
+  /**
+   * Reprogramar = cancelar este turno y tomar otro, con el mismo servicio,
+   * vehiculo y precio. Todo en la transaccion del request: si el horario
+   * nuevo choca (409 con sugerencias), el turno original queda como estaba
+   * y el strike no se registra.
+   */
+  async reprogramar(
+    id: string,
+    dto: ReprogramarTurnoDto,
+    usuario: { sub: string; rol: string },
+  ): Promise<ResultadoCambio> {
+    const original = await this.turnoCancelable(id, usuario);
+    const quien = this.quienPide(usuario, dto.solicitadoPor);
+    const tecnicoId = dto.tecnicoId ?? original.tecnicoId;
+    if (!tecnicoId) {
+      throw new BadRequestException(
+        'El turno no tiene tecnico: indica con quien (tecnicoId).',
+      );
+    }
+    if (!original.servicioId || !original.usuarioId) {
+      throw new BadRequestException('Ese turno no se puede reprogramar.');
+    }
+    if (
+      new Date(dto.inicio).getTime() ===
+        original.rangoTiempo.inicio.getTime() &&
+      (dto.bahiaId ?? original.bahiaId) === original.bahiaId &&
+      tecnicoId === original.tecnicoId
+    ) {
+      throw new BadRequestException('Es el mismo horario que ya tenes.');
+    }
+    const evaluacion = await this.evaluarCambio(original);
+
+    // Primero se libera el horario original: el nuevo puede solaparse con
+    // el (correrlo media hora) y las EXCLUDE lo tomarian como choque.
+    original.estado = EstadoTurno.CANCELADO;
+    original.canceladoPor = quien;
+    original.canceladoEn = new Date();
+    original.motivoCancelacion = 'Reprogramado';
+    await this.turnos.save(original);
+
+    // El strike antes de crear el nuevo: si con este llega a 3, el turno
+    // nuevo ya sale con pago total por adelantado.
+    const strike =
+      quien === 'cliente' && !evaluacion.gratis
+        ? await this.strikeSiEsCliente(original, 'reprogramacion_tardia', () =>
+            detalleTardio('Reprogramaste', original, evaluacion),
+          )
+        : false;
+
+    const titular = await buscarUsuario(this.sql, original.usuarioId);
+    const nuevo = await this.create(
+      {
+        bahiaId: dto.bahiaId ?? original.bahiaId,
+        servicioId: original.servicioId,
+        tecnicoId,
+        inicio: dto.inicio,
+        vehiculoId: original.vehiculoId ?? undefined,
+      },
+      original.usuarioId,
+      usuario.rol !== ROL_CLIENTE,
+      titular?.rol === ROL_CLIENTE,
+      {
+        precio:
+          original.totalCentavos == null
+            ? undefined
+            : {
+                baseCentavos: original.precioBaseCentavos ?? 0,
+                ivaCentavos: original.ivaCentavos ?? 0,
+                totalCentavos: original.totalCentavos,
+                tarifaIva: (original.tarifaIva ?? null) as Precio['tarifaIva'],
+              },
+      },
+    );
+
+    original.reprogramadoA = nuevo.id;
+    await this.turnos.save(original);
+    return {
+      turno: nuevo,
+      strike,
+      gratisHasta: evaluacion.limite.toISOString(),
+    };
+  }
+
+  // ------------------------------------------------------------- atencion
+
+  /** El tecnico marca que empezo a trabajar en el vehiculo. */
+  async iniciarAtencion(
+    id: string,
+    usuario: { sub: string; rol: string },
+  ): Promise<Turno> {
+    const turno = await this.turnoDelPersonal(id, usuario);
+    if (turno.estado !== EstadoTurno.PROGRAMADO) {
+      throw new BadRequestException(
+        `El turno esta ${ETIQUETA_ESTADO[turno.estado]}: no se puede iniciar.`,
+      );
+    }
+    if (turno.atencionInicio) {
+      throw new ConflictException('La atencion ya estaba iniciada.');
+    }
+    // El carro puede llegar antes de la hora, pero no otro dia.
+    const zona = zonaHorariaNegocio();
+    if (
+      fechaEnZona(new Date(), zona) <
+      fechaEnZona(turno.rangoTiempo.inicio, zona)
+    ) {
+      throw new BadRequestException(
+        'El turno es de otro dia: la atencion se inicia el dia del turno.',
+      );
+    }
+    turno.atencionInicio = new Date();
+    return this.turnos.save(turno);
+  }
+
+  async finalizarAtencion(
+    id: string,
+    dto: FinalizarAtencionDto,
+    usuario: { sub: string; rol: string },
+  ): Promise<Turno> {
+    const turno = await this.turnoDelPersonal(id, usuario);
+    if (turno.estado !== EstadoTurno.PROGRAMADO) {
+      throw new BadRequestException(
+        `El turno esta ${ETIQUETA_ESTADO[turno.estado]}: no se puede finalizar.`,
+      );
+    }
+    if (!turno.atencionInicio) {
+      throw new BadRequestException('Primero hay que iniciar la atencion.');
+    }
+    if (turno.atencionFin) {
+      throw new ConflictException('La atencion ya estaba finalizada.');
+    }
+    const fin = new Date();
+    // turnos_atencion_rango_check (009) exige fin > inicio estricto.
+    turno.atencionFin =
+      fin > turno.atencionInicio
+        ? fin
+        : new Date(turno.atencionInicio.getTime() + 1000);
+    if (dto.notas !== undefined) turno.notasAtencion = dto.notas.trim() || null;
+    return this.turnos.save(turno);
+  }
+
+  async actualizarNotas(
+    id: string,
+    notas: string,
+    usuario: { sub: string; rol: string },
+  ): Promise<Turno> {
+    const turno = await this.turnoDelPersonal(id, usuario);
+    // Una orden cerrada ya se entrego con esas notas; corregirla es del admin.
+    if (
+      usuario.rol === ROL_TECNICO &&
+      turno.estado !== EstadoTurno.PROGRAMADO
+    ) {
+      throw new ForbiddenException(
+        'El turno ya esta cerrado. Para corregir las notas, pedile al administrador.',
+      );
+    }
+    turno.notasAtencion = notas.trim() || null;
+    return this.turnos.save(turno);
   }
 
   /**
@@ -564,12 +1083,29 @@ export class AppointmentsService {
               t.precio_base_centavos AS "baseCentavos",
               t.iva_centavos       AS "ivaCentavos",
               t.total_centavos     AS "totalCentavos",
-              t.tarifa_iva         AS "tarifaIva"
+              t.tarifa_iva         AS "tarifaIva",
+              t.anticipo_centavos  AS "anticipoCentavos",
+              t.anticipo_por_strikes AS "anticipoPorStrikes",
+              t.cancelado_por      AS "canceladoPor",
+              p.ventana_horas      AS "ventanaHoras",
+              v.id                 AS "vehiculoId",
+              v.placa, v.marca, v.modelo,
+              r.id                 AS "recepcionId",
+              r.numero             AS "recepcionNumero",
+              r.aceptada_en        AS "recepcionAceptadaEn",
+              t.garantia_dias      AS "garantiaDias",
+              to_char(t.garantia_hasta, 'YYYY-MM-DD') AS "garantiaHasta",
+              t.bahia_id           AS "bahiaId",
+              t.servicio_id        AS "servicioId",
+              t.tecnico_id         AS "tecnicoId"
          FROM turnos t
          JOIN bahias b    ON b.id = t.bahia_id
          JOIN servicios s ON s.id = t.servicio_id
          LEFT JOIN usuarios tec ON tec.id = t.tecnico_id
          LEFT JOIN talleres ta  ON ta.id = t.taller_id
+         LEFT JOIN politica_cancelacion p ON p.taller_id = t.taller_id
+         LEFT JOIN vehiculos v  ON v.id = t.vehiculo_id
+         LEFT JOIN recepciones r ON r.turno_id = t.id
         WHERE t.usuario_id = $1
           AND lower(t.rango_tiempo) >= now() - interval '90 days'
         ORDER BY lower(t.rango_tiempo) DESC
@@ -596,6 +1132,49 @@ export class AppointmentsService {
               totalCentavos: Number(f.totalCentavos),
               tarifaIva: f.tarifaIva,
             },
+      anticipo:
+        f.anticipoCentavos === null
+          ? null
+          : {
+              centavos: Number(f.anticipoCentavos),
+              porStrikes: f.anticipoPorStrikes,
+            },
+      vehiculo: f.vehiculoId
+        ? {
+            id: f.vehiculoId,
+            placa: f.placa ?? '',
+            marca: f.marca ?? '',
+            modelo: f.modelo ?? '',
+          }
+        : null,
+      canceladoPor: f.canceladoPor,
+      cancelacion:
+        f.estado === EstadoTurno.PROGRAMADO &&
+        new Date(f.inicio).getTime() > Date.now()
+          ? {
+              ventanaHoras: f.ventanaHoras ?? 4,
+              // La misma regla que aplica cancelar(): lo que se muestra es
+              // lo que despues se cobra.
+              gratisHasta: evaluarCancelacion({
+                inicioTurno: new Date(f.inicio),
+                ahora: new Date(),
+                ventanaHoras: f.ventanaHoras ?? 4,
+                zona: zonaHorariaNegocio(),
+              }).limite.toISOString(),
+            }
+          : null,
+      recepcion: f.recepcionId
+        ? {
+            id: f.recepcionId,
+            numero: Number(f.recepcionNumero),
+            aceptada: f.recepcionAceptadaEn !== null,
+          }
+        : null,
+      garantia:
+        f.estado === EstadoTurno.ATENDIDO
+          ? { dias: f.garantiaDias, hasta: f.garantiaHasta }
+          : null,
+      ids: { bahia: f.bahiaId, servicio: f.servicioId, tecnico: f.tecnicoId },
     }));
   }
 

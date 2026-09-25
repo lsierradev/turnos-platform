@@ -6,6 +6,7 @@ import {
   House,
   ListChecks,
   Settings,
+  UserRound,
   Warehouse,
   type LucideIcon,
 } from 'lucide-react';
@@ -88,6 +89,8 @@ export function itemsPara(
         inicio,
         reservar,
         { to: '/mis-turnos', etiqueta: 'Mis turnos', icono: ListChecks },
+        // Sprint 22: sus vehiculos y sus strikes (con reclamo).
+        { to: '/perfil', etiqueta: 'Mi perfil', icono: UserRound },
       ];
     default:
       return [inicio];

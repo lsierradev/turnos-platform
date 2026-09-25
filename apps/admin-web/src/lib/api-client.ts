@@ -204,15 +204,28 @@ interface Envio {
   body?: unknown;
 }
 
+interface Extra {
+  /**
+   * Taller de ESTE request en vez del elegido (Sprint 22): el cliente ve en
+   * "Mis turnos" turnos de varios talleres, y cancelar o aceptar uno se
+   * hace en el taller de ese turno.
+   */
+  taller?: string;
+  /** La respuesta es un archivo (fotos de la recepcion), no JSON. */
+  blob?: boolean;
+}
+
 async function apiFetch<T>(
   path: string,
   reintentando = false,
   base = BASE_URL,
   envio?: Envio,
+  extra: Extra = {},
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (tokens) headers.Authorization = `Bearer ${tokens.accessToken}`;
-  if (tallerElegido) headers['X-Taller'] = tallerElegido;
+  const taller = extra.taller ?? tallerElegido;
+  if (taller) headers['X-Taller'] = taller;
   if (envio?.body !== undefined) headers['Content-Type'] = 'application/json';
 
   let respuesta: Response;
@@ -238,9 +251,11 @@ async function apiFetch<T>(
     if (nuevo) {
       // Reintentar un POST es seguro solo porque el 401 lo corta el guard
       // ANTES de llegar al servicio: la primera request no creo nada.
-      return apiFetch<T>(path, true, base, envio);
+      return apiFetch<T>(path, true, base, envio, extra);
     }
   }
+
+  if (extra.blob && respuesta.ok) return (await respuesta.blob()) as T;
 
   const body = await respuesta.json().catch(() => undefined);
 
@@ -286,6 +301,9 @@ export interface TurnoAgenda {
   rangoTiempo: RangoTiempo;
   bahia?: BahiaResumen;
   servicio?: ServicioResumen;
+  /** Sprint 22: la atencion registrada por el tecnico. */
+  atencionInicio?: string | null;
+  atencionFin?: string | null;
 }
 
 export function getAgenda(
@@ -436,6 +454,17 @@ export interface MiTurno {
   taller: { id: string; nombre: string } | null;
   /** Precio con el que se reservo (Sprint 21); null en turnos anteriores. */
   precio: Precio | null;
+  /** Sprint 22: lo que se paga por adelantado (100% con 3 strikes). */
+  anticipo: { centavos: number; porStrikes: boolean } | null;
+  vehiculo: { id: string; placa: string; marca: string; modelo: string } | null;
+  canceladoPor: 'cliente' | 'taller' | null;
+  /** Solo si se puede cancelar: hasta cuando es gratis (instante). */
+  cancelacion: { gratisHasta: string; ventanaHoras: number } | null;
+  recepcion: { id: string; numero: number; aceptada: boolean } | null;
+  /** Atendido: termino de garantia (dias null = rige la legal). */
+  garantia: { dias: number | null; hasta: string | null } | null;
+  /** Para reprogramar con la misma bahia, servicio y tecnico. */
+  ids: { bahia: string; servicio: string; tecnico: string | null };
 }
 
 /** Los turnos de quien esta logueado: proximos y ultimos 90 dias. */
@@ -473,6 +502,8 @@ export interface Servicio extends ServicioResumen {
   tarifaIva: TarifaIva;
   requiereAnticipo: boolean;
   porcentajeAnticipo: number | null;
+  /** Termino de garantia en dias (Sprint 22); null = rige la legal. */
+  garantiaDias: number | null;
   activo: boolean;
   /** Calculado por el backend con la configuracion fiscal del taller. */
   precio: Precio;
@@ -527,6 +558,8 @@ export interface NuevoTurno {
   inicio: string;
   /** Solo admin: a nombre de que cliente (si falta, de quien reserva). */
   clienteId?: string;
+  /** Sprint 22: el vehiculo del titular que trae al turno. */
+  vehiculoId?: string;
 }
 
 export interface TurnoCreado {
@@ -542,6 +575,9 @@ export interface TurnoCreado {
   ivaCentavos: number | null;
   totalCentavos: number | null;
   tarifaIva: number | null;
+  /** Sprint 22: con 3 strikes, anticipo = total (pago 100% por adelantado). */
+  anticipoCentavos: number | null;
+  anticipoPorStrikes: boolean;
 }
 
 export function crearTurno(turno: NuevoTurno): Promise<TurnoCreado> {
@@ -673,6 +709,7 @@ export interface DatosServicio {
   tarifaIva: TarifaIva;
   requiereAnticipo: boolean;
   porcentajeAnticipo: number | null;
+  garantiaDias?: number | null;
   activo?: boolean;
 }
 
@@ -839,5 +876,319 @@ export function importarFestivosColombia(
   return apiFetch('/configuracion/feriados/colombia', false, BASE_URL, {
     method: 'POST',
     body: { anio },
+  });
+}
+
+// --- Sprint 22: vehiculos, politica de cancelacion, recepcion -------------
+
+export interface Vehiculo {
+  id: string;
+  usuarioId: string;
+  placa: string;
+  marca: string;
+  modelo: string;
+  anio: number;
+  kilometraje: number;
+  activo: boolean;
+}
+
+export interface DatosVehiculo {
+  placa: string;
+  marca: string;
+  modelo: string;
+  anio: number;
+  kilometraje: number;
+}
+
+/** Los propios (cliente) o los de un cliente del taller (personal). */
+export function getVehiculos(clienteId?: string): Promise<Vehiculo[]> {
+  return apiFetch<Vehiculo[]>(
+    clienteId ? `/vehiculos?clienteId=${encodeURIComponent(clienteId)}` : '/vehiculos',
+  );
+}
+
+export function crearVehiculo(datos: DatosVehiculo & { clienteId?: string }): Promise<Vehiculo> {
+  return apiFetch<Vehiculo>('/vehiculos', false, BASE_URL, { method: 'POST', body: datos });
+}
+
+export function actualizarVehiculo(id: string, cambios: Partial<DatosVehiculo>): Promise<Vehiculo> {
+  return apiFetch<Vehiculo>(`/vehiculos/${id}`, false, BASE_URL, { method: 'PATCH', body: cambios });
+}
+
+export function darDeBajaVehiculo(id: string): Promise<void> {
+  return apiFetch<void>(`/vehiculos/${id}`, false, BASE_URL, { method: 'DELETE' });
+}
+
+export interface Politica {
+  ventanaHoras: number;
+  vigenciaStrikesMeses: number;
+  strikesParaPrepago: number;
+}
+
+export interface PoliticaCliente extends Politica {
+  strikesVigentes: number;
+  /** Con strikesParaPrepago vigentes: reserva pagando el 100%. */
+  requierePrepago: boolean;
+}
+
+/** La politica del taller elegido y como esta el cliente ahi. */
+export function getPolitica(clienteId?: string): Promise<PoliticaCliente> {
+  return apiFetch<PoliticaCliente>(
+    clienteId ? `/politica?clienteId=${encodeURIComponent(clienteId)}` : '/politica',
+  );
+}
+
+export function guardarPolitica(datos: {
+  ventanaHoras: number;
+  vigenciaStrikesMeses: number;
+}): Promise<Politica> {
+  return apiFetch<Politica>('/politica', false, BASE_URL, { method: 'PUT', body: datos });
+}
+
+export type MotivoStrike = 'cancelacion_tardia' | 'reprogramacion_tardia' | 'no_asistio';
+
+export interface Strike {
+  id: string;
+  motivo: MotivoStrike;
+  detalle: string;
+  creadoEn: string;
+  venceEn: string;
+  estado: 'vigente' | 'vencido' | 'anulado';
+  anulacion: { en: string; justificacion: string } | null;
+  turno: { id: string; inicio: string; servicio: string };
+  taller: { id: string; nombre: string };
+  cliente?: { id: string; nombre: string; email: string };
+  reclamo: {
+    texto: string;
+    creadoEn: string;
+    resultado: 'aceptado' | 'rechazado' | null;
+    respuesta: string | null;
+    resueltoEn: string | null;
+  } | null;
+}
+
+export function getMisStrikes(): Promise<Strike[]> {
+  return apiFetch<Strike[]>('/strikes/mios');
+}
+
+export function reclamarStrike(id: string, texto: string): Promise<Strike> {
+  return apiFetch<Strike>(`/strikes/${id}/reclamo`, false, BASE_URL, {
+    method: 'POST',
+    body: { texto },
+  });
+}
+
+export function getStrikesTaller(estado: 'reclamos' | 'vigentes' | 'todos'): Promise<Strike[]> {
+  return apiFetch<Strike[]>(`/strikes?estado=${estado}`);
+}
+
+export function anularStrike(id: string, justificacion: string): Promise<Strike> {
+  return apiFetch<Strike>(`/strikes/${id}/anular`, false, BASE_URL, {
+    method: 'POST',
+    body: { justificacion },
+  });
+}
+
+export function resolverReclamo(id: string, aceptar: boolean, respuesta: string): Promise<Strike> {
+  return apiFetch<Strike>(`/strikes/${id}/reclamo/resolver`, false, BASE_URL, {
+    method: 'POST',
+    body: { aceptar, respuesta },
+  });
+}
+
+/** Lo que devuelven cancelar y reprogramar. */
+export interface ResultadoCambio {
+  /** Cancelar: el turno cancelado. Reprogramar: el turno nuevo. */
+  turno: TurnoCreado;
+  /** Se sumo un strike (fuera de la ventana). */
+  strike: boolean;
+  gratisHasta: string;
+}
+
+/**
+ * @param taller el del turno: el cliente puede estar mirando otro.
+ * @param solicitadoPor solo personal: si lo pidio el cliente (strike fuera
+ *   de la ventana) o lo decidio el taller (nunca strike).
+ */
+export function cancelarTurno(
+  turnoId: string,
+  opciones: { taller?: string; motivo?: string; solicitadoPor?: 'cliente' | 'taller' } = {},
+): Promise<ResultadoCambio> {
+  const { taller, ...body } = opciones;
+  return apiFetch<ResultadoCambio>(
+    `/appointments/${turnoId}/cancelar`,
+    false,
+    BASE_URL,
+    { method: 'POST', body },
+    { taller },
+  );
+}
+
+export function reprogramarTurno(
+  turnoId: string,
+  datos: { inicio: string; bahiaId?: string; tecnicoId?: string },
+  taller?: string,
+): Promise<ResultadoCambio> {
+  return apiFetch<ResultadoCambio>(
+    `/appointments/${turnoId}/reprogramar`,
+    false,
+    BASE_URL,
+    { method: 'POST', body: datos },
+    { taller },
+  );
+}
+
+export type EstadoTurno = TurnoAgenda['estado'];
+
+export interface OrdenTrabajo {
+  numero: number | null;
+  taller: {
+    id: string;
+    nombre: string;
+    razonSocial: string | null;
+    nit: string | null;
+    dv: number | null;
+    direccion: string | null;
+    municipio: string | null;
+  };
+  cliente: { id: string; nombre: string; email: string; telefono: string | null } | null;
+  turno: {
+    id: string;
+    inicio: string;
+    fin: string;
+    estado: EstadoTurno;
+    bahia: string;
+    servicio: { id: string; nombre: string; categoria: string };
+    tecnico: { id: string; nombre: string } | null;
+    precio: Precio | null;
+    anticipo: { centavos: number; porStrikes: boolean } | null;
+    canceladoPor: 'cliente' | 'taller' | null;
+    motivoCancelacion: string | null;
+  };
+  vehiculo: {
+    id: string;
+    placa: string;
+    marca: string;
+    modelo: string;
+    anio: number;
+    kilometraje: number;
+  } | null;
+  recepcion: {
+    id: string;
+    numero: number;
+    kilometraje: number;
+    nivelCombustible: number;
+    estadoVehiculo: string;
+    objetosDejados: string;
+    observaciones: string | null;
+    fechaProbableEntrega: string;
+    recibidoPor: string | null;
+    creadoEn: string;
+    aceptacion: {
+      en: string;
+      medio: 'cuenta' | 'presencial';
+      nombre: string | null;
+      documento: string | null;
+    } | null;
+    fotos: { id: string; tipoMime: string }[];
+  } | null;
+  atencion: { inicio: string | null; fin: string | null; notas: string | null };
+  garantia: { dias: number | null; hasta: string | null; texto: string };
+}
+
+/** Orden de trabajo del turno: el personal del taller o el titular. */
+export function getOrden(turnoId: string, taller?: string): Promise<OrdenTrabajo> {
+  return apiFetch<OrdenTrabajo>(`/appointments/${turnoId}/orden`, false, BASE_URL, undefined, {
+    taller,
+  });
+}
+
+export interface DatosRecepcion {
+  vehiculoId: string;
+  kilometraje: number;
+  /** Cuartos de tanque: 0 = reserva ... 4 = lleno. */
+  nivelCombustible: number;
+  estadoVehiculo: string;
+  objetosDejados?: string;
+  observaciones?: string;
+  fechaProbableEntrega?: string;
+}
+
+export function guardarRecepcion(turnoId: string, datos: DatosRecepcion): Promise<OrdenTrabajo> {
+  return apiFetch<OrdenTrabajo>(`/appointments/${turnoId}/recepcion`, false, BASE_URL, {
+    method: 'PUT',
+    body: datos,
+  });
+}
+
+export function subirFotoRecepcion(
+  recepcionId: string,
+  foto: { tipoMime: 'image/jpeg' | 'image/png' | 'image/webp'; datos: string },
+): Promise<{ id: string; tipoMime: string }> {
+  return apiFetch(`/recepciones/${recepcionId}/fotos`, false, BASE_URL, {
+    method: 'POST',
+    body: foto,
+  });
+}
+
+export function quitarFotoRecepcion(recepcionId: string, fotoId: string): Promise<void> {
+  return apiFetch<void>(`/recepciones/${recepcionId}/fotos/${fotoId}`, false, BASE_URL, {
+    method: 'DELETE',
+  });
+}
+
+/** La foto como Blob: va con el token, no sirve un <img src> directo. */
+export function getFotoRecepcion(recepcionId: string, fotoId: string, taller?: string): Promise<Blob> {
+  return apiFetch<Blob>(`/recepciones/${recepcionId}/fotos/${fotoId}`, false, BASE_URL, undefined, {
+    taller,
+    blob: true,
+  });
+}
+
+/**
+ * Aceptar la constancia. El cliente desde su cuenta (sin datos); el
+ * personal en el mostrador, con nombre y documento de quien entrega.
+ */
+export function aceptarRecepcion(
+  recepcionId: string,
+  datos: { nombre?: string; documento?: string } = {},
+  taller?: string,
+): Promise<OrdenTrabajo> {
+  return apiFetch<OrdenTrabajo>(
+    `/recepciones/${recepcionId}/aceptar`,
+    false,
+    BASE_URL,
+    { method: 'POST', body: datos },
+    { taller },
+  );
+}
+
+export function iniciarAtencion(turnoId: string): Promise<unknown> {
+  return apiFetch(`/appointments/${turnoId}/atencion/inicio`, false, BASE_URL, { method: 'POST' });
+}
+
+export function finalizarAtencion(turnoId: string, notas?: string): Promise<unknown> {
+  return apiFetch(`/appointments/${turnoId}/atencion/fin`, false, BASE_URL, {
+    method: 'POST',
+    body: notas === undefined ? {} : { notas },
+  });
+}
+
+export function guardarNotas(turnoId: string, notas: string): Promise<unknown> {
+  return apiFetch(`/appointments/${turnoId}/notas`, false, BASE_URL, {
+    method: 'PATCH',
+    body: { notas },
+  });
+}
+
+/** Cierre: atendido o no asistio (tecnico); el admin tambien cancela o corrige. */
+export function cerrarTurno(
+  turnoId: string,
+  estado: EstadoTurno,
+  motivo?: string,
+): Promise<unknown> {
+  return apiFetch(`/appointments/${turnoId}/estado`, false, BASE_URL, {
+    method: 'PATCH',
+    body: motivo ? { estado, motivo } : { estado },
   });
 }

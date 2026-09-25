@@ -15,6 +15,8 @@ import {
   Servicio,
 } from '../servicios/entities/servicio.entity';
 import { HorarioService } from '../configuracion/horario.service';
+import { PoliticaService } from '../politica/politica.service';
+import { VehiculosService } from '../vehiculos/vehiculos.service';
 import { ServiciosService } from '../servicios/servicios.service';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
@@ -33,6 +35,7 @@ describe('AppointmentsService', () => {
   let bahiasRepository: jest.Mocked<Repository<Bahia>>;
   let serviciosService: jest.Mocked<ServiciosService>;
   let dataSource: jest.Mocked<DataSource>;
+  let politica: jest.Mocked<PoliticaService>;
 
   const bahia: Bahia = {
     id: 'b-1',
@@ -53,6 +56,7 @@ describe('AppointmentsService', () => {
     tarifaIva: 19,
     requiereAnticipo: false,
     porcentajeAnticipo: null,
+    garantiaDias: 30,
     activo: true,
     creadoEn: new Date(),
     actualizadoEn: new Date(),
@@ -117,6 +121,23 @@ describe('AppointmentsService', () => {
           provide: DataSource,
           useValue: { query: jest.fn() },
         },
+        {
+          provide: PoliticaService,
+          useValue: {
+            obtener: jest.fn().mockResolvedValue({
+              ventanaHoras: 4,
+              vigenciaStrikesMeses: 12,
+              strikesParaPrepago: 3,
+            }),
+            strikesVigentes: jest.fn().mockResolvedValue(0),
+            registrarStrike: jest.fn().mockResolvedValue('strike-1'),
+            anularPorCorreccion: jest.fn(),
+          },
+        },
+        {
+          provide: VehiculosService,
+          useValue: { obtener: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -125,6 +146,7 @@ describe('AppointmentsService', () => {
     bahiasRepository = module.get(getRepositoryToken(Bahia));
     serviciosService = module.get(ServiciosService);
     dataSource = module.get(DataSource);
+    politica = module.get(PoliticaService);
 
     bahiasRepository.findOne.mockResolvedValue(bahia);
     serviciosService.findOne.mockResolvedValue(servicio);
@@ -159,6 +181,9 @@ describe('AppointmentsService', () => {
       totalCentavos: 2_500_000,
       tarifaIva: null,
       anticipoCentavos: null,
+      vehiculoId: null,
+      // Sin taller (modo sistema) no se miran strikes.
+      anticipoPorStrikes: false,
     });
   });
 
@@ -376,6 +401,11 @@ describe('AppointmentsService', () => {
         estado: EstadoTurno.PROGRAMADO,
         atencionInicio: null,
         atencionFin: null,
+        // Ya paso: se puede cerrar como no asistio (Sprint 22).
+        rangoTiempo: {
+          inicio: new Date(Date.now() - 2 * 3_600_000),
+          fin: new Date(Date.now() - 3_600_000),
+        },
       } as Turno;
     }
 
@@ -666,6 +696,307 @@ describe('AppointmentsService', () => {
       expect(turnosRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ usuarioId: 'c-1' }),
       );
+    });
+  });
+  describe('politica de cancelacion y strikes (Sprint 22)', () => {
+    const AHORA = new Date('2026-09-30T12:00:00Z');
+    const MIN = 60_000;
+    const cliente = { sub: 'c-1', rol: 'cliente' };
+    const admin = { sub: 'a-1', rol: 'admin' };
+    const tecnico = { sub: 't-1', rol: 'tecnico' };
+
+    function turnoQueEmpiezaEn(minutos: number): Turno {
+      const inicio = new Date(AHORA.getTime() + minutos * MIN);
+      return {
+        id: 'turno-9',
+        tallerId: 'taller-1',
+        bahiaId: 'b-1',
+        servicioId: 's-1',
+        tecnicoId: 't-1',
+        usuarioId: 'c-1',
+        estado: EstadoTurno.PROGRAMADO,
+        atencionInicio: null,
+        atencionFin: null,
+        rangoTiempo: { inicio, fin: new Date(inicio.getTime() + 30 * MIN) },
+      } as Turno;
+    }
+
+    beforeEach(() => {
+      // Reloj fijo: la anticipacion se mide en minutos enteros, y unos ms
+      // de ejecucion convertirian 3 h 59 min en 3 h 58 min.
+      jest.useFakeTimers({ now: AHORA });
+      turnosRepository.save.mockImplementation(async (t) => t as Turno);
+      // buscarUsuario del titular: es un cliente.
+      dataSource.query.mockResolvedValue([{ id: 'c-1', rol: 'cliente' }]);
+    });
+    afterEach(() => jest.useRealTimers());
+
+    it('el cliente cancela 4 h 01 min antes: gratis, sin strike', async () => {
+      turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(241));
+
+      const r = await service.cancelar('turno-9', {}, cliente);
+
+      expect(r.turno.estado).toBe(EstadoTurno.CANCELADO);
+      expect(r.turno.canceladoPor).toBe('cliente');
+      expect(r.strike).toBe(false);
+      expect(politica.registrarStrike).not.toHaveBeenCalled();
+    });
+
+    it('el cliente cancela 3 h 59 min antes: strike con motivo y detalle en hora del taller', async () => {
+      turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(239));
+
+      const r = await service.cancelar('turno-9', {}, cliente);
+
+      expect(r.strike).toBe(true);
+      expect(politica.registrarStrike).toHaveBeenCalledWith({
+        tallerId: 'taller-1',
+        usuarioId: 'c-1',
+        turnoId: 'turno-9',
+        motivo: 'cancelacion_tardia',
+        // 15:59Z = 10:59 de Bogota.
+        detalle:
+          'Cancelaste el turno del 2026-09-30 a las 10:59 con 3 h 59 min de anticipacion (sin strike: hasta 4 h antes).',
+      });
+    });
+
+    it('usa la ventana configurada por el taller', async () => {
+      politica.obtener.mockResolvedValue({
+        ventanaHoras: 24,
+        vigenciaStrikesMeses: 12,
+        strikesParaPrepago: 3,
+      });
+      turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(10 * 60));
+
+      const r = await service.cancelar('turno-9', {}, cliente);
+
+      expect(r.strike).toBe(true);
+      expect(r.gratisHasta).toBe('2026-09-29T22:00:00.000Z');
+    });
+
+    it('el taller cancela tarde: nunca strike', async () => {
+      turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(30));
+
+      const r = await service.cancelar(
+        'turno-9',
+        { motivo: 'Sin repuesto' },
+        admin,
+      );
+
+      expect(r.turno.canceladoPor).toBe('taller');
+      expect(r.turno.motivoCancelacion).toBe('Sin repuesto');
+      expect(r.strike).toBe(false);
+      expect(politica.registrarStrike).not.toHaveBeenCalled();
+    });
+
+    it('el admin cancela tarde A PEDIDO del cliente: strike', async () => {
+      turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(30));
+
+      const r = await service.cancelar(
+        'turno-9',
+        { solicitadoPor: 'cliente' },
+        admin,
+      );
+
+      expect(r.turno.canceladoPor).toBe('cliente');
+      expect(r.strike).toBe(true);
+    });
+
+    it('un cliente no cancela el turno de otro (404, no 403)', async () => {
+      turnosRepository.findOne.mockResolvedValue({
+        ...turnoQueEmpiezaEn(600),
+        usuarioId: 'otro',
+      } as Turno);
+
+      await expect(
+        service.cancelar('turno-9', {}, cliente),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('un turno que ya empezo no lo cancela el cliente', async () => {
+      turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(-5));
+
+      await expect(
+        service.cancelar('turno-9', {}, cliente),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('no se cancela dos veces', async () => {
+      turnosRepository.findOne.mockResolvedValue({
+        ...turnoQueEmpiezaEn(600),
+        estado: EstadoTurno.CANCELADO,
+      } as Turno);
+
+      await expect(
+        service.cancelar('turno-9', {}, cliente),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('un admin que se reservo a si mismo no recibe strike', async () => {
+      dataSource.query.mockResolvedValue([{ id: 'c-1', rol: 'admin' }]);
+      turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(30));
+
+      const r = await service.cancelar(
+        'turno-9',
+        { solicitadoPor: 'cliente' },
+        admin,
+      );
+
+      expect(r.strike).toBe(false);
+    });
+
+    describe('cierre del turno', () => {
+      it('no asistio suma un strike al cliente', async () => {
+        turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(-60));
+
+        await service.actualizarEstado(
+          'turno-9',
+          { estado: EstadoTurno.NO_ASISTIO },
+          tecnico,
+        );
+
+        expect(politica.registrarStrike).toHaveBeenCalledWith(
+          expect.objectContaining({ motivo: 'no_asistio', usuarioId: 'c-1' }),
+        );
+      });
+
+      it('no asistio antes de la hora del turno: 400', async () => {
+        turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(10));
+
+        await expect(
+          service.actualizarEstado(
+            'turno-9',
+            { estado: EstadoTurno.NO_ASISTIO },
+            tecnico,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(politica.registrarStrike).not.toHaveBeenCalled();
+      });
+
+      it('el taller cancela por esta via: queda del taller y sin strike', async () => {
+        turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(-60));
+
+        const r = await service.actualizarEstado(
+          'turno-9',
+          { estado: EstadoTurno.CANCELADO },
+          admin,
+        );
+
+        expect(r.canceladoPor).toBe('taller');
+        expect(politica.registrarStrike).not.toHaveBeenCalled();
+      });
+
+      it('el tecnico no cancela', async () => {
+        turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(-60));
+
+        await expect(
+          service.actualizarEstado(
+            'turno-9',
+            { estado: EstadoTurno.CANCELADO },
+            tecnico,
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('el tecnico no toca turnos de otro tecnico (404)', async () => {
+        turnosRepository.findOne.mockResolvedValue({
+          ...turnoQueEmpiezaEn(-60),
+          tecnicoId: 'otro-tecnico',
+        } as Turno);
+
+        await expect(
+          service.actualizarEstado(
+            'turno-9',
+            { estado: EstadoTurno.ATENDIDO },
+            tecnico,
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('el tecnico no corrige un turno ya cerrado', async () => {
+        turnosRepository.findOne.mockResolvedValue({
+          ...turnoQueEmpiezaEn(-60),
+          estado: EstadoTurno.NO_ASISTIO,
+        } as Turno);
+
+        await expect(
+          service.actualizarEstado(
+            'turno-9',
+            { estado: EstadoTurno.ATENDIDO },
+            tecnico,
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('el admin corrige un no asistio: el strike se anula', async () => {
+        turnosRepository.findOne.mockResolvedValue({
+          ...turnoQueEmpiezaEn(-60),
+          estado: EstadoTurno.NO_ASISTIO,
+        } as Turno);
+
+        await service.actualizarEstado(
+          'turno-9',
+          { estado: EstadoTurno.ATENDIDO },
+          admin,
+        );
+
+        expect(politica.anularPorCorreccion).toHaveBeenCalledWith(
+          'turno-9',
+          'a-1',
+          expect.stringContaining('atendido'),
+        );
+      });
+
+      it('atendido guarda la garantia contada desde el dia de entrega del taller', async () => {
+        turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(-60));
+
+        const r = await service.actualizarEstado(
+          'turno-9',
+          {
+            estado: EstadoTurno.ATENDIDO,
+            atencionInicio: '2026-09-30T11:00:00Z',
+            // 04:30Z del 1 de octubre = 23:30 del 30 de septiembre en Bogota.
+            atencionFin: '2026-10-01T04:30:00Z',
+          },
+          admin,
+        );
+
+        expect(r.garantiaDias).toBe(30);
+        // Entregado el 30 de septiembre (hora del taller) + 30 dias.
+        expect(r.garantiaHasta).toBe('2026-10-30');
+      });
+
+      it('atendido sin garantia definida en el servicio: rige la legal (null)', async () => {
+        serviciosService.findOne.mockResolvedValue({
+          ...servicio,
+          garantiaDias: null,
+        });
+        turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(-60));
+
+        const r = await service.actualizarEstado(
+          'turno-9',
+          { estado: EstadoTurno.ATENDIDO },
+          admin,
+        );
+
+        expect(r.garantiaDias).toBeNull();
+        expect(r.garantiaHasta).toBeNull();
+      });
+    });
+
+    it('no se reactiva el turno viejo de una reprogramacion', async () => {
+      turnosRepository.findOne.mockResolvedValue({
+        ...turnoQueEmpiezaEn(600),
+        estado: EstadoTurno.CANCELADO,
+        reprogramadoA: 'turno-nuevo',
+      } as Turno);
+
+      await expect(
+        service.actualizarEstado(
+          'turno-9',
+          { estado: EstadoTurno.PROGRAMADO },
+          admin,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 });

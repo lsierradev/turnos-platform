@@ -22,6 +22,8 @@ export enum EstadoTurno {
   CANCELADO = 'cancelado',
 }
 
+export type CanceladoPor = 'cliente' | 'taller';
+
 // Postgres representa un tstzrange como "[2024-01-01 10:00:00+00,2024-01-01 11:00:00+00)".
 // TypeORM no tiene un ColumnType nativo para range types, asi que se mapea
 // como texto y se convierte a/desde { inicio, fin } aca. Confirmado (Sprint 5)
@@ -143,6 +145,43 @@ export class Turno {
     transformer: CENTAVOS,
   })
   anticipoCentavos?: number | null;
+
+  // 3 strikes vigentes al reservar (Sprint 22): anticipo = total, se paga
+  // el 100% por adelantado (el cobro llega en el Sprint 24).
+  @Column({ name: 'anticipo_por_strikes', default: false })
+  anticipoPorStrikes: boolean;
+
+  // Sprint 22 (migracion 017). Vehiculo del cliente que trae al turno.
+  @Column({ name: 'vehiculo_id', type: 'uuid', nullable: true })
+  vehiculoId?: string | null;
+
+  // Quien cancelo: 'taller' nunca genera strike al cliente. NULL en los
+  // cancelados anteriores a 017 y en todo turno no cancelado.
+  @Column({ name: 'cancelado_por', type: 'text', nullable: true })
+  canceladoPor?: CanceladoPor | null;
+
+  @Column({ name: 'cancelado_en', type: 'timestamptz', nullable: true })
+  canceladoEn?: Date | null;
+
+  @Column({ name: 'motivo_cancelacion', type: 'text', nullable: true })
+  motivoCancelacion?: string | null;
+
+  // Reprogramar = cancelar este turno y crear otro: apunta al nuevo.
+  @Column({ name: 'reprogramado_a', type: 'uuid', nullable: true })
+  reprogramadoA?: string | null;
+
+  @Column({ name: 'notas_atencion', type: 'text', nullable: true })
+  notasAtencion?: string | null;
+
+  // Foto de la garantia al cerrar como atendido (Decreto 735 de 2013).
+  // garantiaDias NULL con el turno atendido: el servicio no tenia termino
+  // definido y rige la garantia legal.
+  @Column({ name: 'garantia_dias', type: 'smallint', nullable: true })
+  garantiaDias?: number | null;
+
+  // DATE: el dia (del taller) hasta el que cubre, inclusive.
+  @Column({ name: 'garantia_hasta', type: 'date', nullable: true })
+  garantiaHasta?: string | null;
 
   @Column({
     name: 'rango_tiempo',

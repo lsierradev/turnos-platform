@@ -34,6 +34,11 @@ const PanelAdministrativoView = perezoso(
 const DashboardView = perezoso(() => import('@/features/dashboard/DashboardView'), 'DashboardView');
 const TalleresView = perezoso(() => import('@/features/talleres/TalleresView'), 'TalleresView');
 const MiTallerView = perezoso(() => import('@/features/taller/MiTallerView'), 'MiTallerView');
+const PerfilView = perezoso(() => import('@/features/perfil/PerfilView'), 'PerfilView');
+const OrdenTrabajoView = perezoso(
+  () => import('@/features/orden/OrdenTrabajoView'),
+  'OrdenTrabajoView',
+);
 const DesignView = perezoso(() => import('@/features/design/DesignView'), 'DesignView');
 const OlvideView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'OlvideView');
 const RestablecerView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'RestablecerView');
@@ -84,6 +89,8 @@ export function App() {
                   />
                   <Route path="/reservar" element={<ReservaView />} />
                   <Route path="/mis-turnos" element={<MisTurnosView />} />
+                  <Route path="/perfil" element={<PerfilView />} />
+                  <Route path="/turnos/:turnoId" element={<OrdenTrabajoView />} />
                   <Route path="/talleres" element={<TalleresView />} />
                   <Route path="/taller" element={<MiTallerView />} />
                   <Route path="/admin" element={<PanelAdministrativoView />} />

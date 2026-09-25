@@ -259,6 +259,15 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
       );
     });
 
-    expect(JSON.stringify(plan)).toContain('idx_turnos_kpi_inicio');
+    // Desde la 015 hay DOS indices sobre lower(rango_tiempo):
+    // idx_turnos_kpi_inicio (009) e idx_turnos_taller_inicio (taller_id,
+    // lower(...)). Con pocas filas y estadisticas viejas (otras suites
+    // acaban de insertar y borrar turnos) el planner elige cualquiera de
+    // los dos, y exigir el nombre del de 009 hacia fallar la prueba segun
+    // el orden de las suites. Lo que importa es que el predicado sea
+    // condicion de indice: sigue fallando si se envuelve lower(...).
+    const texto = JSON.stringify(plan);
+    expect(texto).toMatch(/idx_turnos_(kpi|taller)_inicio/);
+    expect(texto).toMatch(/"Index Cond":"\(\(lower\(rango_tiempo\) >= /);
   });
 });

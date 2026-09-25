@@ -24,6 +24,7 @@ describe('ServiciosService', () => {
     tarifaIva: 19,
     requiereAnticipo: false,
     porcentajeAnticipo: null,
+    garantiaDias: 30,
     activo: true,
     creadoEn: new Date(),
     actualizadoEn: new Date(),

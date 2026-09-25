@@ -71,6 +71,13 @@ export class CreateServicioDto {
   @Max(ANTICIPO_MAXIMO)
   porcentajeAnticipo?: number | null;
 
+  /** Termino de garantia en dias (Decreto 735 de 2013); null = no definido. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  garantiaDias?: number | null;
+
   @IsOptional()
   @IsBoolean()
   activo?: boolean;

@@ -109,8 +109,11 @@ de día.
 Cuando termina un turno, hay que registrarlo como:
 
 - **Atendido** — el cliente vino y se le hizo el servicio
-- **No asistió** — el cliente no vino y no avisó
-- **Cancelado** — el cliente avisó que no venía
+- **No asistió** — el cliente no vino y no avisó (suma un strike; ver
+  "Cancelaciones y strikes")
+- **Cancelado** — el turno no se hace. Desde el Sprint 22 el cliente
+  cancela solo desde "Mis turnos"; el taller cancela desde la orden de
+  trabajo, indicando si lo pidió el cliente o lo decidió el taller
 
 **Si esto no se hace, el tablero queda vacío.** Los indicadores se calculan
 exactamente con esta información: un turno que nunca se cierra no cuenta ni
@@ -120,6 +123,59 @@ Al marcar un turno como atendido se pueden registrar además **la hora real
 en que empezó y terminó** la atención. Es opcional, pero es lo único que
 alimenta el indicador de tiempo promedio. Sin esas horas, el turno cuenta
 para la asistencia pero no para el tiempo.
+
+---
+
+## Recibir el vehículo y la orden de trabajo
+
+Cada turno tiene su **orden de trabajo**: se abre tocando el turno en la
+agenda del técnico o el enlace **Orden** en el panel de la bahía.
+
+1. **Recepción.** Cuando llega el vehículo se registra: el vehículo del
+   cliente (si no lo tenía cargado se agrega ahí mismo), el kilometraje, el
+   nivel de combustible, el estado en que llega, los objetos que deja
+   adentro, observaciones y la fecha probable de entrega. Las fotos son
+   opcionales (hasta 6). Al guardarla, la orden recibe su número.
+2. **Aceptación.** La recepción es la constancia de entrega para reparación
+   (Ley 1480 de 2011). La acepta el cliente: en el mostrador (se registran
+   nombre y documento de quien entrega el vehículo) o desde su propia
+   cuenta. Al aceptarla le llega por correo. **Una vez aceptada no se puede
+   modificar**: revisen bien los datos antes.
+3. **Atención.** El técnico marca **Iniciar atención** y **Finalizar
+   atención** (así se miden los tiempos reales del tablero) y deja sus
+   notas del trabajo.
+4. **Cierre.** El técnico cierra sus turnos como **Atendido** o **No
+   asistió**. Corregir un cierre, o cancelar, lo hace el administrador.
+5. **Garantía.** Cada servicio tiene su término de garantía en días (Mi
+   taller → Servicios). Al cerrar como atendido queda impreso en la orden
+   hasta qué día cubre. Si el servicio no tiene término cargado, la orden
+   indica que rige la garantía legal.
+
+El botón **Imprimir** de la orden saca una versión limpia, sin menús.
+
+---
+
+## Cancelaciones y strikes
+
+La política se configura en **Mi taller → Cancelaciones**:
+
+- El cliente cancela o reprograma **sin costo hasta N horas antes** del
+  turno (4 por defecto). Se cuenta con la hora del taller.
+- Cancelar o reprogramar después de ese plazo, o **no presentarse**, le
+  suma un **strike** en este taller. Los strikes vencen solos (12 meses por
+  defecto).
+- Con **3 strikes vigentes**, el cliente solo puede reservar en este taller
+  pagando el **100% por adelantado**. El sistema lo marca en el turno; el
+  cobro en línea llega en una próxima versión.
+- **Si el taller cancela o no puede atender, nunca se le suma un strike al
+  cliente.** Al cancelar desde la orden se elige: "El taller no puede
+  atender" (nunca suma) o "El cliente pidió cancelar" (aplica la política).
+- El cliente ve sus strikes en **Mi perfil** y puede reclamar. Los reclamos
+  aparecen en Mi taller → Cancelaciones: se aceptan (el strike se anula) o
+  se rechazan, siempre con una respuesta que el cliente lee. También se
+  puede anular un strike sin reclamo, con justificación.
+- Corregir un "No asistió" (por ejemplo, a Atendido) anula solo el strike
+  que había sumado.
 
 ---
 

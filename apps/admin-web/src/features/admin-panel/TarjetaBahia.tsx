@@ -166,6 +166,14 @@ function DetalleTurnos({ bahiaId, fecha }: { bahiaId: string; fecha: string }) {
                 {ESTADO_TURNO_LABEL[t.estado]}
               </Badge>
             )}
+            {/* Sprint 22: recepcion, atencion y cierre del turno. */}
+            <Link
+              to={`/turnos/${t.id}`}
+              className="self-start text-xs font-medium text-marca-texto underline-offset-2 hover:underline"
+              aria-label={`Orden de ${t.servicio.nombre} a las ${formatearHora(t.inicio)}`}
+            >
+              Orden
+            </Link>
           </li>
         );
       })}

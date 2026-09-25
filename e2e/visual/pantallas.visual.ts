@@ -127,6 +127,24 @@ test.describe('admin', () => {
     await capturar(page, 'admin-taller-horario');
   });
 
+  test('mi taller: cancelaciones y reclamos', async ({ page }) => {
+    await page.goto('/taller?seccion=cancelaciones');
+    await expect(page.getByText('Llame al taller dos dias antes')).toBeVisible();
+    await capturar(page, 'admin-taller-cancelaciones');
+  });
+
+  test('orden de trabajo con recepcion aceptada', async ({ page }) => {
+    await page.goto('/turnos/dddddddd-0000-4000-8000-000000000001');
+    await expect(page.getByTestId('recepcion-aceptada')).toBeVisible();
+    await capturar(page, 'admin-orden');
+  });
+
+  test('orden de trabajo: recepcion del vehiculo', async ({ page }) => {
+    await page.goto('/turnos/dddddddd-0000-4000-8000-000000000002');
+    await expect(page.getByRole('combobox').first()).toHaveValue(/.+/);
+    await capturar(page, 'admin-orden-recepcion');
+  });
+
   test('mi taller: datos fiscales y pagos', async ({ page }) => {
     await page.goto('/taller?seccion=fiscal');
     await expect(page.getByRole('heading', { name: 'Pagos con Wompi' })).toBeVisible();
@@ -176,6 +194,12 @@ test.describe('cliente', () => {
     await page.goto('/mis-turnos');
     await expect(page.getByRole('list', { name: 'Historial de turnos' })).toBeVisible();
     await capturar(page, 'cliente-mis-turnos');
+  });
+
+  test('mi perfil: vehiculos y strikes', async ({ page }) => {
+    await page.goto('/perfil');
+    await expect(page.getByRole('list', { name: 'Strikes' })).toContainText('Cancelacion tardia');
+    await capturar(page, 'cliente-perfil');
   });
 });
 

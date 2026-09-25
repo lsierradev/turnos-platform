@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Ban, CheckCircle2, UserX } from 'lucide-react';
 import { formatearDuracion, minutosDelDia } from '@/lib/dates';
 import type { TurnoAgenda } from '@/lib/api-client';
@@ -79,6 +80,14 @@ function BloqueTurno({ bloque, desde }: { bloque: Bloque; desde: number }) {
         zIndex: cancelado ? 1 : 2,
       }}
     >
+      {/* Sprint 22: el bloque abre la orden de trabajo (recepcion, atencion
+          y cierre). Enlace encima de todo el bloque: el texto de adentro es
+          aria-hidden y el nombre accesible lo da este enlace. */}
+      <Link
+        to={`/turnos/${turno.id}`}
+        aria-label={`Abrir la orden: ${rango}, ${servicio}`}
+        className="absolute inset-0 z-10 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      />
       {compacto ? (
         <>
           {icono}

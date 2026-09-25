@@ -19,6 +19,7 @@ import {
   ApiError,
   crearCliente,
   crearTurno,
+  reprogramarTurno,
   sugerenciasDeConflicto,
   type Cliente,
   type DatosClienteNuevo,
@@ -41,11 +42,15 @@ import {
 } from '@/lib/dates';
 import { formatearPesos, textoDesglose, textoPrecioFinal } from '@/lib/dinero';
 import { describirError } from '@/lib/errores';
+import { Aviso } from '@/features/taller/comunes';
+import { describirVehiculo } from '@/features/vehiculos/vehiculos';
 import {
   useBahiasQuery,
   useDisponibilidadQuery,
+  usePoliticaQuery,
   useServiciosQuery,
   useTecnicosReservablesQuery,
+  useVehiculosTitularQuery,
 } from './useReservaQueries';
 import { CLIENTE_NUEVO_VACIO, validarClienteNuevo } from './cliente-nuevo';
 import { SelectorCliente, type ModoCliente } from './SelectorCliente';
@@ -69,6 +74,8 @@ interface Reservado {
   cliente?: Cliente;
   /** El cliente se registro con esta reserva. */
   clienteNuevo?: boolean;
+  /** Sprint 22: fue una reprogramacion; strike si fue fuera de plazo. */
+  reprogramado?: { strike: boolean };
 }
 
 interface Intento {
@@ -113,6 +120,16 @@ export function ReservaView() {
   const { usuario } = useAuth();
   const { tallerId, talleres, cargando, elegir } = useTaller();
   const activos = talleres.filter((t) => t.activo);
+  // Sprint 22: reprogramar llega con el taller del turno (el cliente puede
+  // tener otro elegido). Se reserva en ese.
+  const [paramsTaller] = useSearchParams();
+  const tallerPedido = paramsTaller.get('taller');
+  const pedidoDisponible = activos.some((t) => t.id === tallerPedido);
+  useEffect(() => {
+    if (usuario?.rol === 'cliente' && tallerPedido && tallerPedido !== tallerId && pedidoDisponible) {
+      elegir(tallerPedido);
+    }
+  }, [usuario?.rol, tallerPedido, tallerId, pedidoDisponible, elegir]);
   const clienteElige = usuario?.rol === 'cliente' && activos.length > 1;
 
   const selector = clienteElige ? (
@@ -198,6 +215,18 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
   // Ref y no estado: lo lee onSuccess en el mismo tick en que se escribio.
   const creadoEnIntento = useRef<Cliente | null>(null);
 
+  // Sprint 22. Reprogramar: mismo servicio (y vehiculo y precio), otro
+  // horario; el turno viejo se cancela en el mismo paso.
+  const reprogramarId = params.get('reprogramar');
+  const reprogramadoConStrike = useRef(false);
+  const titularId = esAdmin ? clienteElegido?.id : undefined;
+  const titularListo = !esAdmin || Boolean(titularId);
+  const vehiculos = useVehiculosTitularQuery(!reprogramarId && titularListo, titularId);
+  const politica = usePoliticaQuery(titularListo, titularId);
+  const [vehiculoId, setVehiculoId] = useState('');
+  const vehiculo = vehiculos.data?.find((v) => v.id === vehiculoId);
+  const prepago = politica.data?.requierePrepago ?? false;
+
   const clienteListo =
     !esAdmin ||
     (modoCliente === 'existente'
@@ -230,6 +259,15 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
     // dos servicios): si el turno falla, la cuenta queda creada y elegida
     // para el reintento, en vez de intentar crearla otra vez.
     mutationFn: async ({ turno, nuevo }: Intento) => {
+      if (reprogramarId) {
+        const r = await reprogramarTurno(
+          reprogramarId,
+          { inicio: turno.inicio, bahiaId: turno.bahiaId, tecnicoId: turno.tecnicoId },
+          params.get('taller') ?? undefined,
+        );
+        reprogramadoConStrike.current = r.strike;
+        return r.turno;
+      }
       let clienteId = turno.clienteId;
       if (nuevo) {
         let creado: Cliente;
@@ -257,9 +295,10 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
         tecnico: tecnico!,
         cliente: esAdmin ? (creado ?? clienteElegido ?? undefined) : undefined,
         clienteNuevo: creado !== null,
+        reprogramado: reprogramarId ? { strike: reprogramadoConStrike.current } : undefined,
       });
       // Todo lo que muestra ocupacion quedo viejo.
-      for (const clave of ['disponibilidad', 'agenda', 'carga-bahias', 'turnos-bahia', 'kpis', 'mis-turnos']) {
+      for (const clave of ['disponibilidad', 'agenda', 'carga-bahias', 'turnos-bahia', 'kpis', 'mis-turnos', 'strikes', 'politica']) {
         void queryClient.invalidateQueries({ queryKey: [clave] });
       }
     },
@@ -326,6 +365,7 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
         tecnicoId: tecnico.id,
         inicio: instante,
         clienteId: esAdmin && !nuevo ? clienteElegido?.id : undefined,
+        vehiculoId: vehiculoId || undefined,
       },
       nuevo,
     });
@@ -351,6 +391,7 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
       <Contenedor>
         <Confirmacion
           reservado={reservado}
+          prepago={prepago}
           esAdmin={esAdmin}
           onReservarOtro={reservarOtro}
         />
@@ -395,6 +436,12 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
               mientras la reserva esta en vuelo. min-w-0: un fieldset tiene
               min-width: min-content y un texto largo lo ensanchaba en el celular. */}
           <fieldset disabled={enVuelo} className="min-w-0 space-y-4">
+            {reprogramarId && (
+              <Aviso tipo="advertencia">
+                Estas cambiando el horario de un turno: se mantienen el servicio, el vehiculo y el
+                precio. El turno actual se cancela cuando confirmes el nuevo.
+              </Aviso>
+            )}
             {esAdmin && (
               <Card id="reserva-cliente" className="scroll-mt-20">
                 <CardHeader>
@@ -432,7 +479,13 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
                   etiqueta="Servicio"
                   valor={servicio?.id ?? ''}
                   cargando={servicios.isPending}
-                  bloqueadoPor={!bahia ? 'Elegi primero la bahia.' : undefined}
+                  bloqueadoPor={
+                    reprogramarId
+                      ? 'Al reprogramar se mantiene el servicio.'
+                      : !bahia
+                        ? 'Elegi primero la bahia.'
+                        : undefined
+                  }
                   vacio="No hay servicios disponibles"
                   opciones={(servicios.data ?? []).map((s) => ({
                     valor: s.id,
@@ -456,6 +509,25 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
                   opciones={(tecnicos.data ?? []).map((t) => ({ valor: t.id, texto: t.nombre }))}
                   onCambiar={(v) => elegir('tecnico', v)}
                 />
+                {/* Sprint 22: el vehiculo que trae (opcional; lo pide la recepcion). */}
+                {!reprogramarId && titularListo && (
+                  <div className="sm:col-span-3 sm:max-w-sm">
+                    <CampoSelect
+                      id="reserva-vehiculo"
+                      etiqueta="Vehiculo (opcional)"
+                      valor={vehiculoId}
+                      cargando={vehiculos.isPending}
+                      vacio={
+                        esAdmin
+                          ? 'El cliente no tiene vehiculos cargados.'
+                          : 'Podes cargar tus vehiculos en Mi perfil.'
+                      }
+                      opciones={(vehiculos.data ?? []).map((v) => ({ valor: v.id, texto: describirVehiculo(v) }))}
+                      onCambiar={setVehiculoId}
+                      permitirVacio
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -490,6 +562,12 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
               <CardTitle>{paso(3)}. Confirmar</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {prepago && (
+                <Aviso tipo="advertencia">
+                  {esAdmin ? 'El cliente tiene' : 'Tenes'} {politica.data?.strikesVigentes} strikes vigentes
+                  en este taller: el turno se paga completo por adelantado.
+                </Aviso>
+              )}
               {inicio && fin && bahia && servicio && tecnico ? (
                 <Resumen
                   filas={[
@@ -501,7 +579,11 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
                     ['Bahia', bahia.nombre],
                     ['Servicio', `${servicio.nombre} · ${formatearDuracion(servicio.duracionMinutos)}`],
                     ['Tecnico', tecnico.nombre],
+                    ...(vehiculo ? [['Vehiculo', describirVehiculo(vehiculo)] as [string, string]] : []),
                     ['Precio', textoPrecioFinal(servicio.precio)],
+                    ...(prepago
+                      ? [['Por adelantado', `${formatearPesos(servicio.precio.totalCentavos)} (100%)`] as [string, string]]
+                      : []),
                     // Sprint 21: el desglose y el anticipo, para quien
                     // administra; el cliente ve el precio final.
                     ...(esAdmin && textoDesglose(servicio.precio)
@@ -561,10 +643,18 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
                     <LoaderCircle className="animate-spin" aria-hidden />
                     Reservando…
                   </>
+                ) : reprogramarId ? (
+                  'Confirmar nuevo horario'
                 ) : (
                   'Confirmar reserva'
                 )}
               </Button>
+              {politica.data && (
+                <p className="text-xs text-muted-foreground">
+                  Podes cancelar o reprogramar sin costo hasta {politica.data.ventanaHoras} h antes del
+                  turno. Despues, o si no te presentas, suma un strike en este taller.
+                </p>
+              )}
               {/* El cambio de estado del boton no lo anuncia un lector de
                   pantalla por si solo. */}
               <span role="status" className="sr-only">
@@ -643,6 +733,7 @@ function CampoSelect({
   cargando,
   vacio,
   bloqueadoPor,
+  permitirVacio = false,
 }: {
   id: string;
   etiqueta: string;
@@ -652,6 +743,8 @@ function CampoSelect({
   cargando: boolean;
   vacio: string;
   bloqueadoPor?: string;
+  /** Campo opcional: la primera opcion es "Ninguno" y se puede volver a ella. */
+  permitirVacio?: boolean;
 }) {
   const sinOpciones = !cargando && opciones.length === 0;
   const ayuda = bloqueadoPor ?? (sinOpciones ? vacio : undefined);
@@ -668,8 +761,8 @@ function CampoSelect({
         onChange={(e) => onCambiar(e.target.value)}
         className="h-9 w-full rounded-lg border border-input bg-card px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
       >
-        <option value="" disabled>
-          {cargando ? 'Cargando…' : 'Elegir…'}
+        <option value="" disabled={!permitirVacio}>
+          {cargando ? 'Cargando…' : permitirVacio ? 'Ninguno' : 'Elegir…'}
         </option>
         {opciones.map((o) => (
           <option key={o.valor} value={o.valor}>
@@ -887,10 +980,12 @@ function Resumen({ filas }: { filas: [string, string][] }) {
 function Confirmacion({
   reservado,
   esAdmin,
+  prepago,
   onReservarOtro,
 }: {
   reservado: Reservado;
   esAdmin: boolean;
+  prepago: boolean;
   onReservarOtro: () => void;
 }) {
   const navigate = useNavigate();
@@ -912,7 +1007,7 @@ function Confirmacion({
           </span>
           <div>
             <h2 ref={titulo} tabIndex={-1} className="text-lg font-semibold outline-none">
-              Turno reservado
+              {reservado.reprogramado ? 'Turno reprogramado' : 'Turno reservado'}
             </h2>
             <p className="text-sm text-muted-foreground">
               {formatearFechaLarga(dia)}, de {formatearHora(inicio)} a {formatearHora(fin)}
@@ -944,6 +1039,18 @@ function Confirmacion({
               : []),
           ]}
         />
+        {reservado.reprogramado?.strike && (
+          <Aviso tipo="advertencia">
+            El cambio se hizo fuera del plazo sin costo: se sumo un strike (lo ves en Mi perfil).
+          </Aviso>
+        )}
+        {(turno.anticipoPorStrikes || (prepago && !reservado.reprogramado)) && turno.totalCentavos !== null && (
+          <Aviso tipo="advertencia">
+            Este turno se paga completo por adelantado ({formatearPesos(turno.totalCentavos)}) por los
+            strikes vigentes en el taller. El pago en linea llega pronto; mientras tanto, coordinalo
+            con el taller.
+          </Aviso>
+        )}
         {cliente && clienteNuevo && (
           <div
             className="space-y-2 rounded-lg border border-info/40 bg-info-suave p-4"

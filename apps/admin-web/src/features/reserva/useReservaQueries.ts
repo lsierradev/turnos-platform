@@ -8,8 +8,10 @@ import {
   getBahias,
   getClientes,
   getDisponibilidad,
+  getPolitica,
   getServicios,
   getTecnicosReservables,
+  getVehiculos,
   type DisponibilidadParams,
 } from '@/lib/api-client';
 import { sumarDiasISO } from '@/lib/dates';
@@ -95,4 +97,27 @@ export function useDisponibilidadQuery(params: DisponibilidadParams | null) {
   }, [queryClient, exito, params?.bahiaId, params?.servicioId, params?.tecnicoId, params?.fecha, params?.clienteId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return query;
+}
+
+/**
+ * Sprint 22: vehiculos del titular (el cliente, los suyos; el admin, los
+ * del cliente elegido) y como esta en la politica de cancelacion del
+ * taller (3 strikes: pago total por adelantado).
+ */
+export function useVehiculosTitularQuery(habilitado: boolean, clienteId?: string) {
+  return useQuery({
+    queryKey: ['vehiculos', clienteId ?? 'mios'],
+    queryFn: () => getVehiculos(clienteId),
+    enabled: habilitado,
+    staleTime: 60_000,
+  });
+}
+
+export function usePoliticaQuery(habilitado: boolean, clienteId?: string) {
+  return useQuery({
+    queryKey: ['politica', clienteId ?? 'mia'],
+    queryFn: () => getPolitica(clienteId),
+    enabled: habilitado,
+    staleTime: 30_000,
+  });
 }

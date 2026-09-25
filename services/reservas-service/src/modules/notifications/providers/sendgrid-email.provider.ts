@@ -24,7 +24,11 @@ export class SendgridEmailProvider implements NotificationProvider {
     this.inicializado = true;
   }
 
-  async enviar({ destinatario, mensaje }: EnvioNotificacion): Promise<void> {
+  async enviar({
+    destinatario,
+    mensaje,
+    asunto,
+  }: EnvioNotificacion): Promise<void> {
     this.asegurarInicializado();
 
     const from = process.env.SENDGRID_FROM_EMAIL;
@@ -35,7 +39,7 @@ export class SendgridEmailProvider implements NotificationProvider {
     await sgMail.send({
       to: destinatario,
       from,
-      subject: 'Recordatorio de turno',
+      subject: asunto ?? 'Recordatorio de turno',
       text: mensaje,
     });
   }

@@ -1,6 +1,8 @@
 export interface EnvioNotificacion {
   destinatario: string;
   mensaje: string;
+  /** Solo correo; WhatsApp no tiene asunto. */
+  asunto?: string;
 }
 
 /**

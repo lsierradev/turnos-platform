@@ -1,4 +1,10 @@
-import { IsEnum, IsISO8601, IsOptional } from 'class-validator';
+import {
+  IsEnum,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { EstadoTurno } from '../../../entities/turno.entity';
 
 export class ActualizarEstadoDto {
@@ -17,4 +23,16 @@ export class ActualizarEstadoDto {
   @IsOptional()
   @IsISO8601()
   atencionFin?: string;
+
+  /** Notas del tecnico (Sprint 22); si no viene, se conservan. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  notas?: string;
+
+  /** Al cancelar por esta via (siempre del taller): por que. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  motivo?: string;
 }

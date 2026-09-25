@@ -176,7 +176,11 @@ export async function sembrar(): Promise<DatosSembrados> {
 
 export async function limpiar(datos: DatosSembrados): Promise<void> {
   await conConexion(async (db) => {
-    // Orden impuesto por las FK: notificaciones -> turnos -> el resto.
+    // Orden impuesto por las FK: strikes, recepciones (Sprint 22) y
+    // notificaciones -> turnos -> vehiculos -> el resto. Reclamos y fotos
+    // caen en cascada.
+    await db.query('DELETE FROM strikes WHERE taller_id = $1', [datos.tallerId]);
+    await db.query('DELETE FROM recepciones WHERE taller_id = $1', [datos.tallerId]);
     await db.query(
       `DELETE FROM notificaciones
        WHERE turno_id IN (SELECT id FROM turnos WHERE bahia_id = ANY($1))`,
@@ -184,6 +188,9 @@ export async function limpiar(datos: DatosSembrados): Promise<void> {
     );
     await db.query('DELETE FROM turnos WHERE bahia_id = ANY($1)', [
       [datos.bahiaId, datos.otraBahiaId],
+    ]);
+    await db.query('DELETE FROM vehiculos WHERE usuario_id = ANY($1)', [
+      datos.clientes.map((c) => c.id),
     ]);
     await db.query('DELETE FROM servicios WHERE id = $1', [datos.servicioId]);
     await db.query('DELETE FROM bahias WHERE id = ANY($1)', [
@@ -220,6 +227,7 @@ export async function borrarUsuariosPorEmail(emails: string[]): Promise<void> {
       'DELETE FROM turnos WHERE usuario_id IN (SELECT id FROM usuarios WHERE email = ANY($1))',
       [emails],
     );
+    // Vehiculos caen en cascada con el usuario (017).
     await db.query('DELETE FROM usuarios WHERE email = ANY($1)', [emails]);
   });
 }

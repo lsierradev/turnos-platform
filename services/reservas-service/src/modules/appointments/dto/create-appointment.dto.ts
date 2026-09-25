@@ -18,4 +18,10 @@ export class CreateAppointmentDto {
   @IsOptional()
   @IsUUID()
   clienteId?: string;
+
+  // Sprint 22: el vehiculo que trae (del titular del turno). Opcional al
+  // reservar; la recepcion lo pide si falta.
+  @IsOptional()
+  @IsUUID()
+  vehiculoId?: string;
 }

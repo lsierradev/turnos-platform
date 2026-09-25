@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 21 (configuracion fiscal, precios, horario)
+Actualizado: Sprint 22 (recepcion del vehiculo, ciclo del turno, politica de cancelacion)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -643,6 +643,174 @@ Correos (usuarios-service):
   solo se registra el aviso en el log.
 
 ----------------------------------------
+MODULO: recepcion, ciclo del turno y politica de cancelacion (reservas-service, Sprint 22)
+----------------------------------------
+Migracion 017. Todo con RLS: el cliente ve lo propio (vehiculos, strikes,
+recepciones de sus turnos); el personal, lo del taller de la sesion.
+Un cliente que modifica un turno (cancelar, reprogramar, aceptar la
+recepcion) tiene que mandar X-Taller = el taller de ESE turno: si no, 400
+"Ese turno es de otro taller".
+
+--- Vehiculos ---
+
+[GET] /vehiculos[?clienteId=uuid]
+  Cliente: los suyos (clienteId de otro -> 403). Personal: los de un
+  cliente del taller (clienteId obligatorio; si no es cliente del taller,
+  404).
+  Response 200: [ { id, usuarioId, placa, marca, modelo, anio, kilometraje, activo } ]
+
+[POST] /vehiculos
+  Body        : { placa, marca, modelo, anio, kilometraje, clienteId? (personal) }
+  La placa se normaliza (mayusculas, sin espacios ni guiones; 5-7
+  caracteres). anio 1950..(ano actual + 1). Misma placa activa dos veces
+  para el mismo cliente -> 409.
+[PATCH] /vehiculos/:id   Body parcial. 404 si la sesion no lo ve.
+[DELETE] /vehiculos/:id  204. Baja logica (turnos y recepciones lo siguen nombrando).
+
+POST /appointments acepta "vehiculoId" (opcional): tiene que ser del
+titular del turno (400) y visible para la sesion (404).
+
+--- Politica de cancelacion y strikes ---
+
+[GET] /politica[?clienteId=uuid (solo admin)]
+  Response 200:
+    { "ventanaHoras": 4, "vigenciaStrikesMeses": 12, "strikesParaPrepago": 3,
+      "strikesVigentes": 1, "requierePrepago": false }
+  strikesVigentes/requierePrepago son del usuario (o del cliente pedido)
+  EN ESTE TALLER: los strikes no se comparten entre talleres.
+
+[PUT] /politica  (rol admin)
+  Body        : { "ventanaHoras": 0..72, "vigenciaStrikesMeses": 1..36 }
+  Los strikes ya puestos conservan su vencimiento.
+
+[POST] /appointments/:id/cancelar  (cliente: los suyos; admin: los del taller)
+  Body        : { "motivo"?: string, "solicitadoPor"?: "cliente"|"taller" (solo admin) }
+  Response 201: { "turno": {...cancelado...}, "strike": true|false,
+                  "gratisHasta": "...Z" }
+  Gratis hasta ventanaHoras antes del inicio, INCLUSIVE (a las 4 h 00 min
+  todavia es gratis; a 3 h 59 min suma strike). Se comparan instantes: no
+  depende de la zona del servidor ni del offset con que viaje la hora. El
+  detalle del strike nombra la hora del turno en hora del taller.
+  El taller (admin sin solicitadoPor, o "taller") NUNCA suma strike. El
+  tecnico no cancela (403). 400 si el turno no esta programado, o si el
+  cliente intenta cancelar uno que ya empezo.
+
+[POST] /appointments/:id/reprogramar  (cliente: los suyos; admin)
+  Body        : { "inicio": ISO, "bahiaId"?, "tecnicoId"?, "solicitadoPor"? (admin) }
+  Cancela el turno y crea otro con el mismo servicio, vehiculo y PRECIO
+  (la foto del original). El original queda cancelado con
+  reprogramado_a = id del nuevo. Misma regla de ventana que cancelar
+  (motivo "reprogramacion_tardia"). Todo en una transaccion: si el
+  horario nuevo choca (409 con sugerencias) o es invalido, el original
+  sigue programado y no se registra strike.
+  Response 201: { "turno": {...el NUEVO...}, "strike", "gratisHasta" }
+
+  Strikes: uno por turno como maximo. Motivos: cancelacion_tardia,
+  reprogramacion_tardia, no_asistio. Vence a los vigenciaStrikesMeses.
+  Con 3 vigentes en el taller, POST /appointments (tambien el admin a
+  nombre del cliente) guarda anticipoCentavos = totalCentavos y
+  anticipoPorStrikes = true: pago del 100% por adelantado (el cobro llega
+  en el Sprint 24).
+
+[GET] /strikes/mios   Los del usuario, de todos los talleres.
+  Response 200: [ { id, motivo, detalle, creadoEn, venceEn,
+                    estado: "vigente"|"vencido"|"anulado",
+                    anulacion: { en, justificacion } | null,
+                    turno: { id, inicio, servicio }, taller: { id, nombre },
+                    reclamo: { texto, creadoEn, resultado: null|"aceptado"|"rechazado",
+                               respuesta, resueltoEn } | null } ]
+[POST] /strikes/:id/reclamo  (rol cliente, sobre uno propio)
+  Body        : { "texto": 10..2000 caracteres }. Uno por strike (409).
+[GET] /strikes?estado=reclamos|vigentes|todos[&clienteId=]  (rol admin)
+  Como /strikes/mios, mas "cliente": { id, nombre, email }. "todos": 18 meses.
+[POST] /strikes/:id/anular  (rol admin)
+  Body        : { "justificacion": >= 10 caracteres } (el cliente la lee).
+  Un reclamo pendiente queda aceptado con la misma respuesta.
+[POST] /strikes/:id/reclamo/resolver  (rol admin)
+  Body        : { "aceptar": bool, "respuesta": >= 10 caracteres }
+  aceptar=true anula el strike.
+
+--- Orden de trabajo y recepcion ---
+
+[GET] /appointments/:id/orden  (personal del taller o titular del turno)
+  Response 200:
+    { "numero": 12 | null,                (consecutivo del taller; null sin recepcion)
+      "taller": { id, nombre, razonSocial, nit, dv, direccion, municipio },
+      "cliente": { id, nombre, email, telefono } | null,
+      "turno": { id, inicio, fin, estado, bahia, servicio: {id, nombre, categoria},
+                 tecnico, precio, anticipo: { centavos, porStrikes } | null,
+                 canceladoPor, motivoCancelacion },
+      "vehiculo": { id, placa, marca, modelo, anio, kilometraje } | null,
+      "recepcion": { id, numero, kilometraje, nivelCombustible (0..4),
+                     estadoVehiculo, objetosDejados, observaciones,
+                     fechaProbableEntrega, recibidoPor, creadoEn,
+                     aceptacion: { en, medio: "cuenta"|"presencial",
+                                   nombre, documento } | null,
+                     fotos: [ { id, tipoMime } ] } | null,
+      "atencion": { inicio, fin, notas },
+      "garantia": { dias | null, hasta | null, texto } }
+  garantia: cerrado como atendido -> la foto (dias del servicio y "hasta",
+  contado desde el dia de entrega en hora del taller); si no, el termino
+  vigente del servicio. dias null -> "rige la garantia legal".
+
+[PUT] /appointments/:id/recepcion  (admin | tecnico del taller)
+  Body        : { vehiculoId, kilometraje, nivelCombustible (0 reserva..4 lleno),
+                  estadoVehiculo, objetosDejados?, observaciones?,
+                  fechaProbableEntrega? (ISO; default: fin del turno) }
+  Crea (numero = siguiente consecutivo del taller) o corrige el borrador.
+  Solo turnos programados. El vehiculo tiene que ser del cliente del turno
+  (400); queda como vehiculo del turno y su kilometraje se actualiza (nunca
+  hacia atras). Aceptada: 409.
+  Response 200: la orden.
+
+[POST] /recepciones/:id/fotos  (admin | tecnico)
+  Body        : { "tipoMime": "image/jpeg"|"image/png"|"image/webp", "datos": base64 }
+  Hasta 6 por recepcion y 2 MB por foto; los bytes tienen que coincidir
+  con el tipo (400). Aceptada: 409. El JSON del servicio admite hasta 4 MB
+  (main.ts) por esto.
+[DELETE] /recepciones/:id/fotos/:fotoId  (admin | tecnico)  204; aceptada: 409.
+[GET] /recepciones/:id/fotos/:fotoId  Binario con su Content-Type.
+
+[POST] /recepciones/:id/aceptar
+  Cliente titular (desde su cuenta): body {} -> medio "cuenta".
+  Personal (en el mostrador): body { "nombre", "documento" } de quien
+  entrega -> medio "presencial" (sin ellos, 400).
+  Acepta por la funcion SECURITY DEFINER aceptar_recepcion() (el cliente
+  no tiene UPDATE sobre recepciones). Desde ahi la recepcion y sus fotos
+  no cambian (trigger de 017, tambien para escrituras directas con el rol
+  de la app). Encola el correo "Constancia de recepcion - orden N.° X"
+  (notificaciones.tipo = 'constancia_recepcion') DESPUES del commit.
+  Response 201: la orden. 409 si ya estaba aceptada.
+
+--- Atencion y cierre ---
+
+[POST] /appointments/:id/atencion/inicio   (tecnico asignado | admin)
+  Registra atencion_inicio = ahora. Solo programado, desde el dia del
+  turno; ya iniciada -> 409.
+[POST] /appointments/:id/atencion/fin      (tecnico asignado | admin)
+  Body        : { "notas"? }. Requiere inicio; ya finalizada -> 409.
+[PATCH] /appointments/:id/notas            (tecnico asignado | admin)
+  Body        : { "notas" }. Turno cerrado: solo admin.
+
+PATCH /appointments/:id/estado (cambios del Sprint 22):
+  - El tecnico solo cierra SUS turnos programados, como atendido o
+    no_asistio (otro tecnico: 404; cancelar o corregir un cierre: 403).
+  - no_asistio antes del inicio del turno: 400. Suma un strike al cliente.
+  - El admin corrige cierres; sacar un turno de no_asistio anula su strike.
+  - cancelado por esta via = cancelado por el taller (sin strike).
+  - atendido guarda la garantia (garantia_dias, garantia_hasta).
+  - No se reactiva el turno viejo de una reprogramacion (409).
+  Body acepta ademas "notas" y "motivo".
+
+GET /appointments/mios suma: anticipo, vehiculo, canceladoPor,
+cancelacion: { gratisHasta, ventanaHoras } (solo programados que no
+empezaron), recepcion: { id, numero, aceptada }, garantia e ids
+(bahia, servicio, tecnico) para reprogramar.
+
+Servicios (POST/PATCH /servicios): "garantiaDias" (0..3650 o null =
+rige la garantia legal), impreso en la orden (Decreto 735 de 2013).
+
+----------------------------------------
 Convenciones generales
 ----------------------------------------
 - Sin prefijo global todavia (ej. /api/v1) — pendiente de definir.
@@ -684,7 +852,15 @@ Convenciones generales
                               POST /usuarios/:id/baja|reactivar
     admin                  -> POST/PATCH/DELETE /servicios
     admin | tecnico (suyo) -> GET /dashboard/kpis (Sprint 18)
-    admin | tecnico        -> PATCH /appointments/:id/estado
+    admin (Sprint 22)      -> PUT /politica, GET /strikes, POST /strikes/:id/anular,
+                              POST /strikes/:id/reclamo/resolver
+    cliente | admin        -> POST /appointments/:id/cancelar|reprogramar
+                              (cliente: solo los suyos)
+    cliente                -> POST /strikes/:id/reclamo
+    admin | tecnico        -> PATCH /appointments/:id/estado (tecnico: solo
+                              sus turnos programados), PUT
+                              /appointments/:id/recepcion, fotos,
+                              /appointments/:id/atencion/*, /notas
     admin | tecnico duenio -> GET /technicians/:id/agenda (403 si un tecnico
                               pide la agenda de otro)
     admin                  -> GET /bahias/carga, GET /bahias/:id/turnos
@@ -693,7 +869,11 @@ Convenciones generales
                               GET /bahias, GET /technicians,
                               GET /appointments/mios (Sprint 18),
                               GET /talleres (Sprint 20),
-                              GET /configuracion/horario (Sprint 21)
+                              GET /configuracion/horario (Sprint 21),
+                              /vehiculos, GET /politica, GET /strikes/mios,
+                              GET /appointments/:id/orden, POST
+                              /recepciones/:id/aceptar (Sprint 22; RLS
+                              limita a lo propio o al taller)
     publico                -> POST /auth/login, /auth/olvide, /auth/restablecer
   Falta de permiso responde 403 (el token es valido); 401 queda solo para
   token ausente o invalido.

@@ -12,9 +12,12 @@ import { BahiasModule } from './modules/bahias/bahias.module';
 import { ConfiguracionModule } from './modules/configuracion/configuracion.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PoliticaModule } from './modules/politica/politica.module';
+import { RecepcionesModule } from './modules/recepciones/recepciones.module';
 import { ReservasModule } from './modules/reservas/reservas.module';
 import { ServiciosModule } from './modules/servicios/servicios.module';
 import { TechniciansModule } from './modules/technicians/technicians.module';
+import { VehiculosModule } from './modules/vehiculos/vehiculos.module';
 
 @Module({
   imports: [
@@ -55,6 +58,10 @@ import { TechniciansModule } from './modules/technicians/technicians.module';
     DashboardModule,
     BahiasModule,
     ConfiguracionModule,
+    // Sprint 22: politica de cancelacion, vehiculos y recepcion.
+    PoliticaModule,
+    VehiculosModule,
+    RecepcionesModule,
   ],
 })
 export class AppModule {}

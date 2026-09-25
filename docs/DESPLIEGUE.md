@@ -183,6 +183,32 @@ esquema nuevo mientras dura el rolling update.
 > el cliente sigue viendo el mismo precio hasta que el admin cargue su
 > configuración fiscal.
 
+> **La 017 (Sprint 22) sí es aditiva:** tablas nuevas (vehículos,
+> recepciones y sus fotos, política de cancelación, strikes y reclamos) y
+> columnas nullable o con default en `turnos` y `servicios`. Se puede
+> aplicar antes de subir los servicios del Sprint 22.
+
+### Recepción del vehículo y cancelaciones (Sprint 22)
+
+- **Tamaño del body:** reservas-service acepta JSON de hasta 4 MB (las
+  fotos de la recepción viajan en base64, hasta 2 MB cada una). Si hay un
+  ingress, proxy o WAF adelante con un límite menor (el default de
+  ingress-nginx es 1 MB: `nginx.ingress.kubernetes.io/proxy-body-size`),
+  subirlo a 4 MB para la ruta de reservas-service; si no, subir una foto
+  responde 413.
+- Las fotos se guardan en Postgres (`recepcion_fotos`, bytea), con tope de
+  6 por recepción. Hoy no hay almacenamiento de objetos; si el volumen
+  crece, es lo primero a mover a S3.
+- **Correo de la constancia:** al aceptarse una recepción sale un correo
+  por la misma cola y tabla que los recordatorios (`notificaciones.tipo =
+  'constancia_recepcion'`), con las mismas variables de SendGrid. Se encola
+  después del commit del request; si Redis no responde, el request no se
+  cae y la notificación queda `pendiente` (la ve el control de cobertura).
+- Una recepción aceptada no se puede modificar con el rol de la app (lo
+  impide un trigger). Una corrección excepcional se hace a mano como dueño
+  de las tablas y queda fuera de la aplicación: dejar constancia de quién
+  y por qué.
+
 ### Credenciales de los talleres (Sprint 21)
 
 - Al guardar el token de Alegra o las llaves de Wompi, reservas-service

@@ -110,3 +110,45 @@ export function formatearDuracion(minutos: number): string {
   const m = minutos % 60;
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
+
+/**
+ * Instante (ISO) de la hora de pared `hora` (HH:MM) del dia `fechaISO` en
+ * la zona del taller (Sprint 22: fecha probable de entrega). Misma
+ * estimacion que instanteEnZona del backend: se asume UTC, se mide el
+ * offset y se corrige una vez (alcanza para zonas con horario de verano).
+ */
+export function instanteDelTaller(fechaISO: string, hora: string): string {
+  const [anio, mes, dia] = fechaISO.split('-').map(Number);
+  const [h, m] = hora.split(':').map(Number);
+  const comoUtc = Date.UTC(anio, mes - 1, dia, h, m);
+  const offset = (instante: number) => {
+    const p = partes(new Date(instante));
+    const local = Date.UTC(
+      Number(p.year),
+      Number(p.month) - 1,
+      Number(p.day),
+      Number(p.hour),
+      Number(p.minute),
+    );
+    return local - Math.floor(instante / 60_000) * 60_000;
+  };
+  const estimado = comoUtc - offset(comoUtc);
+  return new Date(comoUtc - offset(estimado)).toISOString();
+}
+
+/** "jueves, 24 de septiembre · 14:30" de un instante, en hora del taller. */
+export function formatearFechaHora(iso: string): string {
+  return `${formatearFechaLarga(fechaDeInstante(iso))} · ${formatearHora(iso)}`;
+}
+
+const formatoConAnio = new Intl.DateTimeFormat('es', {
+  timeZone: 'UTC',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+});
+
+/** "21 de septiembre de 2027": para fechas que pueden caer en otro ano (vencimientos). */
+export function formatearFechaConAnio(fechaISO: string): string {
+  return formatoConAnio.format(new Date(`${fechaISO}T12:00:00.000Z`));
+}

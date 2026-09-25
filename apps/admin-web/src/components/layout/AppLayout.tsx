@@ -42,7 +42,7 @@ function Marca({ compacta = false }: { compacta?: boolean }) {
 
 function BarraLateral({ items, esAdmin }: { items: ItemNavegacion[]; esAdmin: boolean }) {
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-sidebar text-sidebar-foreground lg:flex">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-sidebar text-sidebar-foreground lg:flex print:hidden">
       <div className="flex h-14 items-center px-4">
         <Marca />
       </div>
@@ -93,7 +93,7 @@ function BarraInferior({ items }: { items: ItemNavegacion[] }) {
   return (
     <nav
       aria-label="Principal"
-      className="fixed inset-x-0 bottom-0 z-30 border-t bg-card pb-[env(safe-area-inset-bottom)] lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 border-t bg-card pb-[env(safe-area-inset-bottom)] lg:hidden print:hidden"
     >
       <ul
         className="grid"
@@ -166,7 +166,7 @@ function Encabezado() {
   const inicial = usuario?.email.charAt(0).toUpperCase() ?? '?';
 
   return (
-    <header className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+    <header className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 print:hidden">
       <div className="flex h-14 items-center justify-between gap-3 px-4 lg:px-6">
         {/* La marca va en la barra lateral en escritorio; aca solo en celular. */}
         <div className="lg:hidden">
@@ -264,7 +264,8 @@ export function AppLayout() {
         Saltar al contenido
       </a>
       <BarraLateral items={items} esAdmin={actuaComoAdmin(usuario)} />
-      <div className="lg:pl-60">
+      {/* Sprint 22: la orden de trabajo se imprime; sin menu ni encabezado. */}
+      <div className="lg:pl-60 print:pl-0">
         <Encabezado />
         <main
           ref={main}

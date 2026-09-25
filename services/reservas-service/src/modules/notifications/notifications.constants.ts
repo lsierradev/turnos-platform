@@ -26,4 +26,6 @@ export function opcionesJobNotificacion(): JobOptions {
 export interface NotificacionJobData {
   notificacionId: string;
   mensaje: string;
+  /** Asunto del correo (Sprint 22); sin el, el del recordatorio. */
+  asunto?: string;
 }

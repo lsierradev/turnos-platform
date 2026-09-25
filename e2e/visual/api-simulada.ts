@@ -301,6 +301,14 @@ function misTurnos() {
       tecnico: 'Carlos Rojas',
       taller: { id: TALLER.id, nombre: TALLER.nombre },
       precio: estado === 'cancelado' ? null : SERVICIOS[s].precio,
+      // Sprint 22.
+      anticipo: null,
+      vehiculo: i === 2 || i === 3 ? { id: VEHICULO.id, placa: VEHICULO.placa, marca: VEHICULO.marca, modelo: VEHICULO.modelo } : null,
+      canceladoPor: estado === 'cancelado' ? 'cliente' : null,
+      cancelacion: estado === 'programado' ? { gratisHasta: masMin(inicio, -4 * 60), ventanaHoras: 4 } : null,
+      recepcion: estado === 'atendido' ? { id: 'rec-1', numero: 41, aceptada: true } : null,
+      garantia: estado === 'atendido' ? { dias: 90, hasta: sumarDias(fecha, 90) } : null,
+      ids: { bahia: BAHIAS[b].id, servicio: SERVICIOS[s].id, tecnico: T1 },
     };
   };
   return [
@@ -309,6 +317,102 @@ function misTurnos() {
     t(sumarDias(HOY, -12), '15:00', 2, 2, 'atendido', 3),
     t(sumarDias(HOY, -30), '09:00', 0, 0, 'cancelado', 4),
   ];
+}
+
+// --- Sprint 22: vehiculos, politica, strikes y orden de trabajo ---------
+const VEHICULO = {
+  id: 'aeaeaeae-0000-4000-8000-000000000001',
+  usuarioId: CLIENTES[0].id,
+  placa: 'ABC123',
+  marca: 'Renault',
+  modelo: 'Logan',
+  anio: 2019,
+  kilometraje: 45210,
+  activo: true,
+};
+const POLITICA = { ventanaHoras: 4, vigenciaStrikesMeses: 12, strikesParaPrepago: 3, strikesVigentes: 1, requierePrepago: false };
+
+function strikes(conCliente: boolean) {
+  const base = {
+    taller: { id: TALLER.id, nombre: TALLER.nombre },
+    ...(conCliente ? { cliente: { id: CLIENTES[0].id, nombre: CLIENTES[0].nombre, email: CLIENTES[0].email } } : {}),
+  };
+  return [
+    {
+      ...base,
+      id: 'strike-1',
+      motivo: 'cancelacion_tardia',
+      detalle: `Cancelaste el turno del ${sumarDias(HOY, -3)} a las 10:00 con 2 h 15 min de anticipacion (sin strike: hasta 4 h antes).`,
+      creadoEn: instante(sumarDias(HOY, -3), '07:45'),
+      venceEn: instante('2027-09-21', '07:45'),
+      estado: 'vigente',
+      anulacion: null,
+      turno: { id: 'mio-9', inicio: instante(sumarDias(HOY, -3), '10:00'), servicio: 'Cambio de aceite' },
+      reclamo: {
+        texto: 'Llame al taller dos dias antes para avisar y me dijeron que quedaba cancelado.',
+        creadoEn: instante(sumarDias(HOY, -2), '09:00'),
+        resultado: null,
+        respuesta: null,
+        resueltoEn: null,
+      },
+    },
+    {
+      ...base,
+      id: 'strike-2',
+      motivo: 'no_asistio',
+      detalle: `No asististe al turno del ${sumarDias(HOY, -40)} a las 08:30.`,
+      creadoEn: instante(sumarDias(HOY, -40), '09:00'),
+      venceEn: instante('2027-08-15', '09:00'),
+      estado: 'anulado',
+      anulacion: { en: instante(sumarDias(HOY, -39), '11:00'), justificacion: 'El taller corrigio el cierre del turno: quedo como atendido.' },
+      turno: { id: 'mio-8', inicio: instante(sumarDias(HOY, -40), '08:30'), servicio: 'Diagnostico electrico' },
+      reclamo: null,
+    },
+  ];
+}
+
+/** Orden del turno de hoy de Carlos: con recepcion aceptada, o sin recepcion. */
+function orden(conRecepcion: boolean) {
+  const inicio = instante(HOY, '13:00');
+  return {
+    numero: conRecepcion ? 41 : null,
+    taller: { id: TALLER.id, nombre: TALLER.nombre, razonSocial: FISCAL.razonSocial, nit: FISCAL.nit, dv: FISCAL.dv, direccion: FISCAL.direccion, municipio: FISCAL.municipio },
+    cliente: { id: CLIENTES[0].id, nombre: CLIENTES[0].nombre, email: CLIENTES[0].email, telefono: CLIENTES[0].telefono },
+    turno: {
+      id: conRecepcion ? 'dddddddd-0000-4000-8000-000000000001' : 'dddddddd-0000-4000-8000-000000000002',
+      inicio,
+      fin: masMin(inicio, 60),
+      estado: 'programado',
+      bahia: 'Bahia 1',
+      servicio: { id: S[0], nombre: 'Cambio de aceite', categoria: 'mecanica' },
+      tecnico: { id: T1, nombre: 'Carlos Rojas' },
+      precio: SERVICIOS[0].precio,
+      anticipo: null,
+      canceladoPor: null,
+      motivoCancelacion: null,
+    },
+    vehiculo: conRecepcion ? { ...VEHICULO } : null,
+    recepcion: conRecepcion
+      ? {
+          id: 'rec-1',
+          numero: 41,
+          kilometraje: 45210,
+          nivelCombustible: 1,
+          estadoVehiculo: 'Rayon en la puerta trasera izquierda. Testigo de aceite encendido.',
+          objetosDejados: 'Silla de bebe',
+          observaciones: null,
+          fechaProbableEntrega: masMin(inicio, 60),
+          recibidoPor: 'Carlos Rojas',
+          creadoEn: instante(HOY, '12:52'),
+          aceptacion: { en: instante(HOY, '12:55'), medio: 'presencial', nombre: 'Maria Gomez', documento: 'CC 52123456' },
+          fotos: [],
+        }
+      : null,
+    atencion: conRecepcion
+      ? { inicio: instante(HOY, '13:02'), fin: null, notas: 'Cambio de aceite 10W-40 y filtro.' }
+      : { inicio: null, fin: null, notas: null },
+    garantia: { dias: 90, hasta: null, texto: 'Garantia del servicio: 90 dias desde la entrega del vehiculo (Decreto 735 de 2013).' },
+  };
 }
 
 /** Engancha la API simulada a la pagina. */
@@ -354,6 +458,12 @@ export async function simularApi(page: Page, rol: Rol | null): Promise<void> {
     if (ruta === '/usuarios') return responder(route, q('rol') === 'cliente' ? CLIENTES : TECNICOS);
     if (ruta === '/appointments/disponibilidad') return responder(route, disponibilidad(q('fecha') ?? HOY));
     if (ruta === '/appointments/mios') return responder(route, misTurnos());
+    if (ruta === '/vehiculos') return responder(route, [VEHICULO]);
+    if (ruta === '/politica') return responder(route, POLITICA);
+    if (ruta === '/strikes/mios') return responder(route, strikes(false));
+    if (ruta === '/strikes') return responder(route, q('estado') === 'reclamos' ? strikes(true).slice(0, 1) : strikes(true));
+    if (ruta === '/appointments/dddddddd-0000-4000-8000-000000000001/orden') return responder(route, orden(true));
+    if (ruta === '/appointments/dddddddd-0000-4000-8000-000000000002/orden') return responder(route, orden(false));
     if (/^\/technicians\/[^/]+\/agenda$/.test(ruta)) return responder(route, agenda(q('date') ?? HOY));
     if (ruta === '/bahias/carga') return responder(route, carga(q('desde') ?? HOY, q('hasta') ?? HOY));
     const detalle = ruta.match(/^\/bahias\/([^/]+)\/turnos$/);

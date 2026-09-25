@@ -86,7 +86,9 @@ export class NotificationsSchedulerService {
     const [sinNotificacion] = await this.dataSource.query(
       `SELECT count(*)::int AS total
        FROM turnos t
-       LEFT JOIN notificaciones n ON n.turno_id = t.id
+       -- Solo el recordatorio: la constancia de recepcion (Sprint 22) tambien
+       -- es una notificacion del turno y no lo cubre.
+       LEFT JOIN notificaciones n ON n.turno_id = t.id AND n.tipo = 'recordatorio_24h'
        WHERE lower(t.rango_tiempo) BETWEEN now() AND now() + interval '24 hours'
          AND t.estado = 'programado'
          AND t.usuario_id IS NOT NULL
@@ -135,7 +137,11 @@ export class NotificationsSchedulerService {
        JOIN bahias b ON b.id = t.bahia_id
        JOIN servicios s ON s.id = t.servicio_id
        JOIN usuarios u ON u.id = t.usuario_id
-       WHERE lower(t.rango_tiempo) >= $1 AND lower(t.rango_tiempo) < $2`,
+       WHERE lower(t.rango_tiempo) >= $1 AND lower(t.rango_tiempo) < $2
+         -- Sprint 22: el cliente ya puede cancelar y reprogramar. Sin esto,
+         -- un turno cancelado (o el viejo de una reprogramacion) recibia
+         -- "tenes un turno manana".
+         AND t.estado = 'programado'`,
       [desde, hasta],
     );
   }

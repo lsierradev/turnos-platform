@@ -125,6 +125,10 @@ export function ServiciosSeccion() {
                     <p className="text-xs text-muted-foreground">
                       {CATEGORIA_LABEL[s.categoria]} · {formatearDuracion(s.duracionMinutos)}
                       {s.anticipo && ` · anticipo ${s.anticipo.porcentaje}%`}
+                      {/* Sprint 22: va impreso en la orden de trabajo. */}
+                      {s.garantiaDias === null
+                        ? ' · sin garantia definida'
+                        : ` · garantia ${s.garantiaDias} ${s.garantiaDias === 1 ? 'dia' : 'dias'}`}
                     </p>
                   </div>
                   <div className="sm:text-right">
@@ -202,6 +206,10 @@ function FormularioServicio({
   );
   const [anticipo, setAnticipo] = useState(servicio?.requiereAnticipo ?? false);
   const [porcentaje, setPorcentaje] = useState(String(servicio?.porcentajeAnticipo ?? 20));
+  // Vacio = sin termino definido (la orden remite a la garantia legal).
+  const [garantia, setGarantia] = useState(
+    servicio?.garantiaDias == null ? '' : String(servicio.garantiaDias),
+  );
 
   const centavos = pesosACentavos(monto);
   const base =
@@ -229,6 +237,7 @@ function FormularioServicio({
       tarifaIva: tarifa,
       requiereAnticipo: anticipo,
       porcentajeAnticipo: anticipo ? Number(porcentaje) : null,
+      garantiaDias: garantia.trim() === '' ? null : Number(garantia),
     });
   }
 
@@ -344,6 +353,21 @@ function FormularioServicio({
               </p>
             )}
           </fieldset>
+
+          <Campo
+            etiqueta="Garantia (dias)"
+            ayuda="Termino de garantia del servicio desde la entrega (Decreto 735 de 2013). Va impreso en la orden de trabajo. Vacio: rige la garantia legal."
+            className="sm:col-span-2 sm:max-w-sm"
+          >
+            <Input
+              type="number"
+              min={0}
+              max={3650}
+              value={garantia}
+              placeholder="Ej: 90"
+              onChange={(e) => setGarantia(e.target.value)}
+            />
+          </Campo>
 
           {guardar.isError && (
             <div className="sm:col-span-2">

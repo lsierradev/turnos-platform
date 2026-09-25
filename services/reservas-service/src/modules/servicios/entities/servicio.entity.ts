@@ -56,6 +56,12 @@ export class Servicio {
   @Column({ name: 'porcentaje_anticipo', type: 'smallint', nullable: true })
   porcentajeAnticipo: number | null;
 
+  // Termino de garantia en dias (Sprint 22, Decreto 735 de 2013); va
+  // impreso en la orden de trabajo. null: no definido, rige la garantia
+  // legal.
+  @Column({ name: 'garantia_dias', type: 'smallint', nullable: true })
+  garantiaDias: number | null;
+
   @Column({ default: true })
   activo: boolean;
 

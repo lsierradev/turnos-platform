@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 // SOLO tipos: pnpm resuelve una copia de typeorm para este paquete distinta
@@ -31,6 +32,8 @@ export interface Sesion {
 
 interface Contexto extends Sesion {
   manager: EntityManager;
+  /** Lo que corre recien cuando la transaccion del request confirmo. */
+  alConfirmar: (() => Promise<void>)[];
 }
 
 const almacen = new AsyncLocalStorage<Contexto>();
@@ -166,6 +169,32 @@ export class ContextoDb {
   }
 
   /**
+   * Efectos que no pueden salir antes del COMMIT: encolar un correo cuya
+   * fila se escribio en esta transaccion. Si el job sale antes, el worker
+   * puede buscar la fila y no encontrarla (todavia no se confirmo), o el
+   * request puede fallar despues y el correo avisar algo que no quedo.
+   *
+   * Corren despues del commit, SIN esperar a que terminen: un Redis caido
+   * no puede colgar ni tumbar una respuesta que ya se guardo. Un fallo va
+   * al log (la notificacion queda 'pendiente' y la ve verificarCobertura).
+   * Fuera de un request corre en el momento.
+   */
+  despuesDeConfirmar(fn: () => Promise<void>): void {
+    const c = almacen.getStore();
+    if (c) {
+      c.alConfirmar.push(fn);
+      return;
+    }
+    fn().catch((error: unknown) =>
+      Logger.error(
+        `Fallo un efecto posterior al commit: ${(error as Error)?.message ?? String(error)}`,
+        undefined,
+        ContextoDb.name,
+      ),
+    );
+  }
+
+  /**
    * Corre `fn` con la sesion dada, dentro de una transaccion con el rol de
    * la app y las variables que leen las politicas. Si el taller no existe o
    * esta dado de baja, corta antes de ejecutar nada.
@@ -192,11 +221,17 @@ export class ContextoDb {
           throw new ForbiddenException("El taller esta dado de baja.");
         }
       }
+      const alConfirmar: (() => Promise<void>)[] = [];
       const resultado = await almacen.run(
-        { ...sesion, manager: qr.manager },
+        { ...sesion, manager: qr.manager, alConfirmar },
         fn,
       );
       await qr.commitTransaction();
+      // Fuera del contexto: un efecto que use ContextoDb no puede tomar el
+      // manager de una transaccion ya cerrada.
+      almacen.exit(() => {
+        for (const efecto of alConfirmar) this.despuesDeConfirmar(efecto);
+      });
       return resultado;
     } catch (error) {
       if (qr.isTransactionActive) await qr.rollbackTransaction();

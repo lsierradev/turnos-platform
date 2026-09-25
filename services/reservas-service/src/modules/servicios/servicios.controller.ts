@@ -43,7 +43,7 @@ export class ServiciosController {
 
   @Get(':id')
   findOne(@Param('id', new ParseUUIDPipe()) id: string) {
-    return this.serviciosService.findOne(id);
+    return this.serviciosService.detalle(id);
   }
 
   @Patch(':id')

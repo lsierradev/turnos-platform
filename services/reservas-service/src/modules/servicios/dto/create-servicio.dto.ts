@@ -1,27 +1,34 @@
 import {
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
-  IsNumber,
   IsOptional,
   IsPositive,
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
+import {
+  ANTICIPO_MAXIMO,
+  ANTICIPO_MINIMO,
+  TARIFAS_IVA,
+  type TarifaIva,
+} from '../../../common/precios.util';
 import { CategoriaServicio } from '../entities/servicio.entity';
 
-// La columna precio es NUMERIC(10, 2): 8 digitos enteros + 2 decimales.
-// Un valor mayor no da un error de validacion sino un "numeric field
-// overflow" de Postgres, que sale como 500.
-const PRECIO_MAXIMO = 99_999_999.99;
+// Sprint 21: centavos enteros (bigint en la base). Tope de $1.000 millones:
+// holgado para cualquier servicio de taller y lejos del limite de enteros
+// seguros de JS.
+const PRECIO_MAXIMO_CENTAVOS = 100_000_000_000;
 
-// El motor de reservas solo agenda dentro del horario laboral 08:00-18:00
-// (ver sugerencias-horarios.util.ts). Un servicio mas largo que esa ventana
-// es imposible de reservar: POST /appointments lo aceptaria y despues no
-// encontraria jamas un hueco, y las sugerencias ante conflicto volverian
-// siempre vacias.
+// El motor de reservas solo agenda dentro del horario del taller. Un
+// servicio mas largo que cualquier jornada es imposible de reservar:
+// POST /appointments lo aceptaria y despues no encontraria jamas un hueco.
+// 10 h cubre la jornada historica (08-18); el horario de cada taller se
+// valida al reservar.
 const DURACION_MAXIMA_MINUTOS = 10 * 60;
 
 export class CreateServicioDto {
@@ -40,10 +47,29 @@ export class CreateServicioDto {
   @Max(DURACION_MAXIMA_MINUTOS)
   duracionMinutos: number;
 
-  @IsNumber({ maxDecimalPlaces: 2 })
+  /** Valor BASE (sin IVA), en centavos. */
+  @IsInt()
   @Min(0)
-  @Max(PRECIO_MAXIMO)
-  precio: number;
+  @Max(PRECIO_MAXIMO_CENTAVOS)
+  precioBaseCentavos: number;
+
+  @IsOptional()
+  @IsIn(TARIFAS_IVA)
+  tarifaIva?: TarifaIva;
+
+  @IsOptional()
+  @IsBoolean()
+  requiereAnticipo?: boolean;
+
+  /** 15-20; obligatorio si requiereAnticipo. */
+  @ValidateIf(
+    (o: CreateServicioDto) =>
+      o.requiereAnticipo === true || o.porcentajeAnticipo != null,
+  )
+  @IsInt()
+  @Min(ANTICIPO_MINIMO)
+  @Max(ANTICIPO_MAXIMO)
+  porcentajeAnticipo?: number | null;
 
   @IsOptional()
   @IsBoolean()

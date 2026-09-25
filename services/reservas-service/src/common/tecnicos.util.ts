@@ -8,6 +8,8 @@ export interface TecnicoRow {
   rol: string;
   /** Taller del personal (Sprint 20); null para clientes. */
   tallerId: string | null;
+  /** false: personal dado de baja (Sprint 21); no se le asignan turnos. */
+  activo: boolean;
 }
 
 const ROL_TECNICO = 'tecnico';
@@ -25,7 +27,7 @@ export async function buscarUsuario(
   usuarioId: string,
 ): Promise<TecnicoRow | null> {
   const filas: TecnicoRow[] = await db.query(
-    'SELECT id, rol, taller_id AS "tallerId" FROM usuarios WHERE id = $1',
+    'SELECT id, rol, taller_id AS "tallerId", activo FROM usuarios WHERE id = $1',
     [usuarioId],
   );
   return filas[0] ?? null;

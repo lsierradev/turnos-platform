@@ -115,7 +115,10 @@ El grupo de los nodos debe poder salir a:
 
 - RDS por 5432
 - ElastiCache por 6379
-- Internet por 443 (SendGrid y Twilio)
+- Internet por 443: SendGrid y Twilio; desde el Sprint 21 tambien
+  `api.alegra.com` y `production.wompi.co` (y `sandbox.wompi.co` para las
+  llaves de pruebas). Sin esa salida, guardar las credenciales del taller
+  responde 502 ("No se pudo validar con ...").
 
 ## 4. Secretos
 
@@ -138,7 +141,8 @@ Tres cosas que se pagan caro si se equivocan:
   repositorio. Un `CrashLoopBackOff` con ese mensaje significa que faltan
   variables, no que la imagen esté rota.
 - **`ENCRYPTION_KEY` no es rotable.** Cifra los teléfonos de los usuarios
-  (AES-256-GCM). Cambiarla después de tener datos los vuelve ilegibles y no
+  y, desde el Sprint 21, el token de Alegra y las llaves privadas de Wompi
+  de cada taller (AES-256-GCM). Cambiarla después de tener datos los vuelve ilegibles y no
   hay proceso de re-cifrado. Generar una vez con `openssl rand -hex 32` y
   guardarla donde se pueda recuperar.
 
@@ -172,6 +176,26 @@ esquema nuevo mientras dura el rolling update.
 > la versión anterior de los servicios no lo completa y sus INSERT fallan.
 > Desplegar la 015 junto con los servicios del Sprint 20, sin rolling update
 > mixto (escalar a 0, migrar, subir la versión nueva).
+>
+> **La 016 (Sprint 21) tampoco:** reemplaza `servicios.precio` por
+> `precio_base_centavos`. Mismo procedimiento. Los precios existentes pasan
+> tal cual como base y cada taller queda "No responsable de IVA", así que
+> el cliente sigue viendo el mismo precio hasta que el admin cargue su
+> configuración fiscal.
+
+### Credenciales de los talleres (Sprint 21)
+
+- Al guardar el token de Alegra o las llaves de Wompi, reservas-service
+  las valida contra el proveedor (ver "Security groups", arriba).
+- `VALIDACION_PROVEEDORES=omitir` saltea esa validación **solo fuera de
+  producción** (desarrollo sin red, tests). En producción se ignora aunque
+  esté puesta: no ponerla en el ConfigMap.
+- `ALEGRA_API_URL`, `WOMPI_API_URL_PRUEBAS` y `WOMPI_API_URL_PRODUCCION`
+  existen solo para apuntar a un simulador en pruebas; en producción no
+  se definen (usan las URL oficiales).
+- CORS suma `PUT` a los métodos permitidos (la configuración del taller
+  se guarda con PUT). Si hay un proxy o WAF adelante con su propia lista de
+  métodos, agregarlo ahí también.
 
 ### Multi-taller y Row Level Security (Sprint 20)
 

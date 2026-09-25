@@ -5,6 +5,11 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ContextoDb } from '@turnos-platform/tenant';
+import {
+  diaDelTaller,
+  horarioPorDefecto,
+  minutosAHora,
+} from '../../common/horario.util';
 import { RedisCacheService } from '../../common/redis-cache.service';
 import {
   fechaEnZona,
@@ -12,12 +17,12 @@ import {
   sumarDiasFecha,
   zonaHorariaNegocio,
 } from '../../common/zona-horaria.util';
+import { HorarioService } from '../configuracion/horario.service';
+import { BahiaDto } from './dto/bahia.dto';
 import { CargaQueryDto } from './dto/carga-query.dto';
 import {
   calcularOcupacion,
   esAlerta,
-  horaSql,
-  JORNADA,
   nivelOcupacion,
   UMBRALES,
   type NivelOcupacion,
@@ -48,7 +53,10 @@ const TTL_CACHE_SEGUNDOS = 5;
 //   aparezca con 0 en vez de desaparecer: "libre todo el dia" es un dato.
 // - Cada turno suma solo lo que cae DENTRO de la jornada de su dia local:
 //   [dia + apertura, dia + cierre) en TZ_NEGOCIO. `fecha + time` es un
-//   timestamp sin zona; AT TIME ZONE $3 lo vuelve el instante real.
+//   timestamp sin zona; AT TIME ZONE $2 lo vuelve el instante real.
+// - La jornada es la del taller cada dia (Sprint 21): llega en $1 como
+//   JSON, un registro por dia del rango. Un dia cerrado viene 00:00-00:00:
+//   ahi nada suma minutos.
 // - El WHERE va sobre lower(rango_tiempo) crudo (sargable contra
 //   idx_turnos_kpi_inicio, 009), como el dashboard; la conversion de zona
 //   queda en el GROUP BY.
@@ -56,29 +64,24 @@ const TTL_CACHE_SEGUNDOS = 5;
 //   la migracion 011 (su horario se puede volver a reservar).
 const SQL_CARGA = `
   WITH dias AS (
-    SELECT d::date AS dia
-    FROM generate_series($1::date, $2::date, interval '1 day') AS d
+    SELECT j.dia, j.apertura, j.cierre
+    FROM jsonb_to_recordset($1::jsonb) AS j(dia date, apertura time, cierre time)
   ),
   ocupacion AS (
     SELECT
       t.bahia_id,
-      (lower(t.rango_tiempo) AT TIME ZONE $3)::date AS dia,
+      d.dia,
       count(*)::int AS turnos,
       coalesce(sum(greatest(0, extract(epoch FROM
-        least(
-          upper(t.rango_tiempo),
-          (((lower(t.rango_tiempo) AT TIME ZONE $3)::date + $5::time) AT TIME ZONE $3)
-        )
-        - greatest(
-          lower(t.rango_tiempo),
-          (((lower(t.rango_tiempo) AT TIME ZONE $3)::date + $4::time) AT TIME ZONE $3)
-        )
+        least(upper(t.rango_tiempo), (d.dia + d.cierre) AT TIME ZONE $2)
+        - greatest(lower(t.rango_tiempo), (d.dia + d.apertura) AT TIME ZONE $2)
       ))), 0) / 60 AS minutos
     FROM turnos t
-    WHERE lower(t.rango_tiempo) >= $6
-      AND lower(t.rango_tiempo) <  $7
+    JOIN dias d ON d.dia = (lower(t.rango_tiempo) AT TIME ZONE $2)::date
+    WHERE lower(t.rango_tiempo) >= $3
+      AND lower(t.rango_tiempo) <  $4
       AND t.estado <> 'cancelado'
-      AND ($8::uuid IS NULL OR t.taller_id = $8)
+      AND ($5::uuid IS NULL OR t.taller_id = $5)
     GROUP BY 1, 2
   )
   SELECT
@@ -91,7 +94,7 @@ const SQL_CARGA = `
   CROSS JOIN dias d
   LEFT JOIN ocupacion o ON o.bahia_id = b.id AND o.dia = d.dia
   WHERE b.activa
-    AND ($8::uuid IS NULL OR b.taller_id = $8)
+    AND ($5::uuid IS NULL OR b.taller_id = $5)
   ORDER BY b.nombre, b.id, d.dia
 `;
 
@@ -142,8 +145,18 @@ export interface CargaBahia {
   dias: CargaDia[];
 }
 
+/** Horario del taller ese dia; null si no atiende (ver cerrado). */
+export interface JornadaDia {
+  apertura: string;
+  cierre: string;
+  minutos: number;
+}
+
 export interface ResumenDia {
   fecha: string;
+  jornada: JornadaDia | null;
+  /** Motivo si no atiende ("Cerrado" o el festivo). */
+  cerrado: string | null;
   turnos: number;
   minutosOcupados: number;
   /** Sobre la capacidad de TODAS las bahias activas. */
@@ -155,7 +168,11 @@ export interface CargaResponse {
   desde: string;
   hasta: string;
   zonaHoraria: string;
-  jornada: { apertura: string; cierre: string; minutos: number };
+  /**
+   * La franja mas amplia del rango (apertura mas temprana, cierre mas
+   * tarde): el eje de la linea de tiempo. La de cada dia va en resumen.
+   */
+  jornada: JornadaDia;
   umbrales: typeof UMBRALES;
   bahias: CargaBahia[];
   resumen: ResumenDia[];
@@ -180,12 +197,28 @@ export interface TurnosBahiaResponse {
   turnos: TurnoDeBahia[];
 }
 
+/** Eje comun del rango; si no atiende ningun dia, el horario historico. */
+function franjaMasAmplia(jornadas: (JornadaDia | null)[]): JornadaDia {
+  const abiertas = jornadas.filter((j): j is JornadaDia => j !== null);
+  if (abiertas.length === 0) {
+    return { apertura: '08:00', cierre: '18:00', minutos: 600 };
+  }
+  const apertura = abiertas.map((j) => j.apertura).sort()[0];
+  const cierre = abiertas
+    .map((j) => j.cierre)
+    .sort()
+    .at(-1)!;
+  const aMin = (h: string) => Number(h.slice(0, 2)) * 60 + Number(h.slice(3));
+  return { apertura, cierre, minutos: aMin(cierre) - aMin(apertura) };
+}
+
 @Injectable()
 export class BahiasService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly cache: RedisCacheService,
     private readonly db: ContextoDb,
+    private readonly horarios: HorarioService,
   ) {}
 
   /**
@@ -203,6 +236,71 @@ export class BahiasService {
     );
   }
 
+  /** Todas, en servicio o no: el catalogo del admin (Sprint 21). */
+  listarTodas(): Promise<{ id: string; nombre: string; activa: boolean }[]> {
+    return this.db.query(
+      `SELECT id, nombre, activa FROM bahias
+        WHERE taller_id = $1
+        ORDER BY nombre, id`,
+      [this.db.exigirTaller()],
+      this.dataSource,
+    );
+  }
+
+  async crear(
+    dto: BahiaDto,
+  ): Promise<{ id: string; nombre: string; activa: boolean }> {
+    const [bahia] = (await this.db.query(
+      `INSERT INTO bahias (nombre, activa, taller_id) VALUES ($1, $2, $3)
+       RETURNING id, nombre, activa`,
+      [dto.nombre.trim(), dto.activa ?? true, this.db.exigirTaller()],
+      this.dataSource,
+    )) as { id: string; nombre: string; activa: boolean }[];
+    return bahia;
+  }
+
+  /**
+   * Renombrar o sacar de servicio. Una bahia no se borra: sus turnos
+   * pasados la nombran. Sacarla de servicio no toca los turnos que ya
+   * tiene; se avisa cuantos quedan por venir.
+   */
+  async actualizar(
+    id: string,
+    dto: Partial<BahiaDto>,
+  ): Promise<{
+    id: string;
+    nombre: string;
+    activa: boolean;
+    turnosPorVenir: number;
+  }> {
+    const taller = this.db.exigirTaller();
+    // Envuelto en un SELECT: un UPDATE crudo via TypeORM devuelve
+    // [filas, cantidad] en vez de las filas.
+    const [bahia] = (await this.db.query(
+      `WITH cambiada AS (
+         UPDATE bahias
+            SET nombre = coalesce($3, nombre),
+                activa = coalesce($4, activa),
+                actualizado_en = now()
+          WHERE id = $1 AND taller_id = $2
+        RETURNING id, nombre, activa
+       )
+       SELECT * FROM cambiada`,
+      [id, taller, dto.nombre?.trim() ?? null, dto.activa ?? null],
+      this.dataSource,
+    )) as { id: string; nombre: string; activa: boolean }[];
+    if (!bahia) {
+      throw new NotFoundException(`Bahia ${id} no encontrada`);
+    }
+    const [{ total }] = (await this.db.query(
+      `SELECT count(*)::int AS total FROM turnos
+        WHERE bahia_id = $1 AND estado = 'programado' AND lower(rango_tiempo) > now()`,
+      [id],
+      this.dataSource,
+    )) as { total: number }[];
+    return { ...bahia, turnosPorVenir: total };
+  }
+
   async carga(query: CargaQueryDto): Promise<CargaResponse> {
     const zona = zonaHorariaNegocio();
     const { desde, hasta } = this.rango(query, zona);
@@ -218,16 +316,44 @@ export class BahiasService {
       return cacheado;
     }
 
+    // Jornada de cada dia del rango segun el horario y los festivos del
+    // taller (Sprint 21). Sin taller, el horario historico.
+    const horario = tallerId
+      ? await this.horarios.obtener(desde, hasta, tallerId)
+      : horarioPorDefecto();
+    const jornadas = new Map<
+      string,
+      { jornada: JornadaDia | null; cerrado: string | null }
+    >();
+    for (let fecha = desde; fecha <= hasta; fecha = sumarDiasFecha(fecha, 1)) {
+      const dia = diaDelTaller(horario, fecha);
+      jornadas.set(
+        fecha,
+        dia.abierto
+          ? {
+              jornada: {
+                apertura: minutosAHora(dia.jornada.apertura),
+                cierre: minutosAHora(dia.jornada.cierre),
+                minutos: dia.jornada.cierre - dia.jornada.apertura,
+              },
+              cerrado: null,
+            }
+          : { jornada: null, cerrado: dia.motivo },
+      );
+    }
+    const jornadasSql = [...jornadas].map(([dia, j]) => ({
+      dia,
+      apertura: j.jornada?.apertura ?? '00:00',
+      cierre: j.jornada?.cierre ?? '00:00',
+    }));
+
     const filas = await this.db.transaccion(async (manager) => {
       await manager.query(
         `SET LOCAL statement_timeout = ${TIMEOUT_CONSULTA_MS}`,
       );
       return (await manager.query(SQL_CARGA, [
-        desde,
-        hasta,
+        JSON.stringify(jornadasSql),
         zona,
-        horaSql(JORNADA.apertura),
-        horaSql(JORNADA.cierre),
         inicioDelDiaEnZona(desde, zona),
         inicioDelDiaEnZona(sumarDiasFecha(hasta, 1), zona),
         tallerId,
@@ -242,7 +368,10 @@ export class BahiasService {
         bahias.set(fila.bahiaId, bahia);
       }
       const minutos = Math.round(Number(fila.minutosOcupados));
-      const ocupacion = calcularOcupacion(minutos);
+      const ocupacion = calcularOcupacion(
+        minutos,
+        jornadas.get(fila.fecha)?.jornada?.minutos ?? 0,
+      );
       bahia.dias.push({
         fecha: fila.fecha,
         turnos: fila.turnos,
@@ -257,9 +386,12 @@ export class BahiasService {
     for (let fecha = desde; fecha <= hasta; fecha = sumarDiasFecha(fecha, 1)) {
       const delDia = lista.map((b) => b.dias.find((d) => d.fecha === fecha)!);
       const minutos = delDia.reduce((t, d) => t + d.minutosOcupados, 0);
-      const capacidad = JORNADA.minutos * lista.length;
+      const { jornada, cerrado } = jornadas.get(fecha)!;
+      const capacidad = (jornada?.minutos ?? 0) * lista.length;
       resumen.push({
         fecha,
+        jornada,
+        cerrado,
         turnos: delDia.reduce((t, d) => t + d.turnos, 0),
         minutosOcupados: minutos,
         ocupacion:
@@ -272,11 +404,7 @@ export class BahiasService {
       desde,
       hasta,
       zonaHoraria: zona,
-      jornada: {
-        apertura: horaSql(JORNADA.apertura),
-        cierre: horaSql(JORNADA.cierre),
-        minutos: JORNADA.minutos,
-      },
+      jornada: franjaMasAmplia([...jornadas.values()].map((j) => j.jornada)),
       umbrales: UMBRALES,
       bahias: lista,
       resumen,

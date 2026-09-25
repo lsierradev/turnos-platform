@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
@@ -137,6 +142,7 @@ export class UsuariosService {
           'u.rol',
           'u.telefono',
           'u.ciudad',
+          'u.activo',
           'u.creadoEn',
           'u.actualizadoEn',
         ])
@@ -159,10 +165,66 @@ export class UsuariosService {
         'rol',
         'telefono',
         'ciudad',
+        'activo',
         'creadoEn',
         'actualizadoEn',
       ],
     });
+  }
+
+  /**
+   * Baja de un tecnico del taller (Sprint 21). No se borra: deja de poder
+   * entrar (sus sesiones se cierran) y de aparecer para reservar. Sus
+   * turnos que vienen quedan SIN tecnico, para que el admin los reasigne
+   * desde el panel; los pasados lo siguen nombrando.
+   */
+  async darDeBaja(id: string): Promise<{ turnosParaReasignar: number }> {
+    const taller = this.db.exigirTaller();
+    const tecnico = await this.tecnicoDelTaller(id, taller);
+    if (!tecnico.activo) return { turnosParaReasignar: 0 };
+
+    await this.db.query(
+      `UPDATE usuarios SET activo = false, sesiones_validas_desde = now(),
+              actualizado_en = now()
+        WHERE id = $1`,
+      [id],
+    );
+    const liberados = (await this.db.query(
+      `WITH liberados AS (
+         UPDATE turnos SET tecnico_id = NULL, actualizado_en = now()
+          WHERE tecnico_id = $1 AND taller_id = $2
+            AND estado = 'programado' AND lower(rango_tiempo) > now()
+        RETURNING id
+       )
+       SELECT count(*)::int AS total FROM liberados`,
+      [id, taller],
+    )) as { total: number }[];
+    return { turnosParaReasignar: liberados[0].total };
+  }
+
+  async reactivar(id: string): Promise<void> {
+    const taller = this.db.exigirTaller();
+    await this.tecnicoDelTaller(id, taller);
+    await this.db.query(
+      'UPDATE usuarios SET activo = true, actualizado_en = now() WHERE id = $1',
+      [id],
+    );
+  }
+
+  /** 404 si no es un tecnico de este taller (RLS ademas oculta los ajenos). */
+  private async tecnicoDelTaller(
+    id: string,
+    taller: string,
+  ): Promise<{ activo: boolean }> {
+    const [fila] = (await this.db.query(
+      `SELECT activo FROM usuarios
+        WHERE id = $1 AND rol = 'tecnico' AND taller_id = $2`,
+      [id, taller],
+    )) as { activo: boolean }[];
+    if (!fila) {
+      throw new NotFoundException(`Tecnico ${id} no encontrado`);
+    }
+    return fila;
   }
 
   async create(input: CrearUsuarioInput): Promise<Usuario> {

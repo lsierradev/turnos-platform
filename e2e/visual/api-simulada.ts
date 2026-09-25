@@ -35,19 +35,76 @@ export function tokenDe(rol: Rol): string {
 }
 
 const TECNICOS = [
-  { id: T1, nombre: 'Carlos Rojas', email: 'carlos@taller.dev', rol: 'tecnico' },
-  { id: T2, nombre: 'Diana Perez', email: 'diana@taller.dev', rol: 'tecnico' },
+  { id: T1, nombre: 'Carlos Rojas', email: 'carlos@taller.dev', rol: 'tecnico', activo: true },
+  { id: T2, nombre: 'Diana Perez', email: 'diana@taller.dev', rol: 'tecnico', activo: true },
+  { id: '33333333-3333-4333-8333-333333333333', nombre: 'Luis Mora', email: 'luis@taller.dev', rol: 'tecnico', activo: false },
 ];
 const BAHIAS = [
   { id: B[0], nombre: 'Bahia 1' },
   { id: B[1], nombre: 'Bahia 2' },
   { id: B[2], nombre: 'Bahia 3' },
 ];
+// Sprint 21: el taller simulado es responsable de IVA; precio base en
+// centavos y el calculado, como lo devuelve el backend.
+const iva = (base: number) => Math.floor((base * 19 + 50) / 100);
+const servicio = (
+  id: string,
+  nombre: string,
+  categoria: string,
+  duracionMinutos: number,
+  base: number,
+  anticipo: number | null = null,
+) => ({
+  id,
+  nombre,
+  categoria,
+  duracionMinutos,
+  precioBaseCentavos: base,
+  tarifaIva: 19,
+  requiereAnticipo: anticipo !== null,
+  porcentajeAnticipo: anticipo,
+  activo: true,
+  precio: { baseCentavos: base, ivaCentavos: iva(base), totalCentavos: base + iva(base), tarifaIva: 19 },
+  anticipo:
+    anticipo === null ? null : { porcentaje: anticipo, centavos: Math.floor(((base + iva(base)) * anticipo + 50) / 100) },
+});
+// Base despejada desde un total redondo, como la carga el admin en modo
+// "precio final": el cliente ve $ 80.000, no $ 80.000,13.
+const baseDe = (total: number) => Math.round((total * 100) / 119);
 const SERVICIOS = [
-  { id: S[0], nombre: 'Cambio de aceite', categoria: 'mecanica', duracionMinutos: 30, precio: '80000.00', activo: true },
-  { id: S[1], nombre: 'Diagnostico electrico', categoria: 'electrica', duracionMinutos: 60, precio: '120000.00', activo: true },
-  { id: S[2], nombre: 'Latoneria menor', categoria: 'latoneria', duracionMinutos: 120, precio: '250000.00', activo: true },
+  servicio(S[0], 'Cambio de aceite', 'mecanica', 30, baseDe(8_000_000)),
+  servicio(S[1], 'Diagnostico electrico', 'electrica', 60, baseDe(12_000_000)),
+  servicio(S[2], 'Latoneria menor', 'latoneria', 120, baseDe(25_000_000), 20),
 ];
+const FISCAL = {
+  razonSocial: 'Taller Centro SAS',
+  nit: '900123456',
+  dv: 8,
+  direccion: 'Calle 45 # 12-30',
+  municipio: 'Bogota',
+  departamento: 'Cundinamarca',
+  responsableIva: true,
+  completa: true,
+  facturacion: { proveedor: 'alegra', usuario: 'facturas@tallercentro.co', token: '••••a1b2' },
+  wompi: {
+    ambiente: 'pruebas',
+    llavePublica: 'pub_test_Q5yDA9xoKdePzhSGeVe9HAez7HgGORGf',
+    llavePrivada: '••••x9Kd',
+    secretoIntegridad: '••••7fQw',
+    secretoEventos: '••••M2pL',
+  },
+};
+// Lunes a viernes 08:00-18:00, sabado 08:00-13:00, domingo cerrado.
+const HORARIO = {
+  dias: [
+    ...[1, 2, 3, 4, 5].map((dia) => ({ dia, apertura: '08:00', cierre: '18:00' })),
+    { dia: 6, apertura: '08:00', cierre: '13:00' },
+  ],
+  feriados: [
+    { fecha: '2026-10-12', motivo: 'Día de la Raza' },
+    { fecha: '2026-11-02', motivo: 'Todos los Santos' },
+  ],
+};
 const CLIENTES = [
   { id: 'cccccccc-0000-4000-8000-000000000001', nombre: 'Maria Gomez', email: 'maria@correo.com', rol: 'cliente', telefono: '+57 300 555 0101', ciudad: 'Bogota' },
   { id: 'cccccccc-0000-4000-8000-000000000002', nombre: 'Jorge Diaz', email: 'jorge@correo.com', rol: 'cliente', telefono: null, ciudad: 'Chia' },
@@ -121,8 +178,11 @@ function carga(desde: string, hasta: string) {
   const resumen = dias.map((fecha, d) => {
     const del = bahias.map((b) => b.dias[d]);
     const min = del.reduce((n, x) => n + x.minutosOcupados, 0);
+    const domingo = new Date(`${fecha}T12:00:00Z`).getUTCDay() === 0;
     return {
       fecha,
+      jornada: domingo ? null : { apertura: '08:00', cierre: '18:00', minutos: 600 },
+      cerrado: domingo ? 'Cerrado' : null,
       turnos: del.reduce((n, x) => n + x.turnos, 0),
       minutosOcupados: min,
       ocupacion: Math.round((min / 1800) * 1000) / 1000,
@@ -218,7 +278,14 @@ function disponibilidad(fecha: string) {
     const inicio = instante(fecha, hhmm);
     horarios.push({ inicio, fin: masMin(inicio, 30) });
   }
-  return { fecha, zonaHoraria: 'America/Bogota', duracionMinutos: 30, jornada: { apertura: '08:00', cierre: '18:00' }, horarios };
+  return {
+    fecha,
+    zonaHoraria: 'America/Bogota',
+    duracionMinutos: 30,
+    jornada: { apertura: '08:00', cierre: '18:00' },
+    cerrado: null,
+    horarios,
+  };
 }
 
 function misTurnos() {
@@ -233,6 +300,7 @@ function misTurnos() {
       servicio: { nombre: SERVICIOS[s].nombre, categoria: SERVICIOS[s].categoria },
       tecnico: 'Carlos Rojas',
       taller: { id: TALLER.id, nombre: TALLER.nombre },
+      precio: estado === 'cancelado' ? null : SERVICIOS[s].precio,
     };
   };
   return [
@@ -266,6 +334,21 @@ export async function simularApi(page: Page, rol: Rol | null): Promise<void> {
           : [TALLER],
       );
     if (ruta === '/bahias') return responder(route, BAHIAS);
+    if (ruta === '/bahias/todas')
+      return responder(route, [...BAHIAS.map((b) => ({ ...b, activa: true })), { id: 'b1b1b1b1-0000-4000-8000-000000000009', nombre: 'Bahia de pintura', activa: false }]);
+    if (ruta === '/configuracion/fiscal') return responder(route, FISCAL);
+    if (ruta === '/configuracion/horario') return responder(route, HORARIO);
+    if (ruta === '/appointments/sin-tecnico')
+      return responder(route, [
+        {
+          id: 'sin-tecnico-1',
+          inicio: instante(sumarDias(HOY, 1), '10:00'),
+          fin: instante(sumarDias(HOY, 1), '10:30'),
+          bahia: 'Bahia 2',
+          servicio: 'Cambio de aceite',
+          cliente: 'Jorge Diaz',
+        },
+      ]);
     if (ruta === '/servicios') return responder(route, SERVICIOS);
     if (ruta === '/technicians') return responder(route, TECNICOS.map(({ id, nombre }) => ({ id, nombre })));
     if (ruta === '/usuarios') return responder(route, q('rol') === 'cliente' ? CLIENTES : TECNICOS);

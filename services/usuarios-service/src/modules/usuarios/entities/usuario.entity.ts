@@ -65,6 +65,11 @@ export class Usuario {
   })
   sesionesValidasDesde?: Date | null;
 
+  // Baja de personal (Sprint 21, migracion 016): no entra y no recibe
+  // turnos, pero la fila queda (sus turnos pasados la nombran).
+  @Column({ default: true })
+  activo: boolean;
+
   @CreateDateColumn({ name: 'creado_en' })
   creadoEn: Date;
 

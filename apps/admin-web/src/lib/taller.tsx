@@ -58,7 +58,16 @@ export function TallerProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       establecerTallerElegido(id);
       setElegido(id);
-      queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== 'talleres' });
+      // Lo cargado es de otro taller (o de ninguno): se descarta. Con
+      // cancel + reset y NO removeQueries: remover una consulta con una
+      // pantalla montada la deja colgada de una consulta que ya no existe, y
+      // la respuesta en vuelo nunca le llega (Sprint 21: "Mis turnos" del
+      // cliente quedaba cargando para siempre cuando el taller se elegia
+      // solo). reset vuelve a pedir las activas, ya con el X-Taller nuevo.
+      const deOtroTaller = { predicate: (q: { queryKey: readonly unknown[] }) => q.queryKey[0] !== 'talleres' };
+      void queryClient
+        .cancelQueries(deOtroTaller)
+        .then(() => queryClient.resetQueries(deOtroTaller));
     },
     [queryClient],
   );

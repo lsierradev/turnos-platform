@@ -497,4 +497,124 @@ describirSiHayDb('Usuarios (integration)', () => {
       expect(rechazo.body.message).toMatch(/dado de baja/);
     });
   });
+
+  describe('baja de tecnicos (Sprint 21)', () => {
+    const sufijo = Date.now();
+    const email = `tecnico-baja-${sufijo}@turnos.dev`;
+    let tecnicoId: string;
+    let bahiaId: string;
+    let servicioId: string;
+    let turnoFuturo: string;
+    let turnoPasado: string;
+
+    beforeAll(async () => {
+      [{ id: tecnicoId }] = await dataSource.query(
+        `INSERT INTO usuarios (email, password_hash, nombre, rol, taller_id)
+         VALUES ($1, $2, 'Tecnico baja', 'tecnico', $3) RETURNING id`,
+        [email, await bcrypt.hash('clave-tecnico', 4), TALLER],
+      );
+      [{ id: bahiaId }] = await dataSource.query(
+        `INSERT INTO bahias (nombre, taller_id) VALUES ($1, $2) RETURNING id`,
+        [`Bahia baja ${sufijo}`, TALLER],
+      );
+      [{ id: servicioId }] = await dataSource.query(
+        `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio_base_centavos, taller_id)
+         VALUES ($1, 'mecanica', 30, 100000, $2) RETURNING id`,
+        [`Servicio baja ${sufijo}`, TALLER],
+      );
+      const turno = async (desfaseDias: number) =>
+        (
+          await dataSource.query(
+            `INSERT INTO turnos (taller_id, bahia_id, servicio_id, tecnico_id, rango_tiempo)
+             VALUES ($1, $2, $3, $4,
+                     tstzrange(now() + make_interval(days => $5),
+                               now() + make_interval(days => $5) + interval '30 minutes', '[)'))
+             RETURNING id`,
+            [TALLER, bahiaId, servicioId, tecnicoId, desfaseDias],
+          )
+        )[0].id as string;
+      turnoFuturo = await turno(3);
+      turnoPasado = await turno(-3);
+    });
+
+    afterAll(async () => {
+      if (!dataSource) return;
+      await dataSource.query('DELETE FROM turnos WHERE bahia_id = $1', [
+        bahiaId,
+      ]);
+      await dataSource.query('DELETE FROM servicios WHERE id = $1', [
+        servicioId,
+      ]);
+      await dataSource.query('DELETE FROM bahias WHERE id = $1', [bahiaId]);
+      await dataSource.query('DELETE FROM usuarios WHERE id = $1', [tecnicoId]);
+    });
+
+    const tecnicoDe = async (id: string) =>
+      (
+        await dataSource.query(
+          'SELECT tecnico_id AS t FROM turnos WHERE id = $1',
+          [id],
+        )
+      )[0].t as string | null;
+
+    it('un cliente no puede dar de baja', async () => {
+      await request(app.getHttpServer())
+        .post(`/usuarios/${tecnicoId}/baja`)
+        .set('Authorization', `Bearer ${clienteToken}`)
+        .expect(403);
+    });
+
+    it('la baja libera sus turnos que vienen, conserva los pasados y le cierra la puerta', async () => {
+      const sesion = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email, password: 'clave-tecnico' })
+        .expect(200);
+
+      const r = await request(app.getHttpServer())
+        .post(`/usuarios/${tecnicoId}/baja`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(r.body).toEqual({ turnosParaReasignar: 1 });
+      expect(await tecnicoDe(turnoFuturo)).toBeNull();
+      expect(await tecnicoDe(turnoPasado)).toBe(tecnicoId);
+
+      const login = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email, password: 'clave-tecnico' })
+        .expect(401);
+      expect(login.body.message).toMatch(/dada de baja/);
+      // La sesion que ya tenia tampoco renueva.
+      await request(app.getHttpServer())
+        .post('/auth/refresh')
+        .send({ refreshToken: sesion.body.refreshToken })
+        .expect(401);
+
+      const { body: tecnicos } = await request(app.getHttpServer())
+        .get('/usuarios?rol=tecnico')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(
+        tecnicos.find((t: { id: string }) => t.id === tecnicoId).activo,
+      ).toBe(false);
+    });
+
+    it('reactivado vuelve a entrar (sus turnos liberados no vuelven solos)', async () => {
+      await request(app.getHttpServer())
+        .post(`/usuarios/${tecnicoId}/reactivar`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(204);
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email, password: 'clave-tecnico' })
+        .expect(200);
+      expect(await tecnicoDe(turnoFuturo)).toBeNull();
+    });
+
+    it('solo tecnicos del propio taller: un cliente o un id ajeno es 404', async () => {
+      await request(app.getHttpServer())
+        .post(`/usuarios/${clienteId}/baja`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(404);
+    });
+  });
 });

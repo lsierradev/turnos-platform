@@ -39,7 +39,7 @@ async function main() {
       [tallerId],
     );
     const servicio = await client.query(
-      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio, taller_id)
+      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio_base_centavos, taller_id)
        VALUES ('Servicio k6 load test', 'mecanica', 30, 10000, $1)
        RETURNING id`,
       [tallerId],

@@ -21,6 +21,7 @@ import { AppointmentsService } from './appointments.service';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { DisponibilidadQueryDto } from './dto/disponibilidad-query.dto';
+import { ReasignarTecnicoDto } from './dto/reasignar-tecnico.dto';
 
 @Controller('appointments')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -44,6 +45,13 @@ export class AppointmentsController {
 
   // Los turnos de quien pregunta, sin parametros: no hay forma de pedir
   // los de otro (Sprint 18, vista del cliente).
+  // Sprint 21: turnos que vienen sin tecnico (el suyo se dio de baja).
+  @Get('sin-tecnico')
+  @Roles(Rol.ADMIN)
+  sinTecnico() {
+    return this.appointmentsService.sinTecnico();
+  }
+
   @Get('mios')
   misTurnos(@CurrentUser() user: JwtPayload) {
     return this.appointmentsService.misTurnos(user.sub);
@@ -70,6 +78,15 @@ export class AppointmentsController {
   // Cerrar un turno no es una accion del cliente: define la tasa de
   // asistencia y el tiempo de servicio que despues lee el dashboard. Un
   // cliente pudiendo marcarse "atendido" a si mismo falsea los KPIs.
+  @Patch(':id/tecnico')
+  @Roles(Rol.ADMIN)
+  reasignarTecnico(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: ReasignarTecnicoDto,
+  ) {
+    return this.appointmentsService.reasignarTecnico(id, dto.tecnicoId);
+  }
+
   @Patch(':id/estado')
   @Roles(Rol.ADMIN, Rol.TECNICO)
   actualizarEstado(

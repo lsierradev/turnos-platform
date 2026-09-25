@@ -99,7 +99,7 @@ describirSiHayInfra('Notificaciones (integration)', () => {
     bahiaId = bahia[0].id;
 
     const servicio = await dataSource.query(
-      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio, taller_id)
+      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio_base_centavos, taller_id)
        VALUES ('Servicio notif test', 'mecanica', 30, 10000, '00000000-0000-4000-8000-000000000001')
        RETURNING id`,
     );

@@ -1,13 +1,17 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard, Rol, Roles, RolesGuard } from '@turnos-platform/auth';
 import { BahiasService } from './bahias.service';
+import { ActualizarBahiaDto, BahiaDto } from './dto/bahia.dto';
 import { CargaQueryDto, TurnosBahiaQueryDto } from './dto/carga-query.dto';
 
 @Controller('bahias')
@@ -23,6 +27,28 @@ export class BahiasController {
   @Get()
   listar() {
     return this.bahiasService.listarActivas();
+  }
+
+  // Catalogo del admin (Sprint 21): tambien las fuera de servicio.
+  @Get('todas')
+  @Roles(Rol.ADMIN)
+  listarTodas() {
+    return this.bahiasService.listarTodas();
+  }
+
+  @Post()
+  @Roles(Rol.ADMIN)
+  crear(@Body() dto: BahiaDto) {
+    return this.bahiasService.crear(dto);
+  }
+
+  @Patch(':id')
+  @Roles(Rol.ADMIN)
+  actualizar(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: ActualizarBahiaDto,
+  ) {
+    return this.bahiasService.actualizar(id, dto);
   }
 
   // Carga de trabajo del taller entero y turnos con nombre de clientes:

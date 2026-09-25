@@ -170,9 +170,9 @@ movimiento con `prefers-reduced-motion`.
 | — | Fuentes: se generan todos los subsets (cirílico, griego, vietnamita) | Sin cambio: el navegador baja solo los que usa la página (`unicode-range`); solo ocupan lugar en `dist/`. |
 
 **Regresión visual**: `e2e/visual/` (Edge, sin backend: API simulada y
-reloj fijo en el jueves 24/09/2026 14:30 del taller). 20 pantallas × 4
-(escritorio/celular × claro/oscuro) = 80 capturas (la 20 es la de talleres,
-Sprint 20). Tolerancia: 50 píxeles distintos por captura (`maxDiffPixels`);
+reloj fijo en el jueves 24/09/2026 14:30 del taller). 25 pantallas × 4
+(escritorio/celular × claro/oscuro) = 100 capturas (talleres desde el
+Sprint 20; las 5 de Mi taller desde el 21). Tolerancia: 50 píxeles distintos por captura (`maxDiffPixels`);
 la anterior, 0,2 % del área, dejaba pasar un texto nuevo en el encabezado.
 `pnpm --filter @turnos-platform/e2e test:visual` compara y
 `test:visual:actualizar` regenera tras un cambio intencional. No corre en
@@ -201,3 +201,47 @@ Linux.
 - **Regresión visual.** La vista de superadmin suma la pantalla de talleres.
   Las capturas existentes cambiaron solo por el nombre del taller en el
   encabezado.
+
+## Sprint 21: Mi taller, precios con IVA y horario
+
+- **Una sola entrada, cinco secciones.** "Mi taller" (admin, y el superadmin
+  dentro de un taller) agrupa servicios y precios, bahías, técnicos,
+  horario y festivos, y datos fiscales y pagos. La sección va en la URL
+  (`?seccion=`). Son enlaces con `aria-current`, no pestañas ARIA, y en
+  celular la barra se desplaza sola hasta la sección activa. Un solo ítem
+  en el menú: la barra inferior del celular no admite más.
+- **El precio que ve el cliente es siempre el final.** Si el taller es
+  responsable de IVA se muestra "IVA incluido" (Ley 1480, art. 26); si no,
+  va el número solo. Se ve en la opción del servicio, el resumen, la
+  confirmación, "Mis turnos" y el recordatorio. El desglose (subtotal + IVA)
+  y el anticipo los ve quien administra.
+- **Cargar el precio como se cobra.** El admin puede cargar la base o el
+  precio final con IVA; el sistema despeja la base. La vista previa usa la
+  misma regla de redondeo que el backend, así que "el cliente ve $ X" es lo
+  que va a ver.
+- **Montos.** Pesos enteros sin decimales; con centavos, siempre dos
+  ("$ 119.999,60", nunca "$ 119.999,6").
+- **Credenciales.** Nunca vuelven completas: la pantalla muestra
+  "Guardado: ••••a1b2" y un campo vacío conserva lo guardado. "Validar y
+  guardar" dice si el proveedor las confirmó o si el servidor tiene la
+  validación desactivada (desarrollo).
+- **NIT.** El dígito de verificación se calcula en pantalla y se marca el
+  error antes de enviar, con el valor esperado.
+- **Días cerrados.** La reserva muestra "El taller no atiende este día"
+  (con el motivo del festivo) en vez de una grilla vacía. En el panel, la
+  vista del día lo dice, y en la semana el día sale con borde punteado y
+  "Cerrado".
+- **Cambios que afectan turnos tomados** (horario nuevo, festivo, bahía
+  fuera de servicio, técnico dado de baja): nunca cancelan solos. Se avisa
+  cuántos quedan afectados. Los turnos sin técnico aparecen arriba del
+  panel con un selector para asignarlos.
+- **Baja de técnico en dos pasos.** "Dar de baja" pide confirmar en la
+  misma fila y explica la consecuencia.
+- **Arreglo de paso:** al elegirse el taller automáticamente (cliente con
+  un solo taller), "Mis turnos" podía quedar cargando para siempre. El
+  cambio de taller ahora reinicia las consultas en vez de borrarlas.
+- **Auditoría (axe + Tab, Edge, 1366 claro y 390 oscuro)** sobre las
+  pantallas nuevas: sin violaciones. El script marca como "inalcanzable" un
+  radio no seleccionado: en un grupo de radios, Tab se detiene solo en el
+  marcado y el resto se recorre con las flechas. Es el comportamiento
+  esperado.

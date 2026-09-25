@@ -26,7 +26,7 @@ export class TechniciansService {
   async listar(): Promise<{ id: string; nombre: string }[]> {
     return this.db.query(
       `SELECT id, nombre FROM usuarios
-        WHERE rol = 'tecnico' AND ($1::uuid IS NULL OR taller_id = $1)
+        WHERE rol = 'tecnico' AND activo AND ($1::uuid IS NULL OR taller_id = $1)
         ORDER BY nombre, id`,
       [this.db.tallerActual()],
       this.dataSource,

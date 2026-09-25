@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 20 (multi-taller)
+Actualizado: Sprint 21 (configuracion fiscal, precios, horario)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -35,35 +35,56 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
     Devuelve 503 si alguna dependencia esta caida: el balanceador y el
     orquestador miran el codigo de estado, no el cuerpo.
 
-[POST] /servicios  (requiere Authorization: Bearer <accessToken>)
+[POST] /servicios  (requiere Authorization: Bearer <accessToken>, rol admin)
   Descripcion : Crea un servicio (Mecanica/Electrica/Latoneria).
   Body        :
     {
       "nombre": "Cambio de aceite",
       "categoria": "mecanica",
       "duracionMinutos": 30,
-      "precio": 25000,
+      "precioBaseCentavos": 2500000,   (valor BASE, sin IVA; Sprint 21)
+      "tarifaIva": 19,                 (opcional: 0, 5 o 19; default 19)
+      "requiereAnticipo": false,       (opcional)
+      "porcentajeAnticipo": null,      (15 a 20; obligatorio si requiereAnticipo)
       "activo": true
     }
-  Response 201: Servicio creado.
+  Response 201: el servicio con su precio calculado (ver GET).
+  Response 400: anticipo fuera de 15-20%, o anticipo sin porcentaje.
+  Dinero (Sprint 21): SIEMPRE centavos enteros (como Wompi, amount_in_cents).
+  Hasta Sprint 20 era "precio" en pesos con decimales; ya no existe.
 
 [GET] /servicios  (requiere Authorization: Bearer <accessToken>)
-  Descripcion : Lista todos los servicios.
-  Response 200: Servicio[]
+  Descripcion : Los servicios del taller de la sesion, con el precio que ve
+                el cliente calculado con la configuracion fiscal del taller.
+  Response 200: Servicio[], cada uno con:
+    "precio": {
+      "baseCentavos": 2500000, "ivaCentavos": 475000,
+      "totalCentavos": 2975000,
+      "tarifaIva": 19       (null: el taller NO es responsable de IVA; el
+                             total es la base y no se muestra "IVA incluido")
+    },
+    "anticipo": { "porcentaje": 20, "centavos": 595000 } | null
+  Regla de redondeo (una sola, common/precios.util.ts): IVA = base * tarifa
+  / 100 redondeado al centavo, mitad hacia arriba, en aritmetica entera. El
+  anticipo se calcula sobre el TOTAL con la misma regla.
 
 [GET] /servicios/:id  (requiere Authorization: Bearer <accessToken>)
-  Descripcion : Obtiene un servicio por id.
-  Response 200: Servicio
+  Descripcion : Obtiene un servicio por id, con precio y anticipo.
   Response 404: si no existe.
 
-[PATCH] /servicios/:id  (requiere Authorization: Bearer <accessToken>)
+[PATCH] /servicios/:id  (requiere Authorization: Bearer <accessToken>, rol admin)
   Descripcion : Actualiza campos parciales de un servicio.
   Body        : subconjunto de los campos de creacion.
-  Response 200: Servicio actualizado.
+  Response 200: Servicio actualizado, con precio.
+  Cambiar el precio NO toca turnos ya tomados (guardan su foto, ver POST
+  /appointments).
 
-[DELETE] /servicios/:id  (requiere Authorization: Bearer <accessToken>)
-  Descripcion : Elimina un servicio.
+[DELETE] /servicios/:id  (requiere Authorization: Bearer <accessToken>, rol admin)
+  Descripcion : Borra un servicio que nunca se uso.
   Response 204: sin contenido.
+  Response 409: el servicio tiene turnos (Sprint 21). Se da de baja con
+                PATCH { "activo": false }: deja de ofrecerse y conserva el
+                historial.
 
 [POST] /appointments  (requiere Authorization: Bearer <accessToken>)
   Descripcion : Reserva un turno (HU1). El usuario autenticado se toma del
@@ -83,11 +104,18 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
     JWT). Otro rol mandando el id de otra persona -> 403; un id que no es de
     un usuario con rol "cliente" -> 404. El 409 por solapamiento del cliente
     dice "El cliente ya tiene otro turno..." en vez de "Ya tenes otro...".
-  Response 201: Turno creado (incluye rangoTiempo { inicio, fin }).
+  Response 201: Turno creado (incluye rangoTiempo { inicio, fin }). Desde
+                Sprint 21 tambien la foto del precio: precioBaseCentavos,
+                ivaCentavos, totalCentavos, tarifaIva (null si el taller no
+                cobra IVA) y anticipoCentavos (null si el servicio no lo
+                pide; se cobra desde el Sprint 24). Cambios posteriores de
+                precio o de configuracion fiscal no la tocan.
   Response 400 (Sprint 9): inicio en el pasado, o turno que no entra completo
-                en el horario laboral 08:00-18:00 hora del taller
-                (TZ_NEGOCIO, Sprint 12) (incluido el caso de un
-                servicio que empieza dentro y termina fuera). No hay
+                en el horario del taller ESE dia (Sprint 21: horario por
+                dia y festivos; antes 08:00-18:00 fijo), hora de
+                TZ_NEGOCIO (Sprint 12), incluido el caso de un servicio que
+                empieza dentro y termina fuera; o dia que el taller no
+                atiende ("El taller no atiende el ... (motivo)"). No hay
                 antelacion minima: se puede reservar para dentro de 5 min.
   Response 404: bahia, servicio o tecnico inexistente (o el usuario referido
                 por tecnicoId no tiene rol "tecnico"). Desde Sprint 17
@@ -112,14 +140,16 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
     Las sugerencias se buscan sobre el recurso que estaba ocupado: si el
     ocupado es el cliente, sugerir huecos de la bahia devolveria horarios
     que vuelven a dar 409. Las sugerencias son los 3 horarios libres mas cercanos
-    para ese mismo recurso (bahia o tecnico) — horario laboral 08:00-18:00,
-    ventana de busqueda de 3 dias.
+    para ese mismo recurso (bahia o tecnico), dentro del horario del
+    taller, en los 3 proximos dias DE ATENCION (Sprint 21: se saltean
+    cerrados y festivos, buscando hasta 14 dias corridos).
 
 [GET] /appointments/disponibilidad?bahiaId=&servicioId=&tecnicoId=&fecha=YYYY-MM-DD
       (requiere Authorization: Bearer <accessToken>, cualquier rol)
   Descripcion : Horarios reservables de UN dia del taller (Sprint 17): la
-                grilla del formulario de reserva. Paso de 15 min dentro de
-                08:00-18:00 hora del taller, sin horarios ya empezados, y
+                grilla del formulario de reserva. Paso de 15 min dentro del
+                horario del taller ESE dia (Sprint 21; hasta Sprint 20 era
+                08:00-18:00 fijo), sin horarios ya empezados, y
                 sin pisar turnos no cancelados de la bahia, del tecnico NI
                 del propio usuario del token (las tres EXCLUDE).
   Response 200:
@@ -127,7 +157,8 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
       "fecha": "2026-09-25",
       "zonaHoraria": "America/Bogota",
       "duracionMinutos": 30,
-      "jornada": { "apertura": "08:00", "cierre": "18:00" },
+      "jornada": { "apertura": "08:00", "cierre": "18:00" },   (null si no atiende)
+      "cerrado": null,        ("Cerrado" o el motivo del festivo; Sprint 21)
       "horarios": [ { "inicio": "2026-09-25T13:00:00.000Z", "fin": "..." }, ... ]
     }
   clienteId (opcional, solo admin, mismas reglas que en POST): descuenta
@@ -146,15 +177,45 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
                 Desde Sprint 20 trae los de TODOS los talleres del cliente
                 (no filtra por X-Taller) y cada turno suma
                 "taller": { "id", "nombre" }.
+                Sprint 21: "precio" { baseCentavos, ivaCentavos,
+                totalCentavos, tarifaIva } con el que se reservo, o null en
+                turnos anteriores a la migracion 016.
+
+[GET] /appointments/sin-tecnico  (rol admin; Sprint 21)
+  Descripcion : Turnos programados que vienen y quedaron sin tecnico (el
+                suyo se dio de baja): [{ id, inicio, fin, bahia, servicio,
+                cliente }]. El panel los muestra para reasignar.
+
+[PATCH] /appointments/:id/tecnico  (rol admin; Sprint 21)
+  Body        : { "tecnicoId": "uuid" }
+  Descripcion : Asigna o cambia el tecnico de un turno programado que no
+                empezo.
+  Response 400: turno ya empezado o no programado.
+  Response 404: turno o tecnico inexistente, de otro taller o dado de baja.
+  Response 409: el tecnico ya tiene otro turno en ese horario.
 
 [GET] /bahias  (requiere Authorization: Bearer <accessToken>, cualquier rol)
   Descripcion : Bahias activas, solo { id, nombre }, ordenadas por nombre
                 (Sprint 17, formulario de reserva).
 
+[GET] /bahias/todas  (rol admin; Sprint 21)
+  Descripcion : Catalogo del admin: [{ id, nombre, activa }], tambien las
+                fuera de servicio.
+
+[POST] /bahias  (rol admin; Sprint 21)
+  Body        : { "nombre": "Bahia 4", "activa"?: true }
+
+[PATCH] /bahias/:id  (rol admin; Sprint 21)
+  Body        : { "nombre"?: string, "activa"?: boolean }
+  Response 200: { id, nombre, activa, turnosPorVenir }. Sacarla de servicio
+                no cancela sus turnos: turnosPorVenir dice cuantos quedan
+                para que el admin los reubique. Una bahia no se borra.
+  Response 404: inexistente o de otro taller.
+
 [GET] /technicians  (requiere Authorization: Bearer <accessToken>, cualquier rol)
   Descripcion : Tecnicos, solo { id, nombre } (Sprint 17). Existe porque
                 GET /usuarios?rol=tecnico de usuarios-service es solo admin
-                y devuelve email.
+                y devuelve email. Desde Sprint 21, solo los activos.
 
 [GET] /technicians/:id/agenda  (requiere Authorization: Bearer <accessToken>)
   Descripcion : Turnos del dia para un tecnico (Sprint 4), ordenados por
@@ -265,6 +326,8 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
       "desde": "2024-06-10", "hasta": "2024-06-10",
       "zonaHoraria": "America/Bogota",
       "jornada": { "apertura": "08:00", "cierre": "18:00", "minutos": 600 },
+                  (Sprint 21: la franja mas amplia del rango, para el eje;
+                   la de cada dia va en resumen[].jornada)
       "umbrales": { "alta": 0.8, "completa": 1 },
       "bahias": [
         {
@@ -284,8 +347,9 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
   Response 401/403: sin token / sin rol admin.
 
   Definiciones:
-    ocupacion  = minutos ocupados DENTRO de la jornada del dia (08:00-18:00
-                 hora del taller) / 600. Un turno que empieza antes de la
+    ocupacion  = minutos ocupados DENTRO de la jornada del dia (el horario
+                 del taller ese dia, Sprint 21) / minutos de esa jornada.
+                 Un dia cerrado: ocupacion 0 y resumen con jornada null. Un turno que empieza antes de la
                  apertura o termina despues del cierre suma solo la parte
                  que cae adentro. Tope 1.
     turnos     = turnos que EMPIEZAN ese dia del taller (un turno a las
@@ -377,7 +441,7 @@ Dominio: usuarios, tenants, autenticacion
       "refreshToken": "..."
     }
   Response 401: credenciales invalidas; tambien personal de un taller dado
-                de baja (Sprint 20).
+                de baja (Sprint 20) o una cuenta dada de baja (Sprint 21).
   El access token (y el que emite /auth/refresh) lleva el claim "taller":
   el uuid del taller para admin y tecnico, null para cliente y superadmin.
 
@@ -467,7 +531,110 @@ Dominio: usuarios, tenants, autenticacion
 
 [GET] /usuarios?rol=cliente|tecnico|admin  (rol admin)
   Descripcion : Lista usuarios (id, email, nombre, rol, telefono descifrado,
-                ciudad).
+                ciudad, activo).
+
+[POST] /usuarios/:id/baja  (rol admin; Sprint 21)
+  Descripcion : Da de baja a un tecnico del taller. No se borra: no puede
+                entrar (login 401 "Tu cuenta esta dada de baja", y sus
+                sesiones se cierran), no aparece para reservar y sus turnos
+                programados que vienen quedan SIN tecnico para reasignar
+                (GET /appointments/sin-tecnico). Los pasados lo conservan.
+  Response 200: { "turnosParaReasignar": 2 }
+  Response 404: no es un tecnico de este taller.
+
+[POST] /usuarios/:id/reactivar  (rol admin; Sprint 21)
+  Response 204. Vuelve a poder entrar; los turnos liberados no vuelven solos.
+
+----------------------------------------
+MODULO: configuracion (reservas-service, Sprint 21)
+----------------------------------------
+Todo del taller de la sesion. Escribir: rol admin (el superadmin que opera
+en el taller pasa). RLS: el cliente puede leer datos fiscales y horario del
+taller en el que reserva, NUNCA las credenciales (tabla aparte, politica
+solo admin/superadmin).
+
+[GET] /configuracion/fiscal  (rol admin)
+  Response 200:
+    {
+      "razonSocial": "Taller Centro SAS", "nit": "900123456", "dv": 8,
+      "direccion": "...", "municipio": "Bogota", "departamento": "...",
+      "responsableIva": true,
+      "completa": true,          (razon social, NIT, direccion y municipio)
+      "facturacion": { "proveedor": "alegra", "usuario": "correo", "token": "••••a1b2" } | null,
+      "wompi": { "ambiente": "pruebas", "llavePublica": "pub_test_...",
+                 "llavePrivada": "••••x9Kd", "secretoIntegridad": "••••7fQw",
+                 "secretoEventos": "••••M2pL" } | null
+    }
+  Los secretos se guardan cifrados (AES-256-GCM, ENCRYPTION_KEY) y NUNCA
+  vuelven completos: solo los ultimos 4 caracteres.
+
+[PUT] /configuracion/fiscal  (rol admin)
+  Body        : { razonSocial, nit, dv, direccion, municipio, departamento,
+                  responsableIva }  (todos obligatorios)
+  NIT con o sin puntos, sin el DV; el DV se valida con el algoritmo de la
+  DIAN (400 "deberia ser N").
+  Cambiar responsableIva cambia el precio de las reservas NUEVAS; los
+  turnos ya tomados conservan el suyo.
+
+[PUT] /configuracion/facturacion  (rol admin)
+  Body        : { "proveedor": "alegra", "usuario": "correo de Alegra", "token": "..." }
+  Se valida contra Alegra (GET /company con Basic usuario:token) ANTES de
+  guardar. 400 si Alegra lo rechaza; 502 si no responde. "siigo": 400
+  (todavia no disponible).
+  Response 200: la configuracion + "validado": true|false.
+
+[PUT] /configuracion/wompi  (rol admin)
+  Body        : { "ambiente": "pruebas"|"produccion", "llavePublica",
+                  "llavePrivada"?, "secretoIntegridad"?, "secretoEventos"? }
+  Los secretos que no vienen se conservan, salvo que cambie el ambiente o
+  no haya nada guardado (400). Prefijos por ambiente (pub_test_/pub_prod_,
+  prv_test_/prv_prod_, test_integrity_/prod_integrity_,
+  test_events_/prod_events_): uno cruzado es 400 sin llamar a nadie.
+  Se valida contra Wompi: GET /merchants/{llavePublica} y una consulta de
+  transacciones con la llave privada.
+  Response 200: la configuracion + "validado".
+
+  VALIDACION_PROVEEDORES=omitir (entorno) saltea las llamadas a Alegra y
+  Wompi FUERA de produccion ("validado": false). En produccion se ignora.
+
+[GET] /configuracion/horario  (cualquier autenticado)
+  Response 200:
+    {
+      "dias": [ { "dia": 1, "apertura": "08:00", "cierre": "18:00" }, ... ],
+                (ISO: 1 = lunes ... 7 = domingo; un dia ausente = cerrado)
+      "feriados": [ { "fecha": "2026-10-12", "motivo": "Dia de la Raza" } ]
+                (desde hoy)
+    }
+  Un taller nuevo nace con todos los dias 08:00-18:00 (lo que regia hasta
+  Sprint 20).
+
+[PUT] /configuracion/horario  (rol admin)
+  Body        : { "dias": [ { "dia": 1..7, "apertura": "HH:MM", "cierre": "HH:MM" } ] }
+  Reemplaza la semana entera. Cuartos de hora, de 00:00 a 23:45, apertura <
+  cierre, sin dias repetidos (400).
+  Response 200: { "turnosFueraDeHorario": 3 } -- turnos programados que
+                vienen y quedan fuera. NO se cancelan: el admin decide.
+
+[POST] /configuracion/feriados  (rol admin)
+  Body        : { "fecha": "2026-12-24", "motivo": "Vacaciones colectivas" }
+  Si la fecha ya estaba, actualiza el motivo.
+  Response 201: { "turnosFueraDeHorario": n }
+
+[POST] /configuracion/feriados/colombia  (rol admin)
+  Body        : { "anio": 2026 }
+  Carga los festivos nacionales (Ley 51 de 1983 y los de Pascua); no pisa
+  los que ya existen. Response 201: { "agregados": 18, "turnosFueraDeHorario": n }
+  (algunos anos dos festivos caen el mismo lunes: 2030 da 17 fechas).
+
+[DELETE] /configuracion/feriados/:fecha  (rol admin)
+  Response 204.
+
+El horario lo leen la validacion de POST /appointments (400 "El taller no
+atiende..." o "debe quedar dentro del horario del taller ese dia"), la
+grilla de disponibilidad, las sugerencias ante un 409 (se saltean dias
+cerrados y festivos: 3 dias DE ATENCION, buscando hasta 14 corridos) y
+GET /bahias/carga (cada dia medido contra su jornada; un dia cerrado viene
+con jornada null y cerrado = motivo).
 
 Correos (usuarios-service):
   Con SENDGRID_API_KEY + SENDGRID_FROM_EMAIL salen por SendGrid. Sin ellos no
@@ -510,6 +677,11 @@ Convenciones generales
   autoriza. Una ruta sin @Roles() sigue abierta a cualquier autenticado.
   Matriz vigente (superadmin pasa donde se pide admin, Sprint 20):
     superadmin             -> POST /talleres, PATCH /talleres/:id
+    admin (Sprint 21)      -> /configuracion/* (salvo GET horario),
+                              POST/PATCH /bahias, GET /bahias/todas,
+                              GET /appointments/sin-tecnico,
+                              PATCH /appointments/:id/tecnico,
+                              POST /usuarios/:id/baja|reactivar
     admin                  -> POST/PATCH/DELETE /servicios
     admin | tecnico (suyo) -> GET /dashboard/kpis (Sprint 18)
     admin | tecnico        -> PATCH /appointments/:id/estado
@@ -520,7 +692,8 @@ Convenciones generales
                               GET /appointments/disponibilidad (Sprint 17),
                               GET /bahias, GET /technicians,
                               GET /appointments/mios (Sprint 18),
-                              GET /talleres (Sprint 20)
+                              GET /talleres (Sprint 20),
+                              GET /configuracion/horario (Sprint 21)
     publico                -> POST /auth/login, /auth/olvide, /auth/restablecer
   Falta de permiso responde 403 (el token es valido); 401 queda solo para
   token ausente o invalido.

@@ -97,7 +97,7 @@ describirSiHayDb('Bahias - carga (integration)', () => {
     [bahiaLlena, bahiaBordes, bahiaInactiva] = [a.id, b.id, c.id];
 
     const [s] = await dataSource.query(
-      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio, taller_id)
+      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio_base_centavos, taller_id)
        VALUES ('Servicio carga test', 'mecanica', 60, 10000, '00000000-0000-4000-8000-000000000001') RETURNING id`,
     );
     servicioId = s.id;

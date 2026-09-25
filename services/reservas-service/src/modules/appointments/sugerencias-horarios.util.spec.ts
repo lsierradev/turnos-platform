@@ -234,3 +234,57 @@ describe('horariosLibresDelDia', () => {
     expect(primero.inicio).toEqual(new Date('2024-01-08T08:00:00+09:00'));
   });
 });
+
+describe('horario del taller (Sprint 21)', () => {
+  // Lunes a viernes 08:00-12:00; sabado y domingo cerrados; el martes
+  // 9 de enero de 2024, festivo de prueba.
+  const horario = {
+    semana: new Map(
+      [1, 2, 3, 4, 5].map((d) => [d, { apertura: 480, cierre: 720 }]),
+    ),
+    feriados: new Map([['2024-01-09', 'Festivo de prueba']]),
+  };
+
+  it('la grilla de un dia cerrado o festivo esta vacia', () => {
+    const base = {
+      duracionMinutos: 30,
+      turnosOcupados: [],
+      ahora: new Date(0),
+      horario,
+    };
+    expect(horariosLibresDelDia({ ...base, fecha: '2024-01-13' })).toEqual([]);
+    expect(horariosLibresDelDia({ ...base, fecha: '2024-01-09' })).toEqual([]);
+  });
+
+  it('la grilla termina en el cierre de ESE dia', () => {
+    const libres = horariosLibresDelDia({
+      fecha: '2024-01-08',
+      duracionMinutos: 30,
+      turnosOcupados: [],
+      ahora: new Date(0),
+      horario,
+    });
+    expect(libres.at(-1)!.fin).toEqual(new Date('2024-01-08T12:00:00-05:00'));
+  });
+
+  it('las sugerencias saltean el festivo y cuentan solo dias de atencion', () => {
+    // Lunes 8 lleno entero: las sugerencias tienen que venir del miercoles
+    // 10 (el martes 9 es festivo).
+    const sugerencias = sugerirHorarios({
+      inicioSolicitado: new Date('2024-01-08T11:30:00-05:00'),
+      duracionMinutos: 30,
+      turnosOcupados: [
+        {
+          inicio: new Date('2024-01-08T08:00:00-05:00'),
+          fin: new Date('2024-01-08T12:00:00-05:00'),
+        },
+      ],
+      horario,
+      zonaHoraria: BOGOTA,
+    });
+    expect(sugerencias).toHaveLength(3);
+    for (const s of sugerencias) {
+      expect(fechaEnZona(s.inicio, BOGOTA)).toBe('2024-01-10');
+    }
+  });
+});

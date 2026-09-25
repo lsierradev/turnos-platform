@@ -14,6 +14,7 @@ import {
   CategoriaServicio,
   Servicio,
 } from '../servicios/entities/servicio.entity';
+import { HorarioService } from '../configuracion/horario.service';
 import { ServiciosService } from '../servicios/servicios.service';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
@@ -48,7 +49,10 @@ describe('AppointmentsService', () => {
     nombre: 'Cambio de aceite',
     categoria: CategoriaServicio.MECANICA,
     duracionMinutos: 30,
-    precio: 25000,
+    precioBaseCentavos: 2_500_000,
+    tarifaIva: 19,
+    requiereAnticipo: false,
+    porcentajeAnticipo: null,
     activo: true,
     creadoEn: new Date(),
     actualizadoEn: new Date(),
@@ -83,6 +87,8 @@ describe('AppointmentsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AppointmentsService,
+        // Sin taller: el horario historico (todos los dias 08:00-18:00).
+        HorarioService,
         // Fuera de un request: modo sistema, usa los mocks de abajo.
         ContextoDb,
         { provide: DATA_SOURCE_TENANT, useExisting: DataSource },
@@ -101,7 +107,11 @@ describe('AppointmentsService', () => {
         },
         {
           provide: ServiciosService,
-          useValue: { findOne: jest.fn() },
+          // Sin taller (modo sistema): el taller no cobra IVA.
+          useValue: {
+            findOne: jest.fn(),
+            responsableIva: jest.fn().mockResolvedValue(false),
+          },
         },
         {
           provide: DataSource,
@@ -143,6 +153,12 @@ describe('AppointmentsService', () => {
           inicioValido.getTime() + servicio.duracionMinutos * 60_000,
         ),
       },
+      // Foto del precio (Sprint 21); sin taller, no responsable de IVA.
+      precioBaseCentavos: 2_500_000,
+      ivaCentavos: 0,
+      totalCentavos: 2_500_000,
+      tarifaIva: null,
+      anticipoCentavos: null,
     });
   });
 

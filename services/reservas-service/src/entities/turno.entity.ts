@@ -51,6 +51,13 @@ const rangoTiempoTransformer = {
   },
 };
 
+// bigint llega de pg como string; los montos en centavos entran holgados
+// en un number (hasta 2^53).
+const CENTAVOS = {
+  to: (v: number | null | undefined) => v,
+  from: (v: string | null) => (v === null ? null : Number(v)),
+};
+
 @Entity('turnos')
 export class Turno {
   @PrimaryGeneratedColumn('uuid')
@@ -97,6 +104,45 @@ export class Turno {
 
   @Column({ name: 'atencion_fin', type: 'timestamptz', nullable: true })
   atencionFin?: Date | null;
+
+  // Foto del precio al reservar (Sprint 21, migracion 016): cambiar el
+  // precio del servicio o la configuracion fiscal no altera turnos ya
+  // tomados. NULL en turnos anteriores a 016. tarifaIva NULL = el taller no
+  // era responsable de IVA.
+  @Column({
+    name: 'precio_base_centavos',
+    type: 'bigint',
+    nullable: true,
+    transformer: CENTAVOS,
+  })
+  precioBaseCentavos?: number | null;
+
+  @Column({
+    name: 'iva_centavos',
+    type: 'bigint',
+    nullable: true,
+    transformer: CENTAVOS,
+  })
+  ivaCentavos?: number | null;
+
+  @Column({
+    name: 'total_centavos',
+    type: 'bigint',
+    nullable: true,
+    transformer: CENTAVOS,
+  })
+  totalCentavos?: number | null;
+
+  @Column({ name: 'tarifa_iva', type: 'smallint', nullable: true })
+  tarifaIva?: number | null;
+
+  @Column({
+    name: 'anticipo_centavos',
+    type: 'bigint',
+    nullable: true,
+    transformer: CENTAVOS,
+  })
+  anticipoCentavos?: number | null;
 
   @Column({
     name: 'rango_tiempo',

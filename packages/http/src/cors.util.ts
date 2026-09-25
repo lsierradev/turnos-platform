@@ -33,8 +33,8 @@ export function opcionesCors(): CorsOptions {
           'explicitamente desde que origenes se acepta al panel.',
       );
     }
-    return { origin: ORIGENES_DEV, methods: 'GET,POST,PATCH,DELETE,OPTIONS' };
+    return { origin: ORIGENES_DEV, methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS' };
   }
 
-  return { origin: configurados, methods: 'GET,POST,PATCH,DELETE,OPTIONS' };
+  return { origin: configurados, methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS' };
 }

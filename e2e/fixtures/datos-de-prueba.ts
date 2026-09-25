@@ -110,8 +110,8 @@ export async function sembrar(): Promise<DatosSembrados> {
     );
 
     const servicio = await db.query(
-      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio, taller_id)
-       VALUES ($1, 'mecanica', $2, 25000, $3) RETURNING id`,
+      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio_base_centavos, taller_id)
+       VALUES ($1, 'mecanica', $2, 2500000, $3) RETURNING id`,
       [`Cambio de aceite E2E ${sufijo}`, DURACION_SERVICIO_MINUTOS, tallerId],
     );
 

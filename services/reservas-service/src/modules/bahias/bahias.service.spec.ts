@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { RedisCacheService } from '../../common/redis-cache.service';
+import { HorarioService } from '../configuracion/horario.service';
 import { BahiasService } from './bahias.service';
 
 interface FilaCruda {
@@ -43,6 +44,8 @@ describe('BahiasService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BahiasService,
+        // Sin taller: el horario historico (todos los dias 08:00-18:00).
+        HorarioService,
         // Fuera de un request: modo sistema, usa los mocks de abajo.
         ContextoDb,
         { provide: DATA_SOURCE_TENANT, useExisting: DataSource },
@@ -73,18 +76,17 @@ describe('BahiasService', () => {
       await service.carga({ desde: '2024-01-08', hasta: '2024-01-09' });
 
       const [sql, params] = queryTx.mock.calls[1];
-      expect(params.slice(0, 5)).toEqual([
-        '2024-01-08',
-        '2024-01-09',
-        'America/Bogota',
-        '08:00',
-        '18:00',
+      // La jornada de cada dia del rango (Sprint 21), como JSON.
+      expect(JSON.parse(params[0])).toEqual([
+        { dia: '2024-01-08', apertura: '08:00', cierre: '18:00' },
+        { dia: '2024-01-09', apertura: '08:00', cierre: '18:00' },
       ]);
+      expect(params[1]).toBe('America/Bogota');
       // 00:00 en Bogota = 05:00Z; hasta es el inicio del dia SIGUIENTE a `hasta`.
-      expect(params[5]).toEqual(new Date('2024-01-08T05:00:00.000Z'));
-      expect(params[6]).toEqual(new Date('2024-01-10T05:00:00.000Z'));
+      expect(params[2]).toEqual(new Date('2024-01-08T05:00:00.000Z'));
+      expect(params[3]).toEqual(new Date('2024-01-10T05:00:00.000Z'));
       // Sargable contra idx_turnos_kpi_inicio y sin contar cancelados.
-      expect(sql).toContain('lower(t.rango_tiempo) >= $6');
+      expect(sql).toContain('lower(t.rango_tiempo) >= $3');
       expect(sql).toContain("t.estado <> 'cancelado'");
     });
 
@@ -174,6 +176,8 @@ describe('BahiasService', () => {
         // (120 + 540) / (600 * 2) = 0.55; b al 90% esta en alerta.
         {
           fecha: '2024-01-08',
+          jornada: { apertura: '08:00', cierre: '18:00', minutos: 600 },
+          cerrado: null,
           turnos: 11,
           minutosOcupados: 660,
           ocupacion: 0.55,
@@ -181,6 +185,8 @@ describe('BahiasService', () => {
         },
         {
           fecha: '2024-01-09',
+          jornada: { apertura: '08:00', cierre: '18:00', minutos: 600 },
+          cerrado: null,
           turnos: 1,
           minutosOcupados: 60,
           ocupacion: 0.05,

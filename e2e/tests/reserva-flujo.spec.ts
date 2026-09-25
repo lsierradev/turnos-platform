@@ -55,9 +55,11 @@ test.describe('Reserva desde el panel', () => {
     await expect(page.getByLabel('Servicio')).toBeDisabled();
     await page.getByLabel('Bahia').selectOption({ label: `Bahia E2E ${datos.sufijo}` });
     await expect(page.getByLabel('Tecnico')).toBeDisabled();
-    await page
-      .getByLabel('Servicio')
-      .selectOption({ label: `Cambio de aceite E2E ${datos.sufijo} · 30 min` });
+    // Por valor: la etiqueta lleva ademas el precio (Sprint 21).
+    await page.getByLabel('Servicio').selectOption(datos.servicioId);
+    await expect(page.getByLabel('Servicio').locator('option:checked')).toHaveText(
+      `Cambio de aceite E2E ${datos.sufijo} · 30 min · $ 25.000`,
+    );
     await page.getByLabel('Tecnico').selectOption({ label: `Tecnico E2E ${datos.sufijo}` });
 
     // Primer horario de la jornada en hora del taller.

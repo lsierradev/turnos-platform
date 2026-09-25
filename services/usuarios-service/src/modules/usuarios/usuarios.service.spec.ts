@@ -102,6 +102,7 @@ describe('UsuariosService', () => {
       'rol',
       'telefono',
       'ciudad',
+      'activo',
       'creadoEn',
       'actualizadoEn',
     ];

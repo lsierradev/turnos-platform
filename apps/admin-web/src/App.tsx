@@ -33,6 +33,7 @@ const PanelAdministrativoView = perezoso(
 );
 const DashboardView = perezoso(() => import('@/features/dashboard/DashboardView'), 'DashboardView');
 const TalleresView = perezoso(() => import('@/features/talleres/TalleresView'), 'TalleresView');
+const MiTallerView = perezoso(() => import('@/features/taller/MiTallerView'), 'MiTallerView');
 const DesignView = perezoso(() => import('@/features/design/DesignView'), 'DesignView');
 const OlvideView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'OlvideView');
 const RestablecerView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'RestablecerView');
@@ -84,6 +85,7 @@ export function App() {
                   <Route path="/reservar" element={<ReservaView />} />
                   <Route path="/mis-turnos" element={<MisTurnosView />} />
                   <Route path="/talleres" element={<TalleresView />} />
+                  <Route path="/taller" element={<MiTallerView />} />
                   <Route path="/admin" element={<PanelAdministrativoView />} />
                   <Route path="/dashboard" element={<DashboardView />} />
                   {/* Referencia interna del sistema de diseno (Sprint 13). */}

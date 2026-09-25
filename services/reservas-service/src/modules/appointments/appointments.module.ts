@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtAuthModule } from '@turnos-platform/auth';
 import { Bahia } from '../../entities/bahia.entity';
 import { Turno } from '../../entities/turno.entity';
+import { ConfiguracionModule } from '../configuracion/configuracion.module';
 import { ServiciosModule } from '../servicios/servicios.module';
 import { AppointmentsController } from './appointments.controller';
 import { AppointmentsService } from './appointments.service';
@@ -11,6 +12,7 @@ import { AppointmentsService } from './appointments.service';
   imports: [
     TypeOrmModule.forFeature([Turno, Bahia]),
     ServiciosModule,
+    ConfiguracionModule,
     JwtAuthModule,
   ],
   controllers: [AppointmentsController],

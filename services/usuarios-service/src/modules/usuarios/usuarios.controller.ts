@@ -2,7 +2,10 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Res,
@@ -69,6 +72,23 @@ export class UsuariosController {
       return { ...usuarioSinPassword, invitacion };
     }
     return usuarioSinPassword;
+  }
+
+  // Sprint 21: baja y reactivacion de tecnicos del taller.
+  @Post(':id/baja')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Rol.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  darDeBaja(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.usuariosService.darDeBaja(id);
+  }
+
+  @Post(':id/reactivar')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Rol.ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  reactivar(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.usuariosService.reactivar(id);
   }
 
   @Get()

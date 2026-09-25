@@ -200,8 +200,8 @@ function mensajeDeError(body: unknown, status: number): string {
 export const STATUS_SIN_CONEXION = 0;
 
 interface Envio {
-  method: 'POST' | 'PATCH';
-  body: unknown;
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+  body?: unknown;
 }
 
 async function apiFetch<T>(
@@ -213,14 +213,14 @@ async function apiFetch<T>(
   const headers: Record<string, string> = {};
   if (tokens) headers.Authorization = `Bearer ${tokens.accessToken}`;
   if (tallerElegido) headers['X-Taller'] = tallerElegido;
-  if (envio) headers['Content-Type'] = 'application/json';
+  if (envio?.body !== undefined) headers['Content-Type'] = 'application/json';
 
   let respuesta: Response;
   try {
     respuesta = await fetch(`${base}${path}`, {
       method: envio?.method ?? 'GET',
       headers,
-      body: envio ? JSON.stringify(envio.body) : undefined,
+      body: envio?.body !== undefined ? JSON.stringify(envio.body) : undefined,
     });
   } catch (error) {
     throw new ApiError(
@@ -301,6 +301,8 @@ export interface Tecnico {
   email: string;
   nombre: string;
   rol: 'tecnico';
+  /** false: dado de baja (Sprint 21). */
+  activo: boolean;
 }
 
 /** GET /usuarios?rol=tecnico en usuarios-service (solo admin, Sprint 11). */
@@ -337,6 +339,10 @@ export interface CargaResponse {
   bahias: CargaBahia[];
   resumen: {
     fecha: string;
+    /** Horario del taller ese dia (Sprint 21); null si no atiende. */
+    jornada: { apertura: string; cierre: string; minutos: number } | null;
+    /** "Cerrado" o el motivo del festivo. */
+    cerrado: string | null;
     turnos: number;
     minutosOcupados: number;
     ocupacion: number;
@@ -428,6 +434,8 @@ export interface MiTurno {
   tecnico: string | null;
   /** Un cliente puede reservar en varios talleres (Sprint 20). */
   taller: { id: string; nombre: string } | null;
+  /** Precio con el que se reservo (Sprint 21); null en turnos anteriores. */
+  precio: Precio | null;
 }
 
 /** Los turnos de quien esta logueado: proximos y ultimos 90 dias. */
@@ -447,9 +455,28 @@ export function getBahias(): Promise<Opcion[]> {
   return apiFetch<Opcion[]>('/bahias');
 }
 
+/**
+ * Precio en centavos (Sprint 21). tarifaIva null: el taller no es
+ * responsable de IVA (no se suma ni se muestra la leyenda).
+ */
+export interface Precio {
+  baseCentavos: number;
+  ivaCentavos: number;
+  totalCentavos: number;
+  tarifaIva: number | null;
+}
+
+export type TarifaIva = 0 | 5 | 19;
+
 export interface Servicio extends ServicioResumen {
-  precio: string | number;
+  precioBaseCentavos: number;
+  tarifaIva: TarifaIva;
+  requiereAnticipo: boolean;
+  porcentajeAnticipo: number | null;
   activo: boolean;
+  /** Calculado por el backend con la configuracion fiscal del taller. */
+  precio: Precio;
+  anticipo: { porcentaje: number; centavos: number } | null;
 }
 
 export function getServicios(): Promise<Servicio[]> {
@@ -477,7 +504,10 @@ export interface DisponibilidadResponse {
   fecha: string;
   zonaHoraria: string;
   duracionMinutos: number;
-  jornada: { apertura: string; cierre: string };
+  /** null: el taller no atiende ese dia (Sprint 21). */
+  jornada: { apertura: string; cierre: string } | null;
+  /** "Cerrado" o el motivo del festivo. */
+  cerrado: string | null;
   horarios: RangoTiempo[];
 }
 
@@ -507,6 +537,11 @@ export interface TurnoCreado {
   usuarioId: string;
   estado: TurnoAgenda['estado'];
   rangoTiempo: RangoTiempo;
+  /** Foto del precio al reservar (Sprint 21). */
+  precioBaseCentavos: number | null;
+  ivaCentavos: number | null;
+  totalCentavos: number | null;
+  tarifaIva: number | null;
 }
 
 export function crearTurno(turno: NuevoTurno): Promise<TurnoCreado> {
@@ -626,4 +661,183 @@ export function actualizarTaller(
   cambios: Partial<Pick<Taller, 'nombre' | 'activo'>>,
 ): Promise<Taller> {
   return apiFetch<Taller>(`/talleres/${id}`, false, AUTH_URL, { method: 'PATCH', body: cambios });
+}
+
+// --- Mi taller (Sprint 21) ---------------------------------------------
+
+export interface DatosServicio {
+  nombre: string;
+  categoria: ServicioResumen['categoria'];
+  duracionMinutos: number;
+  precioBaseCentavos: number;
+  tarifaIva: TarifaIva;
+  requiereAnticipo: boolean;
+  porcentajeAnticipo: number | null;
+  activo?: boolean;
+}
+
+export function crearServicio(datos: DatosServicio): Promise<Servicio> {
+  return apiFetch<Servicio>('/servicios', false, BASE_URL, { method: 'POST', body: datos });
+}
+
+export function actualizarServicio(id: string, cambios: Partial<DatosServicio>): Promise<Servicio> {
+  return apiFetch<Servicio>(`/servicios/${id}`, false, BASE_URL, { method: 'PATCH', body: cambios });
+}
+
+export function borrarServicio(id: string): Promise<void> {
+  return apiFetch<void>(`/servicios/${id}`, false, BASE_URL, { method: 'DELETE' });
+}
+
+export interface BahiaCatalogo {
+  id: string;
+  nombre: string;
+  activa: boolean;
+}
+
+/** Todas, tambien las fuera de servicio (solo admin). */
+export function getBahiasTodas(): Promise<BahiaCatalogo[]> {
+  return apiFetch<BahiaCatalogo[]>('/bahias/todas');
+}
+
+export function crearBahia(nombre: string): Promise<BahiaCatalogo> {
+  return apiFetch<BahiaCatalogo>('/bahias', false, BASE_URL, { method: 'POST', body: { nombre } });
+}
+
+export function actualizarBahia(
+  id: string,
+  cambios: Partial<Pick<BahiaCatalogo, 'nombre' | 'activa'>>,
+): Promise<BahiaCatalogo & { turnosPorVenir: number }> {
+  return apiFetch(`/bahias/${id}`, false, BASE_URL, { method: 'PATCH', body: cambios });
+}
+
+/** Alta de tecnico: le llega el correo para elegir su contrasena. */
+export function crearTecnico(datos: { nombre: string; email: string }): Promise<Tecnico> {
+  return apiFetch<Tecnico>('/usuarios', false, AUTH_URL, {
+    method: 'POST',
+    body: { ...datos, rol: 'tecnico' },
+  });
+}
+
+export function darDeBajaTecnico(id: string): Promise<{ turnosParaReasignar: number }> {
+  return apiFetch(`/usuarios/${id}/baja`, false, AUTH_URL, { method: 'POST' });
+}
+
+export function reactivarTecnico(id: string): Promise<void> {
+  return apiFetch<void>(`/usuarios/${id}/reactivar`, false, AUTH_URL, { method: 'POST' });
+}
+
+export interface TurnoSinTecnico {
+  id: string;
+  inicio: string;
+  fin: string;
+  bahia: string;
+  servicio: string;
+  cliente: string | null;
+}
+
+export function getTurnosSinTecnico(): Promise<TurnoSinTecnico[]> {
+  return apiFetch<TurnoSinTecnico[]>('/appointments/sin-tecnico');
+}
+
+export function reasignarTecnico(turnoId: string, tecnicoId: string): Promise<unknown> {
+  return apiFetch(`/appointments/${turnoId}/tecnico`, false, BASE_URL, {
+    method: 'PATCH',
+    body: { tecnicoId },
+  });
+}
+
+export interface ConfiguracionFiscal {
+  razonSocial: string | null;
+  nit: string | null;
+  dv: number | null;
+  direccion: string | null;
+  municipio: string | null;
+  departamento: string | null;
+  responsableIva: boolean;
+  completa: boolean;
+  facturacion: { proveedor: 'alegra' | 'siigo'; usuario: string; token: string } | null;
+  wompi: {
+    ambiente: 'pruebas' | 'produccion';
+    llavePublica: string;
+    llavePrivada: string | null;
+    secretoIntegridad: string | null;
+    secretoEventos: string | null;
+  } | null;
+}
+
+export interface DatosFiscales {
+  razonSocial: string;
+  nit: string;
+  dv: number;
+  direccion: string;
+  municipio: string;
+  departamento: string;
+  responsableIva: boolean;
+}
+
+export function getConfiguracionFiscal(): Promise<ConfiguracionFiscal> {
+  return apiFetch<ConfiguracionFiscal>('/configuracion/fiscal');
+}
+
+export function guardarDatosFiscales(datos: DatosFiscales): Promise<ConfiguracionFiscal> {
+  return apiFetch<ConfiguracionFiscal>('/configuracion/fiscal', false, BASE_URL, {
+    method: 'PUT',
+    body: datos,
+  });
+}
+
+/** `validado` false: se guardo sin consultar al proveedor (desarrollo). */
+export function guardarFacturacion(datos: {
+  proveedor: 'alegra';
+  usuario: string;
+  token: string;
+}): Promise<ConfiguracionFiscal & { validado: boolean }> {
+  return apiFetch('/configuracion/facturacion', false, BASE_URL, { method: 'PUT', body: datos });
+}
+
+export function guardarWompi(datos: {
+  ambiente: 'pruebas' | 'produccion';
+  llavePublica: string;
+  llavePrivada?: string;
+  secretoIntegridad?: string;
+  secretoEventos?: string;
+}): Promise<ConfiguracionFiscal & { validado: boolean }> {
+  return apiFetch('/configuracion/wompi', false, BASE_URL, { method: 'PUT', body: datos });
+}
+
+export interface DiaHorario {
+  /** ISO: 1 = lunes ... 7 = domingo. */
+  dia: number;
+  apertura: string;
+  cierre: string;
+}
+
+export interface Feriado {
+  fecha: string;
+  motivo: string;
+}
+
+export function getHorario(): Promise<{ dias: DiaHorario[]; feriados: Feriado[] }> {
+  return apiFetch('/configuracion/horario');
+}
+
+export function guardarHorario(dias: DiaHorario[]): Promise<{ turnosFueraDeHorario: number }> {
+  return apiFetch('/configuracion/horario', false, BASE_URL, { method: 'PUT', body: { dias } });
+}
+
+export function agregarFeriado(feriado: Feriado): Promise<{ turnosFueraDeHorario: number }> {
+  return apiFetch('/configuracion/feriados', false, BASE_URL, { method: 'POST', body: feriado });
+}
+
+export function eliminarFeriado(fecha: string): Promise<void> {
+  return apiFetch<void>(`/configuracion/feriados/${fecha}`, false, BASE_URL, { method: 'DELETE' });
+}
+
+export function importarFestivosColombia(
+  anio: number,
+): Promise<{ agregados: number; turnosFueraDeHorario: number }> {
+  return apiFetch('/configuracion/feriados/colombia', false, BASE_URL, {
+    method: 'POST',
+    body: { anio },
+  });
 }

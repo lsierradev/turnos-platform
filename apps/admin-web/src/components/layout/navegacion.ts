@@ -5,6 +5,7 @@ import {
   ChartColumn,
   House,
   ListChecks,
+  Settings,
   Warehouse,
   type LucideIcon,
 } from 'lucide-react';
@@ -43,6 +44,8 @@ export function itemsPara(
     icono: CalendarPlus,
   };
   const talleres: ItemNavegacion = { to: '/talleres', etiqueta: 'Talleres', icono: Building2 };
+  // Sprint 21: catalogo, horario y configuracion fiscal del taller.
+  const miTaller: ItemNavegacion = { to: '/taller', etiqueta: 'Mi taller', icono: Settings };
   switch (usuario?.rol) {
     // Sprint 20: el superadmin administra talleres y, dentro del que elige,
     // opera como un admin.
@@ -55,6 +58,7 @@ export function itemsPara(
             { to: '/agenda', etiqueta: 'Agenda', icono: CalendarClock },
             { to: '/admin', etiqueta: 'Panel', icono: Warehouse },
             { to: '/dashboard', etiqueta: 'Dashboard', icono: ChartColumn },
+            miTaller,
           ]
         : [inicio, talleres];
     case 'admin':
@@ -64,6 +68,7 @@ export function itemsPara(
         { to: '/agenda', etiqueta: 'Agenda', icono: CalendarClock },
         { to: '/admin', etiqueta: 'Panel', icono: Warehouse },
         { to: '/dashboard', etiqueta: 'Dashboard', icono: ChartColumn },
+        miTaller,
       ];
     case 'tecnico':
       return [

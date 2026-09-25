@@ -9,6 +9,7 @@ import { DataSource } from 'typeorm';
 import { RedisCacheModule } from './common/redis-cache.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { BahiasModule } from './modules/bahias/bahias.module';
+import { ConfiguracionModule } from './modules/configuracion/configuracion.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ReservasModule } from './modules/reservas/reservas.module';
@@ -53,6 +54,7 @@ import { TechniciansModule } from './modules/technicians/technicians.module';
     NotificationsModule,
     DashboardModule,
     BahiasModule,
+    ConfiguracionModule,
   ],
 })
 export class AppModule {}

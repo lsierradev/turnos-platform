@@ -1,5 +1,7 @@
 import { ChevronRight, ListChecks, type LucideIcon } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
+import { getConfiguracionFiscal } from '@/lib/api-client';
 import { itemsPara, ROL_LABEL } from '@/components/layout/navegacion';
 import { Button } from '@/components/ui/button';
 import { EstadoError } from '@/components/estados';
@@ -17,7 +19,26 @@ const DESCRIPCION: Record<string, string> = {
   Dashboard: 'Asistencia y tiempos de servicio.',
   'Mis indicadores': 'Tu asistencia y tiempos de servicio.',
   'Mis turnos': 'Proximos turnos e historial.',
+  'Mi taller': 'Servicios y precios, bahias, tecnicos, horario y datos fiscales.',
 };
+
+/**
+ * Sprint 21: sin datos fiscales no se va a poder facturar. Se avisa en el
+ * inicio del admin, con el enlace directo; si ya estan, no ocupa lugar.
+ */
+function AvisoFiscal() {
+  const fiscal = useQuery({ queryKey: ['configuracion-fiscal'], queryFn: getConfiguracionFiscal });
+  if (!fiscal.data || fiscal.data.completa) return null;
+  return (
+    <p role="status" className="rounded-lg border border-advertencia/40 bg-advertencia-suave p-3 text-sm">
+      Faltan los datos fiscales del taller.{' '}
+      <Link to="/taller?seccion=fiscal" className="font-medium underline">
+        Completalos en Mi taller
+      </Link>
+      .
+    </p>
+  );
+}
 
 /** El proximo turno del cliente, en el inicio (Sprint 18). */
 function ProximoTurno() {
@@ -109,6 +130,8 @@ export function HomeView() {
             ))}
         </div>
       )}
+
+      {(usuario?.rol === 'admin' || (usuario?.rol === 'superadmin' && tallerId)) && <AvisoFiscal />}
 
       {usuario?.rol === 'superadmin' && (
         <div className="grid gap-3 sm:grid-cols-2">

@@ -1,7 +1,12 @@
 import {
+  diaDelTaller,
+  horarioPorDefecto,
+  limitesDelDia,
+  proximosDiasAbiertos,
+  type HorarioTaller,
+} from '../../common/horario.util';
+import {
   fechaEnZona,
-  instanteEnZona,
-  sumarDiasFecha,
   zonaHorariaNegocio,
 } from '../../common/zona-horaria.util';
 import { RangoTiempo } from '../../entities/turno.entity';
@@ -10,22 +15,21 @@ export interface SugerirHorariosParams {
   inicioSolicitado: Date;
   duracionMinutos: number;
   turnosOcupados: RangoTiempo[];
-  /** Hora de apertura (0-23), hora de pared de `zonaHoraria`. Default 8. */
-  horaApertura?: number;
-  /** Hora de cierre (0-23), hora de pared de `zonaHoraria`. Default 18. */
-  horaCierre?: number;
+  /** Horario del taller (Sprint 21). Default: todos los dias 08:00-18:00. */
+  horario?: HorarioTaller;
   /** Zona IANA del taller. Default: TZ_NEGOCIO (America/Bogota). */
   zonaHoraria?: string;
   /** Granularidad de busqueda de candidatos, en minutos. Default 15. */
   pasoMinutos?: number;
-  /** Cuantos dias hacia adelante (incluyendo el dia solicitado) explorar. Default 3. */
+  /**
+   * Cuantos dias DE ATENCION explorar desde el solicitado (inclusive).
+   * Default 3. Los cerrados y festivos no cuentan (Sprint 21).
+   */
   diasBusqueda?: number;
   /** Cuantas sugerencias devolver como maximo. Default 3. */
   cantidad?: number;
 }
 
-export const HORA_APERTURA_DEFAULT = 8;
-export const HORA_CIERRE_DEFAULT = 18;
 const PASO_MINUTOS_DEFAULT = 15;
 // Exportado para que el llamador pueda pedirle a la DB exactamente la
 // ventana que esta funcion va a explorar, en vez de traerse todos los
@@ -49,8 +53,7 @@ export function sugerirHorarios(params: SugerirHorariosParams): RangoTiempo[] {
     inicioSolicitado,
     duracionMinutos,
     turnosOcupados,
-    horaApertura = HORA_APERTURA_DEFAULT,
-    horaCierre = HORA_CIERRE_DEFAULT,
+    horario = horarioPorDefecto(),
     pasoMinutos = PASO_MINUTOS_DEFAULT,
     diasBusqueda = DIAS_BUSQUEDA_DEFAULT,
     cantidad = CANTIDAD_DEFAULT,
@@ -66,10 +69,16 @@ export function sugerirHorarios(params: SugerirHorariosParams): RangoTiempo[] {
   // no desde el martes UTC.
   const fechaSolicitada = fechaEnZona(inicioSolicitado, zonaHoraria);
 
-  for (let dia = 0; dia < diasBusqueda; dia += 1) {
-    const fecha = sumarDiasFecha(fechaSolicitada, dia);
-    const aperturaDia = instanteEnZona(fecha, horaApertura, 0, zonaHoraria);
-    const cierreDia = instanteEnZona(fecha, horaCierre, 0, zonaHoraria);
+  for (const { fecha, jornada } of proximosDiasAbiertos(
+    horario,
+    fechaSolicitada,
+    diasBusqueda,
+  )) {
+    const { apertura: aperturaDia, cierre: cierreDia } = limitesDelDia(
+      fecha,
+      jornada,
+      zonaHoraria,
+    );
 
     for (
       let inicioCandidato = new Date(aperturaDia);
@@ -109,8 +118,7 @@ export interface HorariosLibresParams {
   /** Los horarios que ya empezaron no se ofrecen. */
   ahora: Date;
   zonaHoraria?: string;
-  horaApertura?: number;
-  horaCierre?: number;
+  horario?: HorarioTaller;
   pasoMinutos?: number;
 }
 
@@ -119,6 +127,7 @@ export interface HorariosLibresParams {
  * el formulario de reserva. Mismos criterios que sugerirHorarios y que
  * validarHorarioReservable (jornada local, paso de 15 min, sin pasado): si
  * se separaran, la pantalla ofreceria horarios que el POST despues rechaza.
+ * Un dia cerrado o festivo no tiene horarios.
  */
 export function horariosLibresDelDia(
   params: HorariosLibresParams,
@@ -129,18 +138,20 @@ export function horariosLibresDelDia(
     turnosOcupados,
     ahora,
     zonaHoraria = zonaHorariaNegocio(),
-    horaApertura = HORA_APERTURA_DEFAULT,
-    horaCierre = HORA_CIERRE_DEFAULT,
+    horario = horarioPorDefecto(),
     pasoMinutos = PASO_MINUTOS_DEFAULT,
   } = params;
 
+  const dia = diaDelTaller(horario, fecha);
+  if (!dia.abierto) return [];
+  const limites = limitesDelDia(fecha, dia.jornada, zonaHoraria);
   const duracionMs = duracionMinutos * 60_000;
   const pasoMs = pasoMinutos * 60_000;
-  const cierre = instanteEnZona(fecha, horaCierre, 0, zonaHoraria).getTime();
+  const cierre = limites.cierre.getTime();
   const libres: RangoTiempo[] = [];
 
   for (
-    let t = instanteEnZona(fecha, horaApertura, 0, zonaHoraria).getTime();
+    let t = limites.apertura.getTime();
     t + duracionMs <= cierre;
     t += pasoMs
   ) {

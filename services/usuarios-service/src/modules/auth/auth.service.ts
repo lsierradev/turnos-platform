@@ -32,9 +32,14 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales invalidas');
     }
 
-    // Personal de un taller dado de baja: no entra (Sprint 20). Se chequea
-    // DESPUES de la contrasena, para no revelar el estado del taller a
-    // quien no la sabe.
+    // Cuenta o taller dados de baja: no entra (Sprints 20 y 21). Se
+    // chequea DESPUES de la contrasena, para no revelar el estado de la
+    // cuenta a quien no la sabe.
+    if (usuario.activo === false) {
+      throw new UnauthorizedException(
+        'Tu cuenta esta dada de baja. Consulta con el administrador del taller.',
+      );
+    }
     if (
       usuario.tallerId &&
       !(await this.usuariosService.tallerActivo(usuario.tallerId))
@@ -91,7 +96,11 @@ export class AuthService {
     const usuario = await this.usuariosService.findById(payload.sub);
     const iat = (payload as JwtPayload & { iat?: number }).iat ?? 0;
     const desde = usuario?.sesionesValidasDesde;
-    if (!usuario || (desde && iat < Math.floor(desde.getTime() / 1000))) {
+    if (
+      !usuario ||
+      usuario.activo === false ||
+      (desde && iat < Math.floor(desde.getTime() / 1000))
+    ) {
       throw new UnauthorizedException(
         'La sesion se cerro porque cambio la contrasena. Volve a ingresar.',
       );

@@ -20,6 +20,7 @@ describe('AuthService', () => {
     nombre: 'Ana',
     rol: RolUsuario.CLIENTE,
     telefono: null,
+    activo: true,
     creadoEn: new Date(),
     actualizadoEn: new Date(),
   };
@@ -77,6 +78,18 @@ describe('AuthService', () => {
       await expect(
         service.validateUser(usuario.email, 'password-incorrecta'),
       ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('una cuenta dada de baja no entra, aunque la password sea correcta (Sprint 21)', async () => {
+      usuariosService.findByEmail.mockResolvedValue({
+        ...usuario,
+        activo: false,
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      await expect(
+        service.validateUser(usuario.email, 'password123'),
+      ).rejects.toThrow(/dada de baja/);
     });
   });
 
@@ -162,6 +175,18 @@ describe('AuthService', () => {
         await expect(service.refresh('token-nuevo')).resolves.toEqual({
           accessToken: 'nuevo',
         });
+      });
+
+      it('rechaza el refresh de una cuenta dada de baja (Sprint 21)', async () => {
+        jwtService.verify.mockReturnValue({ sub: 'u-1', iat: ahoraSeg() });
+        usuariosService.findById.mockResolvedValue({
+          ...usuario,
+          activo: false,
+        });
+
+        await expect(service.refresh('token')).rejects.toThrow(
+          UnauthorizedException,
+        );
       });
 
       it('rechaza el refresh de un usuario que ya no existe', async () => {

@@ -5,6 +5,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { TarifaIva } from '../../../common/precios.util';
 
 export enum CategoriaServicio {
   MECANICA = 'mecanica',
@@ -31,8 +32,29 @@ export class Servicio {
   @Column({ name: 'duracion_minutos' })
   duracionMinutos: number;
 
-  @Column({ type: 'numeric', precision: 10, scale: 2 })
-  precio: number;
+  // Sprint 21: valor BASE en centavos enteros (bigint; pg lo devuelve
+  // como string, de ahi el transformer). El IVA y el total se calculan con
+  // la configuracion fiscal del taller (common/precios.util.ts).
+  @Column({
+    name: 'precio_base_centavos',
+    type: 'bigint',
+    transformer: {
+      to: (v: number) => v,
+      from: (v: string | null) => (v === null ? null : Number(v)),
+    },
+  })
+  precioBaseCentavos: number;
+
+  @Column({ name: 'tarifa_iva', type: 'smallint', default: 19 })
+  tarifaIva: TarifaIva;
+
+  // Politica de cancelacion (Sprint 21): los servicios de alto impacto
+  // piden un anticipo del 15-20% al reservar (se cobra en Sprint 24).
+  @Column({ name: 'requiere_anticipo', default: false })
+  requiereAnticipo: boolean;
+
+  @Column({ name: 'porcentaje_anticipo', type: 'smallint', nullable: true })
+  porcentajeAnticipo: number | null;
 
   @Column({ default: true })
   activo: boolean;

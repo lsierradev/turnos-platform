@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { decrypt } from '@turnos-platform/crypto';
 import { Queue } from 'bull';
 import { DataSource } from 'typeorm';
+import { formatearPesos } from '../../common/dinero.util';
 import { horaEnZona, zonaHorariaNegocio } from '../../common/zona-horaria.util';
 import { CanalNotificacion } from './entities/notificacion.entity';
 import {
@@ -21,6 +22,9 @@ interface TurnoParaRecordar {
   servicioNombre: string;
   usuarioEmail: string;
   usuarioTelefonoCifrado: string | null;
+  /** Foto del precio (Sprint 21); null en turnos anteriores. */
+  totalCentavos: string | null;
+  tarifaIva: number | null;
 }
 
 @Injectable()
@@ -124,7 +128,9 @@ export class NotificationsSchedulerService {
               b.nombre AS "bahiaNombre",
               s.nombre AS "servicioNombre",
               u.email AS "usuarioEmail",
-              u.telefono AS "usuarioTelefonoCifrado"
+              u.telefono AS "usuarioTelefonoCifrado",
+              t.total_centavos AS "totalCentavos",
+              t.tarifa_iva AS "tarifaIva"
        FROM turnos t
        JOIN bahias b ON b.id = t.bahia_id
        JOIN servicios s ON s.id = t.servicio_id
@@ -201,6 +207,12 @@ export class NotificationsSchedulerService {
   private construirMensaje(turno: TurnoParaRecordar): string {
     // Hora del taller: es la que el cliente tiene que mirar en su reloj.
     const hora = horaEnZona(turno.inicio, zonaHorariaNegocio());
-    return `Recordatorio: tenes un turno manana a las ${hora} en ${turno.bahiaNombre} para ${turno.servicioNombre}.`;
+    const base = `Recordatorio: tenes un turno manana a las ${hora} en ${turno.bahiaNombre} para ${turno.servicioNombre}.`;
+    if (turno.totalCentavos === null) return base;
+    // Precio final siempre con la leyenda si lleva IVA (Ley 1480, art. 26).
+    const total = formatearPesos(Number(turno.totalCentavos));
+    return turno.tarifaIva === null
+      ? `${base} Total: ${total}.`
+      : `${base} Total: ${total} (IVA incluido).`;
   }
 }

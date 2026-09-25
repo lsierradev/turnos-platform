@@ -19,9 +19,24 @@ export function MatrizSemanal({
 }) {
   const hoy = hoyISO();
   const dias = carga.resumen.map((r) => r.fecha);
+  // Sprint 21: dias que el taller no atiende (horario o festivo).
+  const cerrados = new Map(
+    carga.resumen.filter((r) => !r.jornada).map((r) => [r.fecha, r.cerrado ?? 'Cerrado']),
+  );
 
   const Celda = ({ fecha, bahia }: { fecha: string; bahia: CargaResponse['bahias'][number] }) => {
     const d = bahia.dias.find((x) => x.fecha === fecha)!;
+    const cerrado = cerrados.get(fecha);
+    if (cerrado) {
+      return (
+        <span
+          aria-label={`${bahia.nombre}, ${formatearDiaCorto(fecha)}: ${cerrado}`}
+          className="flex h-12 w-full items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground md:h-11"
+        >
+          <span aria-hidden>—</span>
+        </span>
+      );
+    }
     const nivel = NIVEL[d.nivel];
     const Icono = nivel.icono;
     const alerta = d.nivel === 'alta' || d.nivel === 'completa';
@@ -63,6 +78,9 @@ export function MatrizSemanal({
                 >
                   {formatearDiaCorto(f)}
                   {f === hoy && <span className="font-normal"> · hoy</span>}
+                  {cerrados.has(f) && (
+                    <span className="block font-normal text-muted-foreground">{cerrados.get(f)}</span>
+                  )}
                 </th>
               ))}
             </tr>
@@ -89,7 +107,7 @@ export function MatrizSemanal({
                   key={r.fecha}
                   className="pt-1 text-center text-xs text-muted-foreground tabular-nums"
                 >
-                  {porcentaje(r.ocupacion)}
+                  {r.jornada ? porcentaje(r.ocupacion) : 'Cerrado'}
                   {r.bahiasEnAlerta > 0 && (
                     <span className="block text-advertencia-texto">
                       {r.bahiasEnAlerta} en alerta

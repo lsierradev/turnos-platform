@@ -1,4 +1,4 @@
-import { AlertTriangle, OctagonAlert, Warehouse } from 'lucide-react';
+import { AlertTriangle, CalendarX, OctagonAlert, Warehouse } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { EstadoCargando, EstadoError, EstadoVacio } from '@/components/estados';
 import { NavegadorFecha } from '@/components/NavegadorFecha';
@@ -14,6 +14,7 @@ import {
 import { MatrizSemanal } from './MatrizSemanal';
 import { porcentaje } from './niveles';
 import { TarjetaBahia } from './TarjetaBahia';
+import { TurnosSinTecnico } from './TurnosSinTecnico';
 import { useCargaQuery } from './useCargaQuery';
 
 type Vista = 'dia' | 'semana';
@@ -33,6 +34,17 @@ export function PanelAdministrativoView() {
     vista === 'semana' ? [lunes, sumarDiasISO(lunes, 6)] : [fecha, fecha];
 
   const carga = useCargaQuery(desde, hasta);
+  // Sprint 21: el horario puede cambiar por dia; en la vista de dia se
+  // muestra el de ESE dia.
+  const delDia = carga.data?.resumen.find((r) => r.fecha === fecha);
+  const textoJornada =
+    vista === 'dia' && delDia
+      ? delDia.jornada
+        ? ` · jornada ${delDia.jornada.apertura}–${delDia.jornada.cierre}`
+        : ' · el taller no atiende este dia'
+      : carga.data
+        ? ` · jornada ${carga.data.jornada.apertura}–${carga.data.jornada.cierre}`
+        : '';
 
   function ir(cambios: { vista?: Vista; fecha?: string }) {
     const siguiente = new URLSearchParams(params);
@@ -52,7 +64,7 @@ export function PanelAdministrativoView() {
           <h1 className="text-2xl font-semibold">Panel del taller</h1>
           <p className="text-sm text-muted-foreground">
             Carga de trabajo por bahia
-            {carga.data && ` · jornada ${carga.data.jornada.apertura}–${carga.data.jornada.cierre}`}
+            {textoJornada}
           </p>
         </div>
         <div
@@ -96,6 +108,8 @@ export function PanelAdministrativoView() {
         />
       )}
 
+      <TurnosSinTecnico />
+
       {carga.isPending ? (
         <EstadoCargando forma="tarjetas" etiqueta="Cargando ocupacion de las bahias…" />
       ) : carga.isError ? (
@@ -128,7 +142,21 @@ export function PanelAdministrativoView() {
 
 function VistaDia({ carga, fecha }: { carga: CargaResponse; fecha: string }) {
   const resumen = carga.resumen.find((r) => r.fecha === fecha) ?? carga.resumen[0];
-  const capacidad = carga.jornada.minutos * carga.bahias.length;
+  if (!resumen.jornada) {
+    return (
+      <EstadoVacio
+        icono={CalendarX}
+        titulo="El taller no atiende este dia"
+        descripcion={
+          resumen.cerrado && resumen.cerrado !== 'Cerrado'
+            ? `${resumen.cerrado}. No se toman turnos.`
+            : 'Segun el horario del taller no se toman turnos.'
+        }
+      />
+    );
+  }
+  const jornada = resumen.jornada;
+  const capacidad = jornada.minutos * carga.bahias.length;
   const enAlerta = carga.bahias
     .map((b) => ({ b, d: b.dias.find((x) => x.fecha === fecha)! }))
     .filter(({ d }) => d.nivel === 'alta' || d.nivel === 'completa');
@@ -185,7 +213,7 @@ function VistaDia({ carga, fecha }: { carga: CargaResponse; fecha: string }) {
             key={b.bahiaId}
             bahia={b}
             fecha={fecha}
-            jornada={carga.jornada}
+            jornada={jornada}
             umbrales={carga.umbrales}
           />
         ))}

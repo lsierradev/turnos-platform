@@ -24,5 +24,6 @@ export function tituloDeRuta(pathname: string, rol?: string): string {
   if (pathname === '/dashboard') return rol === 'admin' || rol === 'superadmin' ? 'Dashboard' : 'Mis indicadores';
   if (pathname === '/design') return 'Sistema de diseno';
   if (pathname === '/talleres') return 'Talleres';
+  if (pathname === '/taller') return 'Mi taller';
   return 'Pagina no encontrada';
 }

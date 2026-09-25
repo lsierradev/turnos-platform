@@ -39,6 +39,7 @@ import {
   sumarDiasISO,
   ZONA_NEGOCIO,
 } from '@/lib/dates';
+import { formatearPesos, textoDesglose, textoPrecioFinal } from '@/lib/dinero';
 import { describirError } from '@/lib/errores';
 import {
   useBahiasQuery,
@@ -435,7 +436,7 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
                   vacio="No hay servicios disponibles"
                   opciones={(servicios.data ?? []).map((s) => ({
                     valor: s.id,
-                    texto: `${s.nombre} · ${formatearDuracion(s.duracionMinutos)}`,
+                    texto: `${s.nombre} · ${formatearDuracion(s.duracionMinutos)} · ${formatearPesos(s.precio.totalCentavos)}`,
                   }))}
                   onCambiar={(v) => elegir('servicio', v)}
                 />
@@ -500,6 +501,20 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
                     ['Bahia', bahia.nombre],
                     ['Servicio', `${servicio.nombre} · ${formatearDuracion(servicio.duracionMinutos)}`],
                     ['Tecnico', tecnico.nombre],
+                    ['Precio', textoPrecioFinal(servicio.precio)],
+                    // Sprint 21: el desglose y el anticipo, para quien
+                    // administra; el cliente ve el precio final.
+                    ...(esAdmin && textoDesglose(servicio.precio)
+                      ? [['Desglose', textoDesglose(servicio.precio)!] as [string, string]]
+                      : []),
+                    ...(esAdmin && servicio.anticipo
+                      ? [
+                          [
+                            'Anticipo',
+                            `${servicio.anticipo.porcentaje}% · ${formatearPesos(servicio.anticipo.centavos)} (el cobro en linea llega con los pagos)`,
+                          ] as [string, string],
+                        ]
+                      : []),
                   ]}
                 />
               ) : (
@@ -702,10 +717,30 @@ function GrillaHorarios({
     return <EstadoError error={disponibilidad.error} onReintentar={disponibilidad.refetch} />;
   }
 
-  const { horarios, jornada, duracionMinutos } = disponibilidad.data;
+  const { horarios, jornada, cerrado, duracionMinutos } = disponibilidad.data;
   // Datos de la combinacion anterior mientras llegan los nuevos: se ven,
   // pero no se pueden elegir.
   const viejos = disponibilidad.isPlaceholderData;
+
+  // Sprint 21: horario y festivos por taller.
+  if (!jornada) {
+    return (
+      <EstadoVacio
+        icono={CalendarX}
+        titulo="El taller no atiende este dia"
+        descripcion={
+          cerrado && cerrado !== 'Cerrado'
+            ? `${cerrado}. Proba otro dia.`
+            : 'Proba otro dia.'
+        }
+        accion={
+          <Button type="button" variant="outline" size="sm" onClick={onDiaSiguiente}>
+            Ver dia siguiente
+          </Button>
+        }
+      />
+    );
+  }
 
   if (horarios.length === 0) {
     return (
@@ -894,6 +929,19 @@ function Confirmacion({
             ['Bahia', reservado.bahia],
             ['Servicio', servicio.nombre],
             ['Tecnico', tecnico.nombre],
+            ...(turno.totalCentavos !== null
+              ? [
+                  [
+                    'Precio',
+                    textoPrecioFinal({
+                      baseCentavos: turno.precioBaseCentavos ?? 0,
+                      ivaCentavos: turno.ivaCentavos ?? 0,
+                      totalCentavos: turno.totalCentavos,
+                      tarifaIva: turno.tarifaIva,
+                    }),
+                  ] as [string, string],
+                ]
+              : []),
           ]}
         />
         {cliente && clienteNuevo && (

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { CATEGORIA_CLASES, ESTADO_TURNO_LABEL } from '@/features/agenda/linea-tiempo';
 import type { MiTurno } from '@/lib/api-client';
 import { fechaDeInstante, formatearFechaLarga, formatearHora, ZONA_NEGOCIO } from '@/lib/dates';
+import { textoPrecioFinal } from '@/lib/dinero';
 import { separarTurnos, useMisTurnosQuery } from './mis-turnos';
 
 // El estado con icono Y texto: nunca solo color.
@@ -37,7 +38,13 @@ export function TarjetaMiTurno({ turno }: { turno: MiTurno }) {
           {formatearFechaLarga(fechaDeInstante(turno.inicio))} · {formatearHora(turno.inicio)}–
           {formatearHora(turno.fin)}
         </p>
-        <p className="text-sm">{turno.servicio.nombre}</p>
+        <p className="text-sm">
+          {turno.servicio.nombre}
+          {/* Sprint 21: el precio con el que se reservo (null en los viejos). */}
+          {turno.precio && (
+            <span className="text-muted-foreground"> · {textoPrecioFinal(turno.precio)}</span>
+          )}
+        </p>
         <p className="text-xs text-muted-foreground">
           {turno.taller ? `${turno.taller.nombre} · ` : ''}
           {turno.bahia}

@@ -125,7 +125,8 @@ export class ContrasenaService {
     const usuario = await this.dataSource
       .getRepository(Usuario)
       .findOne({ where: { email: email.trim() } });
-    if (!usuario) return;
+    // Una cuenta dada de baja (Sprint 21) no recibe enlaces: no podria entrar.
+    if (!usuario || usuario.activo === false) return;
 
     const reciente = await this.tokens.findOne({
       where: {

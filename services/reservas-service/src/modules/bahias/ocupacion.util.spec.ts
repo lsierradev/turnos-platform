@@ -1,24 +1,26 @@
-import {
-  calcularOcupacion,
-  esAlerta,
-  horaSql,
-  JORNADA,
-  nivelOcupacion,
-} from './ocupacion.util';
+import { calcularOcupacion, esAlerta, nivelOcupacion } from './ocupacion.util';
 
 describe('ocupacion.util', () => {
-  it('mide contra la jornada laboral (8 a 18 = 600 min), no contra 24 h', () => {
-    expect(JORNADA.minutos).toBe(600);
-    expect(calcularOcupacion(300)).toBe(0.5);
+  it('mide contra la jornada del dia (8 a 18 = 600 min), no contra 24 h', () => {
+    expect(calcularOcupacion(300, 600)).toBe(0.5);
+  });
+
+  it('con otra jornada (Sprint 21: horario por taller) cambia la base', () => {
+    // Sabado de 08:00 a 12:00: 240 min.
+    expect(calcularOcupacion(120, 240)).toBe(0.5);
+  });
+
+  it('un dia cerrado (jornada 0) no divide por cero', () => {
+    expect(calcularOcupacion(60, 0)).toBe(0);
   });
 
   it('redondea a 3 decimales', () => {
-    expect(calcularOcupacion(200)).toBe(0.333);
+    expect(calcularOcupacion(200, 600)).toBe(0.333);
   });
 
   it('no pasa de 100% ni baja de 0%', () => {
-    expect(calcularOcupacion(900)).toBe(1);
-    expect(calcularOcupacion(-10)).toBe(0);
+    expect(calcularOcupacion(900, 600)).toBe(1);
+    expect(calcularOcupacion(-10, 600)).toBe(0);
   });
 
   describe('nivelOcupacion', () => {
@@ -48,10 +50,5 @@ describe('ocupacion.util', () => {
     expect(esAlerta('completa')).toBe(true);
     expect(esAlerta('normal')).toBe(false);
     expect(esAlerta('libre')).toBe(false);
-  });
-
-  it('formatea horas para parametros SQL de tipo time', () => {
-    expect(horaSql(8)).toBe('08:00');
-    expect(horaSql(18)).toBe('18:00');
   });
 });

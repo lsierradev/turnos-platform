@@ -14,22 +14,27 @@ import {
   esRolTecnico,
 } from '../../common/tecnicos.util';
 import {
+  diaDelTaller,
+  type HorarioTaller,
+  limitesDelDia,
+  MAX_DIAS_CALENDARIO_BUSQUEDA,
+  minutosAHora,
+} from '../../common/horario.util';
+import { calcularAnticipo, calcularPrecio } from '../../common/precios.util';
+import {
   fechaEnZona,
   inicioDelDiaEnZona,
-  partesEnZona,
   sumarDiasFecha,
   zonaHorariaNegocio,
 } from '../../common/zona-horaria.util';
 import { Bahia } from '../../entities/bahia.entity';
 import { EstadoTurno, Turno } from '../../entities/turno.entity';
+import { HorarioService } from '../configuracion/horario.service';
 import { ServiciosService } from '../servicios/servicios.service';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { DisponibilidadQueryDto } from './dto/disponibilidad-query.dto';
 import {
-  DIAS_BUSQUEDA_DEFAULT,
-  HORA_APERTURA_DEFAULT,
-  HORA_CIERRE_DEFAULT,
   horariosLibresDelDia,
   sugerirHorarios,
 } from './sugerencias-horarios.util';
@@ -100,40 +105,38 @@ function interpretarConflicto(
  * respeto la ventana laboral -- o sea que se podia entrar por la puerta de
  * adelante a un horario que el sistema jamas habria ofrecido.
  */
-function validarHorarioReservable(inicio: Date, fin: Date): void {
+function validarHorarioReservable(
+  inicio: Date,
+  fin: Date,
+  horario: HorarioTaller,
+  zona: string,
+): void {
   if (inicio.getTime() < Date.now()) {
     throw new BadRequestException(
       'No se puede reservar un turno en el pasado.',
     );
   }
 
-  // Ventana laboral en la zona del taller, la misma que usa sugerirHorarios:
-  // si estos dos criterios se separan, el sistema sugiere horarios que
-  // despues rechaza. El instante que manda el cliente puede venir con
-  // cualquier offset (Z, -05:00, ...): lo que importa es a que hora de
-  // pared del taller corresponde.
-  const zona = zonaHorariaNegocio();
-  const localInicio = partesEnZona(inicio, zona);
-  const localFin = partesEnZona(fin, zona);
-  const horaInicio = localInicio.hora + localInicio.minuto / 60;
-  const horaFin = localFin.hora + localFin.minuto / 60;
-  const terminaOtroDia =
-    fin.getTime() - inicio.getTime() > 0 &&
-    fechaEnZona(fin, zona) !== fechaEnZona(inicio, zona);
-
-  if (
-    horaInicio < HORA_APERTURA_DEFAULT ||
-    terminaOtroDia ||
-    horaFin > HORA_CIERRE_DEFAULT
-  ) {
+  // Jornada del taller ESE dia (Sprint 21: horario por dia y festivos), la
+  // misma que usan la grilla y sugerirHorarios: si estos criterios se
+  // separan, el sistema sugiere horarios que despues rechaza. El instante
+  // que manda el cliente puede venir con cualquier offset (Z, -05:00, ...):
+  // lo que importa es a que dia y hora de pared del taller corresponde.
+  const fecha = fechaEnZona(inicio, zona);
+  const dia = diaDelTaller(horario, fecha);
+  if (!dia.abierto) {
     throw new BadRequestException(
-      `El turno debe quedar dentro del horario laboral (${HORA_APERTURA_DEFAULT}:00-${HORA_CIERRE_DEFAULT}:00, hora de ${zona}).`,
+      dia.motivo === 'Cerrado'
+        ? `El taller no atiende ese dia (${fecha}).`
+        : `El taller no atiende el ${fecha} (${dia.motivo}).`,
     );
   }
-}
-
-function dosDigitos(n: number): string {
-  return String(n).padStart(2, '0');
+  const { apertura, cierre } = limitesDelDia(fecha, dia.jornada, zona);
+  if (inicio < apertura || fin > cierre) {
+    throw new BadRequestException(
+      `El turno debe quedar dentro del horario del taller ese dia (${minutosAHora(dia.jornada.apertura)}-${minutosAHora(dia.jornada.cierre)}, hora de ${zona}).`,
+    );
+  }
 }
 
 // Tope de "Mis turnos": un cliente no tiene cientos en 90 dias; si los
@@ -151,6 +154,19 @@ interface FilaMiTurno {
   tecnicoNombre: string | null;
   tallerId: string | null;
   tallerNombre: string | null;
+  baseCentavos: string | null;
+  ivaCentavos: string | null;
+  totalCentavos: string | null;
+  tarifaIva: number | null;
+}
+
+/** Precio con el que se tomo el turno (foto, Sprint 21). */
+export interface PrecioTurno {
+  baseCentavos: number;
+  ivaCentavos: number;
+  totalCentavos: number;
+  /** null: el taller no era responsable de IVA al reservar. */
+  tarifaIva: number | null;
 }
 
 export interface MiTurno {
@@ -163,13 +179,27 @@ export interface MiTurno {
   tecnico: string | null;
   /** En que taller (Sprint 20: un cliente puede reservar en varios). */
   taller: { id: string; nombre: string } | null;
+  /** null en turnos anteriores al Sprint 21. */
+  precio: PrecioTurno | null;
+}
+
+export interface TurnoSinTecnico {
+  id: string;
+  inicio: string;
+  fin: string;
+  bahia: string;
+  servicio: string;
+  cliente: string | null;
 }
 
 export interface DisponibilidadResponse {
   fecha: string;
   zonaHoraria: string;
   duracionMinutos: number;
-  jornada: { apertura: string; cierre: string };
+  /** null: el taller no atiende ese dia (ver cerrado). */
+  jornada: { apertura: string; cierre: string } | null;
+  /** Motivo si el taller no atiende ese dia ("Cerrado" o el festivo). */
+  cerrado: string | null;
   horarios: { inicio: Date; fin: Date }[];
 }
 
@@ -183,6 +213,7 @@ export class AppointmentsService {
     private readonly serviciosService: ServiciosService,
     private readonly dataSource: DataSource,
     private readonly db: ContextoDb,
+    private readonly horarios: HorarioService,
   ) {}
 
   // Repositorios del request (transaccion con RLS, Sprint 20); fuera de un
@@ -266,9 +297,11 @@ export class AppointmentsService {
     }
 
     const tecnico = await buscarTecnico(this.sql, ids.tecnicoId);
+    // Uno dado de baja (Sprint 21) no recibe turnos nuevos.
     if (
       !tecnico ||
       !esRolTecnico(tecnico.rol) ||
+      tecnico.activo === false ||
       this.esDeOtroTaller(tecnico.tallerId)
     ) {
       throw new NotFoundException(
@@ -303,6 +336,19 @@ export class AppointmentsService {
     const { servicio } = await this.validarRecursos(query);
 
     const zona = zonaHorariaNegocio();
+    const horario = await this.horarios.obtener(fecha, fecha);
+    const dia = diaDelTaller(horario, fecha);
+    if (!dia.abierto) {
+      return {
+        fecha,
+        zonaHoraria: zona,
+        duracionMinutos: servicio.duracionMinutos,
+        jornada: null,
+        cerrado: dia.motivo,
+        horarios: [],
+      };
+    }
+
     const desde = inicioDelDiaEnZona(fecha, zona);
     const hasta = inicioDelDiaEnZona(sumarDiasFecha(fecha, 1), zona);
     const enElDia = {
@@ -328,15 +374,17 @@ export class AppointmentsService {
       zonaHoraria: zona,
       duracionMinutos: servicio.duracionMinutos,
       jornada: {
-        apertura: `${dosDigitos(HORA_APERTURA_DEFAULT)}:00`,
-        cierre: `${dosDigitos(HORA_CIERRE_DEFAULT)}:00`,
+        apertura: minutosAHora(dia.jornada.apertura),
+        cierre: minutosAHora(dia.jornada.cierre),
       },
+      cerrado: null,
       horarios: horariosLibresDelDia({
         fecha,
         duracionMinutos: servicio.duracionMinutos,
         turnosOcupados: ocupados.map((t) => t.rangoTiempo),
         ahora: new Date(),
         zonaHoraria: zona,
+        horario,
       }),
     };
   }
@@ -353,7 +401,21 @@ export class AppointmentsService {
     const inicio = new Date(dto.inicio);
     const fin = new Date(inicio.getTime() + servicio.duracionMinutos * 60_000);
 
-    validarHorarioReservable(inicio, fin);
+    const zona = zonaHorariaNegocio();
+    const fecha = fechaEnZona(inicio, zona);
+    const horario = await this.horarios.obtener(fecha, fecha);
+    validarHorarioReservable(inicio, fin, horario, zona);
+
+    // Foto del precio (Sprint 21): el turno queda con el precio y el IVA de
+    // HOY, aunque manana cambien el servicio o la configuracion fiscal.
+    const precio = calcularPrecio(
+      servicio.precioBaseCentavos,
+      servicio.tarifaIva,
+      await this.serviciosService.responsableIva(tallerId),
+    );
+    const anticipo = servicio.requiereAnticipo
+      ? calcularAnticipo(precio.totalCentavos, servicio.porcentajeAnticipo)
+      : null;
 
     const turno = this.turnos.create({
       ...(tallerId ? { tallerId } : {}),
@@ -362,6 +424,11 @@ export class AppointmentsService {
       tecnicoId: dto.tecnicoId,
       usuarioId,
       rangoTiempo: { inicio, fin },
+      precioBaseCentavos: precio.baseCentavos,
+      ivaCentavos: precio.ivaCentavos,
+      totalCentavos: precio.totalCentavos,
+      tarifaIva: precio.tarifaIva,
+      anticipoCentavos: anticipo,
     });
 
     try {
@@ -397,6 +464,7 @@ export class AppointmentsService {
           filtro,
           servicio.duracionMinutos,
           inicio,
+          horario,
         );
 
         throw new ConflictException({
@@ -492,7 +560,11 @@ export class AppointmentsService {
               s.categoria          AS "servicioCategoria",
               tec.nombre           AS "tecnicoNombre",
               ta.id                AS "tallerId",
-              ta.nombre            AS "tallerNombre"
+              ta.nombre            AS "tallerNombre",
+              t.precio_base_centavos AS "baseCentavos",
+              t.iva_centavos       AS "ivaCentavos",
+              t.total_centavos     AS "totalCentavos",
+              t.tarifa_iva         AS "tarifaIva"
          FROM turnos t
          JOIN bahias b    ON b.id = t.bahia_id
          JOIN servicios s ON s.id = t.servicio_id
@@ -515,13 +587,99 @@ export class AppointmentsService {
       taller: f.tallerId
         ? { id: f.tallerId, nombre: f.tallerNombre ?? '' }
         : null,
+      precio:
+        f.totalCentavos === null
+          ? null
+          : {
+              baseCentavos: Number(f.baseCentavos),
+              ivaCentavos: Number(f.ivaCentavos),
+              totalCentavos: Number(f.totalCentavos),
+              tarifaIva: f.tarifaIva,
+            },
     }));
+  }
+
+  /**
+   * Turnos que vienen y quedaron sin tecnico (el suyo se dio de baja,
+   * Sprint 21): lo que el panel muestra para reasignar.
+   */
+  async sinTecnico(): Promise<TurnoSinTecnico[]> {
+    const taller = this.db.exigirTaller();
+    const filas: {
+      id: string;
+      inicio: Date;
+      fin: Date;
+      bahia: string;
+      servicio: string;
+      cliente: string | null;
+    }[] = await this.sql.query(
+      `SELECT t.id,
+              lower(t.rango_tiempo) AS inicio,
+              upper(t.rango_tiempo) AS fin,
+              b.nombre AS bahia,
+              s.nombre AS servicio,
+              cli.nombre AS cliente
+         FROM turnos t
+         JOIN bahias b    ON b.id = t.bahia_id
+         JOIN servicios s ON s.id = t.servicio_id
+         LEFT JOIN usuarios cli ON cli.id = t.usuario_id
+        WHERE t.taller_id = $1
+          AND t.tecnico_id IS NULL
+          AND t.estado = 'programado'
+          AND lower(t.rango_tiempo) > now()
+        ORDER BY lower(t.rango_tiempo)`,
+      [taller],
+    );
+    return filas.map((f) => ({
+      ...f,
+      inicio: new Date(f.inicio).toISOString(),
+      fin: new Date(f.fin).toISOString(),
+    }));
+  }
+
+  /** Asigna (o cambia) el tecnico de un turno que viene. */
+  async reasignarTecnico(id: string, tecnicoId: string): Promise<Turno> {
+    const turno = await this.turnos.findOne({ where: { id } });
+    if (!turno || this.esDeOtroTaller(turno.tallerId)) {
+      throw new NotFoundException(`Turno ${id} no encontrado`);
+    }
+    if (
+      turno.estado !== EstadoTurno.PROGRAMADO ||
+      turno.rangoTiempo.inicio.getTime() <= Date.now()
+    ) {
+      throw new BadRequestException(
+        'Solo se puede reasignar un turno programado que todavia no empezo.',
+      );
+    }
+    const tecnico = await buscarTecnico(this.sql, tecnicoId);
+    if (
+      !tecnico ||
+      !esRolTecnico(tecnico.rol) ||
+      tecnico.activo === false ||
+      this.esDeOtroTaller(tecnico.tallerId)
+    ) {
+      throw new NotFoundException(
+        `Tecnico ${tecnicoId} no encontrado o dado de baja`,
+      );
+    }
+    turno.tecnicoId = tecnicoId;
+    try {
+      return await this.db.conSavepoint(() => this.turnos.save(turno));
+    } catch (error) {
+      if (esErrorDeSolapamiento(error)) {
+        throw new ConflictException(
+          'El tecnico ya tiene otro turno en ese horario.',
+        );
+      }
+      throw error;
+    }
   }
 
   private async buscarSugerencias(
     filtro: FiltroRecurso,
     duracionMinutos: number,
     inicioSolicitado: Date,
+    horario: HorarioTaller,
   ) {
     // Solo los turnos de la ventana que sugerirHorarios va a explorar.
     //
@@ -540,9 +698,17 @@ export class AppointmentsService {
     const zona = zonaHorariaNegocio();
     const fecha = fechaEnZona(inicioSolicitado, zona);
     const desde = inicioDelDiaEnZona(fecha, zona);
+    // Hasta el tope de dias calendario que puede recorrer sugerirHorarios
+    // para juntar sus dias de atencion (Sprint 21: se saltea cerrados y
+    // festivos). Sobra en la semana normal, pero la ventana sigue acotada.
     const hasta = inicioDelDiaEnZona(
-      sumarDiasFecha(fecha, DIAS_BUSQUEDA_DEFAULT),
+      sumarDiasFecha(fecha, MAX_DIAS_CALENDARIO_BUSQUEDA),
       zona,
+    );
+    // Los festivos de toda la ventana, no solo los del dia pedido.
+    const horarioVentana = await this.horarios.obtener(
+      fecha,
+      sumarDiasFecha(fecha, MAX_DIAS_CALENDARIO_BUSQUEDA),
     );
 
     const turnosOcupados = await this.turnos.find({
@@ -565,6 +731,7 @@ export class AppointmentsService {
       duracionMinutos,
       turnosOcupados: turnosOcupados.map((turno) => turno.rangoTiempo),
       zonaHoraria: zona,
+      horario: { semana: horario.semana, feriados: horarioVentana.feriados },
     });
   }
 }

@@ -99,6 +99,40 @@ test.describe('admin', () => {
     await capturar(page, 'admin-dashboard-tabla');
   });
 
+  // Sprint 21: Mi taller.
+  test('mi taller: servicios y precios', async ({ page }) => {
+    await page.goto('/taller');
+    await expect(page.getByRole('list', { name: 'Servicios' })).toBeVisible();
+    await capturar(page, 'admin-taller-servicios');
+  });
+
+  test('mi taller: nuevo servicio con vista del precio', async ({ page }) => {
+    await page.goto('/taller');
+    await page.getByRole('button', { name: 'Nuevo servicio' }).click();
+    await page.getByLabel('Nombre', { exact: true }).fill('Alineacion y balanceo');
+    await page.getByLabel('Valor base', { exact: true }).fill('84.000');
+    await expect(page.getByTestId('vista-precio')).toBeVisible();
+    await capturar(page, 'admin-taller-servicio-nuevo');
+  });
+
+  test('mi taller: tecnicos', async ({ page }) => {
+    await page.goto('/taller?seccion=tecnicos');
+    await expect(page.getByRole('list', { name: 'Tecnicos' })).toBeVisible();
+    await capturar(page, 'admin-taller-tecnicos');
+  });
+
+  test('mi taller: horario y festivos', async ({ page }) => {
+    await page.goto('/taller?seccion=horario');
+    await expect(page.getByRole('list', { name: 'Dias cerrados' })).toBeVisible();
+    await capturar(page, 'admin-taller-horario');
+  });
+
+  test('mi taller: datos fiscales y pagos', async ({ page }) => {
+    await page.goto('/taller?seccion=fiscal');
+    await expect(page.getByRole('heading', { name: 'Pagos con Wompi' })).toBeVisible();
+    await capturar(page, 'admin-taller-fiscal');
+  });
+
   test('sistema de diseno', async ({ page }) => {
     await page.goto('/design');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();

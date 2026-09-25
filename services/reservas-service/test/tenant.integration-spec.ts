@@ -54,7 +54,7 @@ describirSiHayDb('Aislamiento entre talleres (integration)', () => {
       [`Bahia ${letra} ${sufijo}`, t.id],
     );
     const [s] = await ds.query(
-      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio, taller_id)
+      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio_base_centavos, taller_id)
        VALUES ($1, 'mecanica', 30, 10000, $2) RETURNING id`,
       [`Servicio ${letra} ${sufijo}`, t.id],
     );

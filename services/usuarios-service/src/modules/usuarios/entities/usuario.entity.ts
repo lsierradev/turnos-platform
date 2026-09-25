@@ -10,6 +10,8 @@ import {
 export enum RolUsuario {
   ADMIN = 'admin',
   CLIENTE = 'cliente',
+  /** Personal de TurnoPro (Sprint 20). Solo por seed, no por la API. */
+  SUPERADMIN = 'superadmin',
   TECNICO = 'tecnico',
 }
 
@@ -47,6 +49,12 @@ export class Usuario {
   // Migracion 012 (Sprint 17). Tipo explicito por lo mismo que telefono.
   @Column({ type: 'text', nullable: true })
   ciudad?: string | null;
+
+  // Taller del personal (admin, tecnico). null para clientes (globales, se
+  // relacionan con cada taller en clientes_taller) y superadmin. Migracion
+  // 015, Sprint 20.
+  @Column({ name: 'taller_id', type: 'uuid', nullable: true })
+  tallerId?: string | null;
 
   // Migracion 014 (Sprint 19): los refresh tokens emitidos antes de esta
   // marca ya no valen. La pone el cambio de contrasena.

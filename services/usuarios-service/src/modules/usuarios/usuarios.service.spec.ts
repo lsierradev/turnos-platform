@@ -1,3 +1,4 @@
+import { ContextoDb, DATA_SOURCE_TENANT } from '@turnos-platform/tenant';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcryptjs';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -27,6 +28,9 @@ describe('UsuariosService', () => {
           },
         },
         { provide: DataSource, useValue: dataSource },
+        // Fuera de un request: modo sistema, usa los mocks.
+        ContextoDb,
+        { provide: DATA_SOURCE_TENANT, useValue: dataSource },
       ],
     }).compile();
 

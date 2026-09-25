@@ -141,13 +141,13 @@ test.describe('HU3 - Agenda del tecnico', () => {
 
     const ajena = await request.get(
       `${URL_RESERVAS}/technicians/${datos.tecnicoId}/agenda`,
-      { headers: encabezados(tokenOtroTecnico) },
+      { headers: encabezados(tokenOtroTecnico, datos.tallerId) },
     );
     expect(ajena.status()).toBe(403);
 
     const propia = await request.get(
       `${URL_RESERVAS}/technicians/${datos.otroTecnicoId}/agenda`,
-      { headers: encabezados(tokenOtroTecnico) },
+      { headers: encabezados(tokenOtroTecnico, datos.tallerId) },
     );
     expect(propia.status()).toBe(200);
   });

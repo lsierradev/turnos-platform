@@ -29,6 +29,13 @@ export interface UsuarioSembrado {
 
 export interface DatosSembrados {
   sufijo: string;
+  /**
+   * Taller propio de cada corrida (Sprint 20): todo lo sembrado vive en el,
+   * asi que las pruebas no ven datos de otras corridas ni del taller de
+   * desarrollo.
+   */
+  tallerId: string;
+  tallerNombre: string;
   bahiaId: string;
   otraBahiaId: string;
   servicioId: string;
@@ -86,19 +93,26 @@ export async function sembrar(): Promise<DatosSembrados> {
   const passwordHash = await bcrypt.hash(PASSWORD_DE_PRUEBA, 10);
 
   return conConexion(async (db) => {
+    const tallerNombre = `Taller E2E ${sufijo}`;
+    const taller = await db.query(
+      'INSERT INTO talleres (nombre, slug) VALUES ($1, $2) RETURNING id',
+      [tallerNombre, `e2e-${sufijo}`],
+    );
+    const tallerId: string = taller.rows[0].id;
+
     const bahia = await db.query(
-      'INSERT INTO bahias (nombre) VALUES ($1) RETURNING id',
-      [`Bahia E2E ${sufijo}`],
+      'INSERT INTO bahias (nombre, taller_id) VALUES ($1, $2) RETURNING id',
+      [`Bahia E2E ${sufijo}`, tallerId],
     );
     const otraBahia = await db.query(
-      'INSERT INTO bahias (nombre) VALUES ($1) RETURNING id',
-      [`Bahia E2E alterna ${sufijo}`],
+      'INSERT INTO bahias (nombre, taller_id) VALUES ($1, $2) RETURNING id',
+      [`Bahia E2E alterna ${sufijo}`, tallerId],
     );
 
     const servicio = await db.query(
-      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio)
-       VALUES ($1, 'mecanica', $2, 25000) RETURNING id`,
-      [`Cambio de aceite E2E ${sufijo}`, DURACION_SERVICIO_MINUTOS],
+      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio, taller_id)
+       VALUES ($1, 'mecanica', $2, 25000, $3) RETURNING id`,
+      [`Cambio de aceite E2E ${sufijo}`, DURACION_SERVICIO_MINUTOS, tallerId],
     );
 
     const clientes: UsuarioSembrado[] = [];
@@ -110,32 +124,40 @@ export async function sembrar(): Promise<DatosSembrados> {
         [email, passwordHash, `Cliente E2E ${i}`],
       );
       clientes.push({ id: fila.rows[0].id, email });
+      // Clientes del taller de la corrida (el admin los ve y puede reservar
+      // a su nombre).
+      await db.query(
+        'INSERT INTO clientes_taller (taller_id, usuario_id) VALUES ($1, $2)',
+        [tallerId, fila.rows[0].id],
+      );
     }
 
     const adminEmail = `admin-e2e-${sufijo}@turnos.dev`;
     const admin = await db.query(
-      `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ($1, $2, 'Admin E2E', 'admin') RETURNING id`,
-      [adminEmail, passwordHash],
+      `INSERT INTO usuarios (email, password_hash, nombre, rol, taller_id)
+       VALUES ($1, $2, 'Admin E2E', 'admin', $3) RETURNING id`,
+      [adminEmail, passwordHash, tallerId],
     );
 
     const tecnicoEmail = `tecnico-e2e-${sufijo}@turnos.dev`;
     const tecnico = await db.query(
-      `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ($1, $2, $3, 'tecnico') RETURNING id`,
+      `INSERT INTO usuarios (email, password_hash, nombre, rol, taller_id)
+       VALUES ($1, $2, $3, 'tecnico', $4) RETURNING id`,
       // Con sufijo: el formulario de reserva lo elige por nombre, y una
       // corrida anterior que no llego a limpiar dejaria dos iguales.
-      [tecnicoEmail, passwordHash, `Tecnico E2E ${sufijo}`],
+      [tecnicoEmail, passwordHash, `Tecnico E2E ${sufijo}`, tallerId],
     );
 
     const otroTecnico = await db.query(
-      `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ($1, $2, $3, 'tecnico') RETURNING id`,
-      [`tecnico2-e2e-${sufijo}@turnos.dev`, passwordHash, `Otro tecnico E2E ${sufijo}`],
+      `INSERT INTO usuarios (email, password_hash, nombre, rol, taller_id)
+       VALUES ($1, $2, $3, 'tecnico', $4) RETURNING id`,
+      [`tecnico2-e2e-${sufijo}@turnos.dev`, passwordHash, `Otro tecnico E2E ${sufijo}`, tallerId],
     );
 
     return {
       sufijo,
+      tallerId,
+      tallerNombre,
       bahiaId: bahia.rows[0].id,
       otraBahiaId: otraBahia.rows[0].id,
       servicioId: servicio.rows[0].id,
@@ -175,6 +197,9 @@ export async function limpiar(datos: DatosSembrados): Promise<void> {
         datos.otroTecnicoId,
       ],
     ]);
+    // El taller de la corrida, al final (Sprint 20). Sus relaciones con
+    // clientes creados por la UI caen solas (ON DELETE CASCADE).
+    await db.query('DELETE FROM talleres WHERE id = $1', [datos.tallerId]);
   });
 }
 
@@ -248,9 +273,9 @@ export async function sembrarTurnos(
 
       const fila = await db.query(
         `INSERT INTO turnos
-           (bahia_id, servicio_id, usuario_id, tecnico_id, rango_tiempo,
+           (taller_id, bahia_id, servicio_id, usuario_id, tecnico_id, rango_tiempo,
             estado, atencion_inicio, atencion_fin)
-         VALUES ($1, $2, $3, $4,
+         VALUES ($10, $1, $2, $3, $4,
                  tstzrange($5::timestamptz, $6::timestamptz, '[)'),
                  $7::estado_turno, $8::timestamptz, $9::timestamptz)
          RETURNING id`,
@@ -264,6 +289,7 @@ export async function sembrarTurnos(
           turno.estado,
           atencionInicio?.toISOString() ?? null,
           atencionFin?.toISOString() ?? null,
+          datos.tallerId,
         ],
       );
       ids.push(fila.rows[0].id);
@@ -321,4 +347,32 @@ export function horarioLaboral(hora: number, diasAdelante = 2): Date {
   const fecha = new Date(`${hoyEnTaller()}T00:00:00.000Z`);
   fecha.setUTCDate(fecha.getUTCDate() + diasAdelante);
   return aLasEnTaller(fecha.toISOString().slice(0, 10), hora);
+}
+
+/**
+ * Un superadmin de TurnoPro para la corrida (Sprint 20). No pertenece a
+ * ningun taller. Devuelve su correo; la contrasena es PASSWORD_DE_PRUEBA.
+ */
+export async function sembrarSuperadmin(sufijo: string): Promise<string> {
+  const email = `super-e2e-${sufijo}@turnos.dev`;
+  const passwordHash = await bcrypt.hash(PASSWORD_DE_PRUEBA, 10);
+  await conConexion((db) =>
+    db.query(
+      `INSERT INTO usuarios (email, password_hash, nombre, rol)
+       VALUES ($1, $2, 'Superadmin E2E', 'superadmin')`,
+      [email, passwordHash],
+    ),
+  );
+  return email;
+}
+
+/** Borra los talleres creados por la UI en la corrida (y su personal). */
+export async function borrarTalleresPorSlug(slugs: string[]): Promise<void> {
+  await conConexion(async (db) => {
+    await db.query(
+      'DELETE FROM usuarios WHERE taller_id IN (SELECT id FROM talleres WHERE slug = ANY($1))',
+      [slugs],
+    );
+    await db.query('DELETE FROM talleres WHERE slug = ANY($1)', [slugs]);
+  });
 }

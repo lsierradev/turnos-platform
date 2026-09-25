@@ -49,7 +49,7 @@ test.describe('Zona horaria del taller', () => {
 
     const token = await iniciarSesion(request, datos.clienteEmail);
     const respuesta = await request.post(`${URL_RESERVAS}/appointments`, {
-      headers: encabezados(token),
+      headers: encabezados(token, datos.tallerId),
       data: {
         bahiaId: datos.bahiaId,
         servicioId: datos.servicioId,

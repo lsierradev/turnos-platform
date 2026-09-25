@@ -1,4 +1,5 @@
 import {
+  Building2,
   CalendarClock,
   CalendarPlus,
   ChartColumn,
@@ -25,7 +26,11 @@ export interface ItemNavegacion {
  * El tecnico va directo a SU agenda: desde Sprint 9 solo puede leer la
  * propia, asi que un selector de tecnicos no le sirve.
  */
-export function itemsPara(usuario: UsuarioSesion | null): ItemNavegacion[] {
+export function itemsPara(
+  usuario: UsuarioSesion | null,
+  /** Superadmin: si ya eligio taller, ve ademas lo de un admin. */
+  hayTaller = false,
+): ItemNavegacion[] {
   const inicio: ItemNavegacion = {
     to: '/',
     etiqueta: 'Inicio',
@@ -37,7 +42,21 @@ export function itemsPara(usuario: UsuarioSesion | null): ItemNavegacion[] {
     etiqueta: 'Reservar',
     icono: CalendarPlus,
   };
+  const talleres: ItemNavegacion = { to: '/talleres', etiqueta: 'Talleres', icono: Building2 };
   switch (usuario?.rol) {
+    // Sprint 20: el superadmin administra talleres y, dentro del que elige,
+    // opera como un admin.
+    case 'superadmin':
+      return hayTaller
+        ? [
+            inicio,
+            talleres,
+            reservar,
+            { to: '/agenda', etiqueta: 'Agenda', icono: CalendarClock },
+            { to: '/admin', etiqueta: 'Panel', icono: Warehouse },
+            { to: '/dashboard', etiqueta: 'Dashboard', icono: ChartColumn },
+          ]
+        : [inicio, talleres];
     case 'admin':
       return [
         inicio,
@@ -74,4 +93,5 @@ export const ROL_LABEL: Record<UsuarioSesion['rol'], string> = {
   admin: 'Administrador',
   tecnico: 'Tecnico',
   cliente: 'Cliente',
+  superadmin: 'TurnoPro',
 };

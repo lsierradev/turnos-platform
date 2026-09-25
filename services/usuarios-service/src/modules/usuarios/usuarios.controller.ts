@@ -11,7 +11,9 @@ import {
 import { JwtAuthGuard, Rol, Roles, RolesGuard } from '@turnos-platform/auth';
 import type { Response } from 'express';
 import { ContrasenaService } from './contrasena.service';
+import { ContextoDb } from '@turnos-platform/tenant';
 import { CrearUsuarioDto } from './dto/crear-usuario.dto';
+import { RolUsuario } from './entities/usuario.entity';
 import { ListarUsuariosQueryDto } from './dto/listar-usuarios-query.dto';
 import { UsuariosService } from './usuarios.service';
 
@@ -20,6 +22,7 @@ export class UsuariosController {
   constructor(
     private readonly usuariosService: UsuariosService,
     private readonly contrasenaService: ContrasenaService,
+    private readonly db: ContextoDb,
   ) {}
 
   @Get('health')
@@ -45,7 +48,17 @@ export class UsuariosController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Rol.ADMIN)
   async crear(@Body() dto: CrearUsuarioDto) {
-    const usuario = await this.usuariosService.create(dto);
+    // Sprint 20: el personal nace en el taller de la sesion; el cliente es
+    // una cuenta global que queda relacionada con ese taller. Un superadmin
+    // tiene que haber elegido taller (X-Taller).
+    const tallerId = this.db.exigirTaller();
+    const esPersonal =
+      dto.rol === RolUsuario.ADMIN || dto.rol === RolUsuario.TECNICO;
+    const usuario = await this.usuariosService.create({
+      ...dto,
+      tallerId: esPersonal ? tallerId : null,
+      vincularA: esPersonal ? null : tallerId,
+    });
     const { passwordHash: _passwordHash, ...usuarioSinPassword } = usuario;
 
     // Sin password (Sprint 18): la cuenta nace con una al azar que nadie

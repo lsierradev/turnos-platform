@@ -187,8 +187,10 @@ export class NotificationsSchedulerService {
     destinatario: string,
   ): Promise<string | null> {
     const filas: { id: string }[] = await this.dataSource.query(
-      `INSERT INTO notificaciones (turno_id, canal, destinatario)
-       VALUES ($1, $2, $3)
+      // taller_id: el del turno (Sprint 20). Corre en modo sistema (job
+      // programado, sin request), asi que no hay contexto del que tomarlo.
+      `INSERT INTO notificaciones (turno_id, canal, destinatario, taller_id)
+       SELECT $1, $2, $3, t.taller_id FROM turnos t WHERE t.id = $1
        ON CONFLICT (turno_id, tipo, canal) DO NOTHING
        RETURNING id`,
       [turnoId, canal, destinatario],

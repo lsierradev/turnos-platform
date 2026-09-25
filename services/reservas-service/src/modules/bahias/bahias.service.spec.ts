@@ -1,3 +1,4 @@
+import { ContextoDb, DATA_SOURCE_TENANT } from '@turnos-platform/tenant';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
@@ -42,6 +43,9 @@ describe('BahiasService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BahiasService,
+        // Fuera de un request: modo sistema, usa los mocks de abajo.
+        ContextoDb,
+        { provide: DATA_SOURCE_TENANT, useExisting: DataSource },
         {
           provide: DataSource,
           useValue: {
@@ -211,7 +215,7 @@ describe('BahiasService', () => {
     it('cachea por zona y rango con TTL corto', async () => {
       await service.carga({ desde: '2024-01-08', hasta: '2024-01-14' });
 
-      const clave = 'carga-bahias:America/Bogota:2024-01-08:2024-01-14';
+      const clave = 'carga-bahias:sistema:America/Bogota:2024-01-08:2024-01-14';
       expect(cache.obtener).toHaveBeenCalledWith(clave);
       expect(cache.guardar).toHaveBeenCalledWith(clave, expect.any(Object), 5);
     });

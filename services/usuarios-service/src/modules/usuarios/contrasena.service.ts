@@ -57,6 +57,11 @@ export class ContrasenaService {
     return randomBytes(32).toString('hex');
   }
 
+  /** Hash de una contrasena inicial (nadie la conoce: se define por enlace). */
+  static hashInicial(): Promise<string> {
+    return bcrypt.hash(ContrasenaService.contrasenaInicial(), SALT_ROUNDS);
+  }
+
   async emitir(usuario: Usuario, motivo: MotivoToken): Promise<Emision> {
     const token = randomBytes(32).toString('base64url');
     const ahora = new Date();

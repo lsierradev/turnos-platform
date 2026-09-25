@@ -56,7 +56,7 @@ test.describe('HU2 - Conflicto de horario y sugerencias', () => {
       tecnicoId = datos.tecnicoId,
     } = opciones;
     return request.post(`${URL_RESERVAS}/appointments`, {
-      headers: encabezados(tokens[cliente]),
+      headers: encabezados(tokens[cliente], datos.tallerId),
       data: {
         bahiaId,
         servicioId: datos.servicioId,

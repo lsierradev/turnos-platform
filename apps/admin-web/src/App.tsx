@@ -9,6 +9,7 @@ import { RutaProtegida } from '@/features/auth/RutaProtegida';
 import { HomeView } from '@/features/home/HomeView';
 import { NoEncontradoView } from '@/features/home/NoEncontradoView';
 import { esReintentable } from '@/lib/errores';
+import { TallerProvider } from '@/lib/taller';
 
 // Carga diferida por pantalla (Sprint 19). Antes todo iba en un solo JS de
 // 992 kB (304 kB gzip): quien entraba al login descargaba Recharts entero.
@@ -31,6 +32,7 @@ const PanelAdministrativoView = perezoso(
   'PanelAdministrativoView',
 );
 const DashboardView = perezoso(() => import('@/features/dashboard/DashboardView'), 'DashboardView');
+const TalleresView = perezoso(() => import('@/features/talleres/TalleresView'), 'TalleresView');
 const DesignView = perezoso(() => import('@/features/design/DesignView'), 'DesignView');
 const OlvideView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'OlvideView');
 const RestablecerView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'RestablecerView');
@@ -56,6 +58,8 @@ export function App() {
         <BrowserRouter>
           {/* AuthProvider adentro del router: LoginView navega al entrar. */}
           <AuthProvider>
+            {/* Taller activo (Sprint 20): necesita la sesion y el QueryClient. */}
+            <TallerProvider>
             <Suspense
               fallback={
                 <div className="mx-auto max-w-5xl p-4 md:p-6">
@@ -79,6 +83,7 @@ export function App() {
                   />
                   <Route path="/reservar" element={<ReservaView />} />
                   <Route path="/mis-turnos" element={<MisTurnosView />} />
+                  <Route path="/talleres" element={<TalleresView />} />
                   <Route path="/admin" element={<PanelAdministrativoView />} />
                   <Route path="/dashboard" element={<DashboardView />} />
                   {/* Referencia interna del sistema de diseno (Sprint 13). */}
@@ -88,6 +93,7 @@ export function App() {
               </Route>
             </Routes>
             </Suspense>
+            </TallerProvider>
           </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>

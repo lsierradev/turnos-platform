@@ -26,6 +26,39 @@ const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? 'http://localhost:3002';
 // request. `null` = sin sesión.
 let tokens: Tokens | null = leerSesion();
 
+/*
+ * Taller elegido (Sprint 20): el cliente elige donde reservar y el
+ * superadmin en que taller opera. Va en el encabezado X-Taller de cada
+ * request. Al personal (admin, tecnico) el backend le ignora el encabezado:
+ * usa el taller de su token. Se recuerda entre sesiones del mismo
+ * navegador; al salir se olvida.
+ */
+const CLAVE_TALLER = 'turnos.taller';
+
+function leerTallerElegido(): string | null {
+  try {
+    return localStorage.getItem(CLAVE_TALLER);
+  } catch {
+    return null;
+  }
+}
+
+let tallerElegido: string | null = leerTallerElegido();
+
+export function obtenerTallerElegido(): string | null {
+  return tallerElegido;
+}
+
+export function establecerTallerElegido(id: string | null): void {
+  tallerElegido = id;
+  try {
+    if (id) localStorage.setItem(CLAVE_TALLER, id);
+    else localStorage.removeItem(CLAVE_TALLER);
+  } catch {
+    // Almacenamiento bloqueado: vale para esta pestana.
+  }
+}
+
 // Callback que el AuthProvider registra para enterarse de que la sesión se
 // perdió (refresh vencido) y poder redirigir al login.
 let alCerrarSesion: (() => void) | null = null;
@@ -70,6 +103,7 @@ export async function login(
 
 export function logout(): void {
   establecerTokens(null);
+  establecerTallerElegido(null);
 }
 
 /*
@@ -178,6 +212,7 @@ async function apiFetch<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (tokens) headers.Authorization = `Bearer ${tokens.accessToken}`;
+  if (tallerElegido) headers['X-Taller'] = tallerElegido;
   if (envio) headers['Content-Type'] = 'application/json';
 
   let respuesta: Response;
@@ -391,6 +426,8 @@ export interface MiTurno {
   bahia: string;
   servicio: { nombre: string; categoria: ServicioResumen['categoria'] };
   tecnico: string | null;
+  /** Un cliente puede reservar en varios talleres (Sprint 20). */
+  taller: { id: string; nombre: string } | null;
 }
 
 /** Los turnos de quien esta logueado: proximos y ultimos 90 dias. */
@@ -552,4 +589,41 @@ export function restablecerContrasena(token: string, password: string): Promise<
     method: 'POST',
     body: { token, password },
   });
+}
+
+// --- Talleres (usuarios-service, Sprint 20) ------------------------------
+
+export interface Taller {
+  id: string;
+  nombre: string;
+  slug: string;
+  activo: boolean;
+}
+
+/** Los que el usuario puede ver: activos, el propio y (superadmin) todos. */
+export function getTalleres(): Promise<Taller[]> {
+  return apiFetch<Taller[]>('/talleres', false, AUTH_URL);
+}
+
+export interface NuevoTaller {
+  nombre: string;
+  slug: string;
+  admin: { nombre: string; email: string };
+}
+
+export interface TallerCreado {
+  taller: Taller;
+  admin: { id: string; email: string; nombre: string };
+  invitacion: { enviado: boolean };
+}
+
+export function crearTaller(datos: NuevoTaller): Promise<TallerCreado> {
+  return apiFetch<TallerCreado>('/talleres', false, AUTH_URL, { method: 'POST', body: datos });
+}
+
+export function actualizarTaller(
+  id: string,
+  cambios: Partial<Pick<Taller, 'nombre' | 'activo'>>,
+): Promise<Taller> {
+  return apiFetch<Taller>(`/talleres/${id}`, false, AUTH_URL, { method: 'PATCH', body: cambios });
 }

@@ -1,3 +1,4 @@
+import { actuaComoAdmin } from '@/lib/sesion';
 import { Users } from 'lucide-react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { EstadoCargando, EstadoError, EstadoVacio } from '@/components/estados';
@@ -13,7 +14,7 @@ import { useTecnicosQuery } from './useTecnicosQuery';
  */
 export function SeleccionTecnicoView() {
   const { usuario } = useAuth();
-  const esAdmin = usuario?.rol === 'admin';
+  const esAdmin = actuaComoAdmin(usuario);
   const tecnicos = useTecnicosQuery(esAdmin);
   const navigate = useNavigate();
 

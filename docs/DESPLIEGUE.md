@@ -17,7 +17,10 @@ Sprint 10 · issue #43 · cómo llevar turnos-platform de este repo a un cluster
 | `admin-web` | `apps/admin-web/Dockerfile` | 8080 | — (estáticos) |
 
 Los tres se construyen con **la raíz del monorepo como contexto**, porque
-dependen de `packages/auth` y `packages/http`.
+dependen de `packages/auth`, `packages/http`, `packages/crypto` y
+`packages/tenant` (Sprint 20). Cada paquete nuevo tiene que sumar su
+`package.json` a los `COPY` del Dockerfile, o el `pnpm install` de la imagen
+no lo enlaza.
 
 ---
 
@@ -163,6 +166,56 @@ entre sí.
 
 Son aditivas, así que la versión vieja del código sigue funcionando contra el
 esquema nuevo mientras dura el rolling update.
+
+> **Excepción: la 015 (multi-taller, Sprint 20) no es compatible hacia atrás.**
+> Agrega `taller_id NOT NULL` a bahías, servicios, turnos y notificaciones:
+> la versión anterior de los servicios no lo completa y sus INSERT fallan.
+> Desplegar la 015 junto con los servicios del Sprint 20, sin rolling update
+> mixto (escalar a 0, migrar, subir la versión nueva).
+
+### Multi-taller y Row Level Security (Sprint 20)
+
+El aislamiento entre talleres lo hace Postgres, no solo el código:
+
+- Cada request autenticado corre en una transacción con
+  `SET LOCAL ROLE turnos_app` y el taller, usuario y rol en
+  `app.taller_id` / `app.usuario_id` / `app.rol`. Las políticas RLS de la
+  015 filtran con eso: si al código se le olvida un `WHERE`, igual no se ven datos de
+  otro taller.
+- **El usuario de la base con el que conectan los servicios tiene que ser
+  miembro de `turnos_app`.** La 015 lo otorga a quien la corre
+  (`GRANT turnos_app TO CURRENT_USER`). Síntoma si falta: todo request
+  autenticado da 500 con `permission denied to set role`.
+- Los servicios tienen que conectar como **dueño de las tablas** (el mismo
+  usuario del Job de migraciones), porque el dueño **saltea RLS** cuando no hay
+  contexto (login, links de contraseña, notificaciones programadas). Es a
+  propósito: son los únicos caminos en "modo sistema"
+  (`ContextoDb.sistema`). Con otro usuario, esos caminos no ven ninguna
+  fila y el login falla siempre. No agregar `FORCE ROW LEVEL SECURITY`.
+- **Tabla nueva = grants + políticas.** Toda migración que cree una tabla con
+  datos de un taller tiene que:
+  1. llevar `taller_id`;
+  2. hacer `GRANT … TO turnos_app`;
+  3. correr `ENABLE ROW LEVEL SECURITY` y crear sus políticas.
+
+  Sin el grant, el request falla con `permission denied`. Sin políticas, con
+  RLS activo no se ve ninguna fila.
+- Los datos que existían antes de la 015 quedaron en el taller
+  `00000000-0000-4000-8000-000000000001` ("Taller principal").
+
+**Crear el superadmin de TurnoPro.** No hay endpoint para esto a propósito.
+Se hace una vez por SQL, con el hash bcrypt de una contraseña temporal
+(generarlo con `node -e "require('bcryptjs').hash(process.argv[1],10).then(console.log)" '<temporal>'`
+desde `services/usuarios-service`):
+
+```sql
+INSERT INTO usuarios (email, password_hash, nombre, rol)
+VALUES ('ops@turnopro.co', '<hash>', 'TurnoPro', 'superadmin');
+```
+
+Después, cambiar la contraseña con "Olvidé mi contraseña". El superadmin da
+de alta los talleres desde `/talleres`; el alta crea al admin del taller y le
+manda el link para elegir su contraseña.
 
 ## 6. Verificar
 

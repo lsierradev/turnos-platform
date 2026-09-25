@@ -1,3 +1,4 @@
+import { actuaComoAdmin } from '@/lib/sesion';
 import { CalendarX2 } from 'lucide-react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { EstadoCargando, EstadoError, EstadoVacio } from '@/components/estados';
@@ -62,7 +63,7 @@ export function AgendaTecnicoView() {
   );
 
   const esPropia = usuario?.id === tecnicoId;
-  const esAdmin = usuario?.rol === 'admin';
+  const esAdmin = actuaComoAdmin(usuario);
   const tecnicos = useTecnicosQuery(esAdmin && idValido && !esPropia);
   const nombre = tecnicos.data?.find((t) => t.id === tecnicoId)?.nombre;
 

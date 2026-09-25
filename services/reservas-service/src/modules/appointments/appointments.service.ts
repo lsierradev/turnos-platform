@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ContextoDb } from '@turnos-platform/tenant';
 import { DataSource, Not, QueryFailedError, Raw, Repository } from 'typeorm';
 import {
   buscarTecnico,
@@ -41,6 +42,7 @@ const CONSTRAINT_TECNICO = 'turnos_tecnico_rango_excl';
 const CONSTRAINT_USUARIO = 'turnos_usuario_rango_excl';
 // Valores de rol_usuario (tabla de usuarios-service; ver tecnicos.util.ts).
 const ROL_ADMIN = 'admin';
+const ROL_SUPERADMIN = 'superadmin';
 const ROL_CLIENTE = 'cliente';
 
 function esErrorDeSolapamiento(error: unknown): boolean {
@@ -147,6 +149,8 @@ interface FilaMiTurno {
   servicioNombre: string;
   servicioCategoria: string;
   tecnicoNombre: string | null;
+  tallerId: string | null;
+  tallerNombre: string | null;
 }
 
 export interface MiTurno {
@@ -157,6 +161,8 @@ export interface MiTurno {
   bahia: string;
   servicio: { nombre: string; categoria: string };
   tecnico: string | null;
+  /** En que taller (Sprint 20: un cliente puede reservar en varios). */
+  taller: { id: string; nombre: string } | null;
 }
 
 export interface DisponibilidadResponse {
@@ -176,7 +182,31 @@ export class AppointmentsService {
     private readonly bahiasRepository: Repository<Bahia>,
     private readonly serviciosService: ServiciosService,
     private readonly dataSource: DataSource,
+    private readonly db: ContextoDb,
   ) {}
+
+  // Repositorios del request (transaccion con RLS, Sprint 20); fuera de un
+  // request, los inyectados (modo sistema y tests unitarios).
+  private get turnos() {
+    return this.db.repo(Turno, this.turnosRepository);
+  }
+  private get bahias() {
+    return this.db.repo(Bahia, this.bahiasRepository);
+  }
+  private get sql() {
+    return this.db.ejecutor(this.dataSource);
+  }
+
+  /**
+   * Un recurso de OTRO taller se trata como inexistente (404), igual que
+   * uno que no existe: no se confirma que el id sea valido en otro lado.
+   * RLS ya lo oculta casi siempre; esto cubre lo que un cliente puede ver
+   * de otros talleres por sus propios turnos (bahias y servicios usados).
+   */
+  private esDeOtroTaller(tallerDelRecurso: string | null | undefined): boolean {
+    const taller = this.db.tallerActual();
+    return taller !== null && tallerDelRecurso !== taller;
+  }
 
   /**
    * A nombre de quien queda el turno. Por defecto, de quien reserva (el
@@ -191,12 +221,13 @@ export class AppointmentsService {
     if (!clienteId || clienteId === usuario.sub) {
       return { usuarioId: usuario.sub, paraCliente: false };
     }
-    if (usuario.rol !== ROL_ADMIN) {
+    if (usuario.rol !== ROL_ADMIN && usuario.rol !== ROL_SUPERADMIN) {
       throw new ForbiddenException(
         'Solo un administrador puede reservar a nombre de otro usuario.',
       );
     }
-    const cliente = await buscarUsuario(this.dataSource, clienteId);
+    // RLS: solo aparecen los clientes relacionados con el taller (Sprint 20).
+    const cliente = await buscarUsuario(this.sql, clienteId);
     if (!cliente || cliente.rol !== ROL_CLIENTE) {
       throw new NotFoundException(
         `Cliente ${clienteId} no encontrado o no tiene rol de cliente`,
@@ -218,24 +249,28 @@ export class AppointmentsService {
     servicioId: string;
     tecnicoId: string;
   }) {
-    const bahia = await this.bahiasRepository.findOne({
+    const bahia = await this.bahias.findOne({
       where: { id: ids.bahiaId },
     });
-    if (!bahia || !bahia.activa) {
+    if (!bahia || !bahia.activa || this.esDeOtroTaller(bahia.tallerId)) {
       throw new NotFoundException(
         `Bahia ${ids.bahiaId} no encontrada o fuera de servicio`,
       );
     }
 
     const servicio = await this.serviciosService.findOne(ids.servicioId);
-    if (!servicio.activo) {
+    if (!servicio.activo || this.esDeOtroTaller(servicio.tallerId)) {
       throw new NotFoundException(
         `Servicio ${ids.servicioId} no esta disponible`,
       );
     }
 
-    const tecnico = await buscarTecnico(this.dataSource, ids.tecnicoId);
-    if (!tecnico || !esRolTecnico(tecnico.rol)) {
+    const tecnico = await buscarTecnico(this.sql, ids.tecnicoId);
+    if (
+      !tecnico ||
+      !esRolTecnico(tecnico.rol) ||
+      this.esDeOtroTaller(tecnico.tallerId)
+    ) {
       throw new NotFoundException(
         `Tecnico ${ids.tecnicoId} no encontrado o no tiene rol de tecnico`,
       );
@@ -280,7 +315,7 @@ export class AppointmentsService {
 
     // Un OR de tres filtros: cada rama la resuelve el GiST parcial de su
     // constraint EXCLUDE (bahia_id / tecnico_id / usuario_id primero).
-    const ocupados = await this.turnosRepository.find({
+    const ocupados = await this.turnos.find({
       where: [
         { ...enElDia, bahiaId: query.bahiaId },
         { ...enElDia, tecnicoId: query.tecnicoId },
@@ -310,7 +345,9 @@ export class AppointmentsService {
     dto: CreateAppointmentDto,
     usuarioId: string,
     paraCliente = false,
+    titularEsCliente = paraCliente,
   ): Promise<Turno> {
+    const tallerId = this.db.tallerActual();
     const { servicio } = await this.validarRecursos(dto);
 
     const inicio = new Date(dto.inicio);
@@ -318,7 +355,8 @@ export class AppointmentsService {
 
     validarHorarioReservable(inicio, fin);
 
-    const turno = this.turnosRepository.create({
+    const turno = this.turnos.create({
+      ...(tallerId ? { tallerId } : {}),
       bahiaId: dto.bahiaId,
       servicioId: dto.servicioId,
       tecnicoId: dto.tecnicoId,
@@ -327,7 +365,21 @@ export class AppointmentsService {
     });
 
     try {
-      return await this.turnosRepository.save(turno);
+      // Savepoint: si el INSERT choca (23P01), la transaccion del request
+      // sigue usable para buscar sugerencias (ver ContextoDb.conSavepoint).
+      const guardado = await this.db.conSavepoint(() =>
+        this.turnos.save(turno),
+      );
+      // El cliente queda relacionado con el taller donde reservo: desde ahi
+      // el taller lo ve entre sus clientes (Sprint 20).
+      if (tallerId && titularEsCliente) {
+        await this.db.query(
+          `INSERT INTO clientes_taller (taller_id, usuario_id) VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [tallerId, usuarioId],
+        );
+      }
+      return guardado;
     } catch (error) {
       if (esErrorDeSolapamiento(error)) {
         // Cual de las TRES constraints EXCLUDE se violo define tanto el
@@ -360,8 +412,10 @@ export class AppointmentsService {
   // dato medible. Sin este endpoint las columnas de 009 nunca se llenan y
   // GET /dashboard/kpis devuelve un dashboard vacio para siempre.
   async actualizarEstado(id: string, dto: ActualizarEstadoDto): Promise<Turno> {
-    const turno = await this.turnosRepository.findOne({ where: { id } });
-    if (!turno) {
+    const turno = await this.turnos.findOne({ where: { id } });
+    // Un turno de otro taller no existe para este request (RLS lo oculta
+    // salvo que sea del propio usuario; el cierre es del personal del taller).
+    if (!turno || this.esDeOtroTaller(turno.tallerId)) {
       throw new NotFoundException(`Turno ${id} no encontrado`);
     }
 
@@ -394,7 +448,7 @@ export class AppointmentsService {
     turno.atencionFin = esAtendido ? atencionFin : null;
 
     try {
-      return await this.turnosRepository.save(turno);
+      return await this.db.conSavepoint(() => this.turnos.save(turno));
     } catch (error) {
       // Desde 011 un cancelado libera su horario. Reactivarlo (sacarlo de
       // "cancelado") vuelve a hacerlo competir en las EXCLUDE: si otro
@@ -426,7 +480,9 @@ export class AppointmentsService {
    * igual que el detalle de bahia (usuarios es tabla de usuarios-service).
    */
   async misTurnos(usuarioId: string): Promise<MiTurno[]> {
-    const filas: FilaMiTurno[] = await this.dataSource.query(
+    // Sin filtro de taller: RLS deja ver los turnos propios de cualquier
+    // taller, y bahias/servicios/tecnicos de esos turnos (migracion 015).
+    const filas: FilaMiTurno[] = await this.sql.query(
       `SELECT t.id,
               lower(t.rango_tiempo) AS inicio,
               upper(t.rango_tiempo) AS fin,
@@ -434,11 +490,14 @@ export class AppointmentsService {
               b.nombre             AS "bahiaNombre",
               s.nombre             AS "servicioNombre",
               s.categoria          AS "servicioCategoria",
-              tec.nombre           AS "tecnicoNombre"
+              tec.nombre           AS "tecnicoNombre",
+              ta.id                AS "tallerId",
+              ta.nombre            AS "tallerNombre"
          FROM turnos t
          JOIN bahias b    ON b.id = t.bahia_id
          JOIN servicios s ON s.id = t.servicio_id
          LEFT JOIN usuarios tec ON tec.id = t.tecnico_id
+         LEFT JOIN talleres ta  ON ta.id = t.taller_id
         WHERE t.usuario_id = $1
           AND lower(t.rango_tiempo) >= now() - interval '90 days'
         ORDER BY lower(t.rango_tiempo) DESC
@@ -453,6 +512,9 @@ export class AppointmentsService {
       bahia: f.bahiaNombre,
       servicio: { nombre: f.servicioNombre, categoria: f.servicioCategoria },
       tecnico: f.tecnicoNombre,
+      taller: f.tallerId
+        ? { id: f.tallerId, nombre: f.tallerNombre ?? '' }
+        : null,
     }));
   }
 
@@ -483,7 +545,7 @@ export class AppointmentsService {
       zona,
     );
 
-    const turnosOcupados = await this.turnosRepository.find({
+    const turnosOcupados = await this.turnos.find({
       where: {
         ...filtro,
         // Desde 011 un cancelado no ocupa su horario: sugerirlo como

@@ -170,9 +170,34 @@ movimiento con `prefers-reduced-motion`.
 | — | Fuentes: se generan todos los subsets (cirílico, griego, vietnamita) | Sin cambio: el navegador baja solo los que usa la página (`unicode-range`); solo ocupan lugar en `dist/`. |
 
 **Regresión visual**: `e2e/visual/` (Edge, sin backend: API simulada y
-reloj fijo en el jueves 24/09/2026 14:30 del taller). 19 pantallas × 4
-(escritorio/celular × claro/oscuro) = 76 capturas.
+reloj fijo en el jueves 24/09/2026 14:30 del taller). 20 pantallas × 4
+(escritorio/celular × claro/oscuro) = 80 capturas (la 20 es la de talleres,
+Sprint 20). Tolerancia: 50 píxeles distintos por captura (`maxDiffPixels`);
+la anterior, 0,2 % del área, dejaba pasar un texto nuevo en el encabezado.
 `pnpm --filter @turnos-platform/e2e test:visual` compara y
 `test:visual:actualizar` regenera tras un cambio intencional. No corre en
 CI: las referencias son de Windows y el renderizado de fuentes cambia en
 Linux.
+
+## Sprint 20: multi-taller
+
+- **En qué taller estoy.** El encabezado muestra siempre el nombre del
+  taller activo. El admin y el técnico no pueden cambiarlo (es el de su
+  cuenta). El superadmin de TurnoPro lo elige en un `<select>` del
+  encabezado ("Taller en el que operas").
+- **Cambiar de taller descarta todo lo cargado.** Se invalidan todas las
+  consultas menos la lista de talleres. En la reserva, el formulario se
+  remonta (`key={tallerId}`): una bahía o un técnico elegidos en un taller no
+  pueden quedar seleccionados en otro.
+- **Cliente con varios talleres.** Si hay un solo taller activo, se elige
+  solo. Con más de uno, la reserva arranca con un selector "Taller", y sin
+  elegir muestra un estado vacío en lugar de catálogos mezclados. "Mis
+  turnos" junta los de todos los talleres y cada turno dice de cuál es.
+- **Talleres (`/talleres`, solo superadmin).** La pantalla lista, da de alta
+  con el admin del taller (le llega el correo para elegir contraseña), da de
+  baja o reactiva, y tiene "Operar acá". Dar de baja no borra nada y se
+  revierte con "Reactivar". Mientras está de baja, el personal de ese
+  taller no puede iniciar sesión.
+- **Regresión visual.** La vista de superadmin suma la pantalla de talleres.
+  Las capturas existentes cambiaron solo por el nombre del taller en el
+  encabezado.

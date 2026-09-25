@@ -21,7 +21,8 @@ export function tituloDeRuta(pathname: string, rol?: string): string {
   if (pathname === '/agenda') return 'Agenda';
   if (pathname.startsWith('/agenda/')) return rol === 'tecnico' ? 'Mi agenda' : 'Agenda del tecnico';
   if (pathname === '/admin') return 'Panel del taller';
-  if (pathname === '/dashboard') return rol === 'admin' ? 'Dashboard' : 'Mis indicadores';
+  if (pathname === '/dashboard') return rol === 'admin' || rol === 'superadmin' ? 'Dashboard' : 'Mis indicadores';
   if (pathname === '/design') return 'Sistema de diseno';
+  if (pathname === '/talleres') return 'Talleres';
   return 'Pagina no encontrada';
 }

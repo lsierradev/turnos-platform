@@ -31,6 +31,7 @@ describe('NotificationsProcessor', () => {
 
   const notificacionEmail: Notificacion = {
     id: 'notif-1',
+    tallerId: 'taller-1',
     turnoId: 't-1',
     canal: CanalNotificacion.EMAIL,
     destinatario: 'cliente@turnos.dev',

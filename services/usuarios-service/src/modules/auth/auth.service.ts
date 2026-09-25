@@ -32,6 +32,18 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales invalidas');
     }
 
+    // Personal de un taller dado de baja: no entra (Sprint 20). Se chequea
+    // DESPUES de la contrasena, para no revelar el estado del taller a
+    // quien no la sabe.
+    if (
+      usuario.tallerId &&
+      !(await this.usuariosService.tallerActivo(usuario.tallerId))
+    ) {
+      throw new UnauthorizedException(
+        'Tu taller esta dado de baja en TurnoPro.',
+      );
+    }
+
     return usuario;
   }
 
@@ -40,6 +52,7 @@ export class AuthService {
       sub: usuario.id,
       email: usuario.email,
       rol: usuario.rol,
+      taller: usuario.tallerId ?? null,
     };
 
     return {
@@ -91,6 +104,7 @@ export class AuthService {
         sub: usuario.id,
         email: usuario.email,
         rol: usuario.rol,
+        taller: usuario.tallerId ?? null,
       }),
     };
   }

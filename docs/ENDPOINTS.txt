@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 9 (QA y Beta cerrado)
+Actualizado: Sprint 20 (multi-taller)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -143,6 +143,9 @@ Dominio: turnos, bahias, servicios, disponibilidad, prevencion de double-booking
                 que vienen y los de los ultimos 90 dias, maximo 100, con
                 bahia, servicio y nombre del tecnico. Sin parametros: no hay
                 forma de pedir los de otro.
+                Desde Sprint 20 trae los de TODOS los talleres del cliente
+                (no filtra por X-Taller) y cada turno suma
+                "taller": { "id", "nombre" }.
 
 [GET] /bahias  (requiere Authorization: Bearer <accessToken>, cualquier rol)
   Descripcion : Bahias activas, solo { id, nombre }, ordenadas por nombre
@@ -373,7 +376,10 @@ Dominio: usuarios, tenants, autenticacion
       "accessToken": "...",
       "refreshToken": "..."
     }
-  Response 401: credenciales invalidas.
+  Response 401: credenciales invalidas; tambien personal de un taller dado
+                de baja (Sprint 20).
+  El access token (y el que emite /auth/refresh) lleva el claim "taller":
+  el uuid del taller para admin y tecnico, null para cliente y superadmin.
 
 [POST] /auth/olvide  (publico, Sprint 18)
   Body        : { "email": "maria@correo.com" }
@@ -428,6 +434,36 @@ Dominio: usuarios, tenants, autenticacion
   Response 400: email invalido, password < 8, nombre vacio, ciudad > 80.
   Response 409: "Ya existe un usuario con el correo <email>." (Sprint 17;
                 antes salia el mensaje crudo de Postgres).
+  Taller (Sprint 20): el usuario nace en el taller del admin. Un admin o
+  tecnico queda con ese taller_id; un cliente queda vinculado en
+  clientes_taller. "rol": "superadmin" no se acepta (400). Si el email ya
+  existe en OTRO taller sigue siendo 409 y no se vincula: el admin no puede
+  saber que clientes tiene otro taller. El cliente se vincula solo al
+  reservar ahi.
+
+[GET] /talleres  (cualquier autenticado; Sprint 20)
+  Descripcion : Talleres [{ id, nombre, slug, activo, creadoEn, actualizadoEn }].
+                Lo que ve cada uno lo decide RLS: los activos + el suyo; el
+                superadmin ve todos, incluidos los dados de baja.
+
+[POST] /talleres  (rol superadmin; Sprint 20)
+  Body        :
+    {
+      "nombre": "Taller Norte",
+      "slug": "norte",                       (minusculas, numeros y guiones)
+      "admin": { "nombre": "Ana Ruiz", "email": "ana@norte.co" }
+    }
+  Crea el taller y su admin en una transaccion. El admin recibe el enlace
+  para elegir su contrasena (igual que POST /usuarios sin password).
+  Response 201: { taller, admin: { id, email, nombre }, invitacion: { enviado } }
+  Response 409: slug o email del admin repetidos (mensaje dice cual).
+
+[PATCH] /talleres/:id  (rol superadmin; Sprint 20)
+  Body        : { "nombre"?: string, "activo"?: boolean }
+  "activo": false da de baja el taller: su personal ya no puede iniciar
+  sesion (401 "Tu taller esta dado de baja en TurnoPro.") y los requests con
+  ese taller responden 403. No borra datos.
+  Response 404: taller inexistente.
 
 [GET] /usuarios?rol=cliente|tecnico|admin  (rol admin)
   Descripcion : Lista usuarios (id, email, nombre, rol, telefono descifrado,
@@ -443,6 +479,19 @@ Correos (usuarios-service):
 Convenciones generales
 ----------------------------------------
 - Sin prefijo global todavia (ej. /api/v1) — pendiente de definir.
+- Multi-taller (Sprint 20). Todo dato de negocio es de un taller. El taller
+  del request se resuelve asi:
+    admin | tecnico   -> el claim "taller" del access token. X-Taller se
+                         ignora: no pueden operar en otro taller.
+    cliente | superadmin -> encabezado X-Taller: <uuid del taller>.
+  Sin taller, lo que lo necesita (reservar, catalogos, dashboard...)
+  responde 400 "Elegi un taller: falta el encabezado X-Taller.".
+  X-Taller mal formado -> 400; inexistente -> 404; dado de baja -> 403
+  (salvo superadmin).
+  El aislamiento lo aplica Postgres con Row Level Security (migracion 015):
+  un id de otro taller responde 404, como si no existiera.
+  El cliente es uno solo en toda la plataforma y puede reservar en varios
+  talleres; cada taller ve solo sus turnos con el.
 - Auth: Bearer JWT (access token de vida corta, 15m por defecto) validado por
   un guard reutilizable (@turnos-platform/auth). El refresh token dura 7 dias
   y solo se valida en /auth/refresh, nunca contra el guard.
@@ -459,7 +508,8 @@ Convenciones generales
   22P02 (uuid mal formado) -> 400, 23505/23503 -> 409.
 - Autorizacion por ROL (Sprint 9): JwtAuthGuard autentica, RolesGuard
   autoriza. Una ruta sin @Roles() sigue abierta a cualquier autenticado.
-  Matriz vigente:
+  Matriz vigente (superadmin pasa donde se pide admin, Sprint 20):
+    superadmin             -> POST /talleres, PATCH /talleres/:id
     admin                  -> POST/PATCH/DELETE /servicios
     admin | tecnico (suyo) -> GET /dashboard/kpis (Sprint 18)
     admin | tecnico        -> PATCH /appointments/:id/estado
@@ -469,7 +519,8 @@ Convenciones generales
     autenticado            -> POST /appointments, GET /servicios,
                               GET /appointments/disponibilidad (Sprint 17),
                               GET /bahias, GET /technicians,
-                              GET /appointments/mios (Sprint 18)
+                              GET /appointments/mios (Sprint 18),
+                              GET /talleres (Sprint 20)
     publico                -> POST /auth/login, /auth/olvide, /auth/restablecer
   Falta de permiso responde 403 (el token es valido); 401 queda solo para
   token ausente o invalido.

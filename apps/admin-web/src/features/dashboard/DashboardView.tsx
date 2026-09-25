@@ -1,3 +1,4 @@
+import { actuaComoAdmin } from '@/lib/sesion';
 import { useState } from 'react';
 import { ChartColumn, Download, Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import {
@@ -92,7 +93,7 @@ function StatTile({
  */
 export function DashboardView() {
   const { usuario } = useAuth();
-  const esAdmin = usuario?.rol === 'admin';
+  const esAdmin = actuaComoAdmin(usuario);
   const [from, setFrom] = useState(() => sumarDiasISO(hoyISO(), -6));
   const [to, setTo] = useState(hoyISO);
   const [tecnicoId, setTecnicoId] = useState('');

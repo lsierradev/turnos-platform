@@ -12,6 +12,12 @@ export enum Rol {
   ADMIN = 'admin',
   CLIENTE = 'cliente',
   TECNICO = 'tecnico',
+  /**
+   * Personal de TurnoPro (Sprint 20): da de alta talleres y puede operar
+   * como admin DENTRO del taller que elige (ver RolesGuard). No tiene
+   * taller propio.
+   */
+  SUPERADMIN = 'superadmin',
 }
 
 /**

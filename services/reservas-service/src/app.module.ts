@@ -3,7 +3,9 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { TenantModule } from '@turnos-platform/tenant';
 import { join } from 'path';
+import { DataSource } from 'typeorm';
 import { RedisCacheModule } from './common/redis-cache.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { BahiasModule } from './modules/bahias/bahias.module';
@@ -40,6 +42,8 @@ import { TechniciansModule } from './modules/technicians/technicians.module';
         prefix: config.get<string>('BULL_PREFIX') || 'bull',
       }),
     }),
+    // Contexto de taller + RLS por request (Sprint 20).
+    TenantModule.conDataSource(DataSource),
     ScheduleModule.forRoot(),
     RedisCacheModule,
     ReservasModule,

@@ -18,10 +18,13 @@ const B = ['b1b1b1b1-0000-4000-8000-000000000001', 'b1b1b1b1-0000-4000-8000-0000
 const S = ['5e5e5e5e-0000-4000-8000-000000000001', '5e5e5e5e-0000-4000-8000-000000000002', '5e5e5e5e-0000-4000-8000-000000000003'];
 export const IDS = { tecnico: T1, bahia: B[0], servicio: S[0] };
 
+// Sprint 20: el personal lleva su taller en el token.
+const TALLER = { id: '7a7a7a7a-0000-4000-8000-000000000001', nombre: 'Taller Centro', slug: 'centro', activo: true };
 const USUARIOS = {
-  admin: { sub: 'aaaaaaaa-0000-4000-8000-000000000001', email: 'admin@taller.dev', rol: 'admin' },
-  tecnico: { sub: T1, email: 'carlos@taller.dev', rol: 'tecnico' },
-  cliente: { sub: 'cccccccc-0000-4000-8000-000000000001', email: 'maria@correo.com', rol: 'cliente' },
+  admin: { sub: 'aaaaaaaa-0000-4000-8000-000000000001', email: 'admin@taller.dev', rol: 'admin', taller: TALLER.id },
+  tecnico: { sub: T1, email: 'carlos@taller.dev', rol: 'tecnico', taller: TALLER.id },
+  cliente: { sub: 'cccccccc-0000-4000-8000-000000000001', email: 'maria@correo.com', rol: 'cliente', taller: null },
+  superadmin: { sub: '5a5a5a5a-0000-4000-8000-000000000001', email: 'soporte@turnopro.dev', rol: 'superadmin', taller: null },
 } as const;
 export type Rol = keyof typeof USUARIOS;
 
@@ -229,6 +232,7 @@ function misTurnos() {
       bahia: BAHIAS[b].nombre,
       servicio: { nombre: SERVICIOS[s].nombre, categoria: SERVICIOS[s].categoria },
       tecnico: 'Carlos Rojas',
+      taller: { id: TALLER.id, nombre: TALLER.nombre },
     };
   };
   return [
@@ -254,6 +258,13 @@ export async function simularApi(page: Page, rol: Rol | null): Promise<void> {
       if (ruta === '/auth/olvide') return route.fulfill({ status: 202 });
       return responder(route, { message: 'No simulado' }, 501);
     }
+    if (ruta === '/talleres')
+      return responder(
+        route,
+        rol === 'superadmin'
+          ? [TALLER, { id: '7a7a7a7a-0000-4000-8000-000000000002', nombre: 'Taller Norte', slug: 'norte', activo: false }]
+          : [TALLER],
+      );
     if (ruta === '/bahias') return responder(route, BAHIAS);
     if (ruta === '/servicios') return responder(route, SERVICIOS);
     if (ruta === '/technicians') return responder(route, TECNICOS.map(({ id, nombre }) => ({ id, nombre })));

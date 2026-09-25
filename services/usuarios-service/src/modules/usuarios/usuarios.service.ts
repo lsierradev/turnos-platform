@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { ContextoDb } from '@turnos-platform/tenant';
 import { ContrasenaService } from './contrasena.service';
 import { RolUsuario, Usuario } from './entities/usuario.entity';
 
@@ -48,6 +49,10 @@ async function probarPostgres(
 }
 
 export interface CrearUsuarioInput {
+  /** Taller del personal (admin, tecnico). El cliente no lleva. */
+  tallerId?: string | null;
+  /** Cliente: taller con el que queda relacionado (clientes_taller). */
+  vincularA?: string | null;
   email: string;
   password?: string;
   nombre: string;
@@ -64,6 +69,7 @@ export class UsuariosService {
     @InjectRepository(Usuario)
     private readonly usuariosRepository: Repository<Usuario>,
     private readonly dataSource: DataSource,
+    private readonly db: ContextoDb,
   ) {}
 
   /**
@@ -95,6 +101,15 @@ export class UsuariosService {
     };
   }
 
+  /** Para el login: el personal de un taller dado de baja no entra. */
+  async tallerActivo(tallerId: string): Promise<boolean> {
+    const filas: { activo: boolean }[] = await this.usuariosRepository.query(
+      'SELECT activo FROM talleres WHERE id = $1',
+      [tallerId],
+    );
+    return filas[0]?.activo === true;
+  }
+
   findById(id: string): Promise<Usuario | null> {
     return this.usuariosRepository.findOne({ where: { id } });
   }
@@ -103,8 +118,39 @@ export class UsuariosService {
     return this.usuariosRepository.findOne({ where: { email } });
   }
 
-  findAll(rol?: RolUsuario): Promise<Usuario[]> {
-    return this.usuariosRepository.find({
+  /**
+   * Usuarios del taller de la sesion (Sprint 20): su personal y sus
+   * clientes (los relacionados en clientes_taller). Corre con RLS; el
+   * filtro explicito ademas saca lo que RLS deja ver por otros motivos (uno
+   * mismo, tecnicos de turnos propios en otros talleres).
+   */
+  async findAll(rol?: RolUsuario): Promise<Usuario[]> {
+    const tallerId = this.db.tallerActual();
+    const repo = this.db.repo(Usuario, this.usuariosRepository);
+    if (tallerId) {
+      const q = repo
+        .createQueryBuilder('u')
+        .select([
+          'u.id',
+          'u.email',
+          'u.nombre',
+          'u.rol',
+          'u.telefono',
+          'u.ciudad',
+          'u.creadoEn',
+          'u.actualizadoEn',
+        ])
+        .where(
+          `(u.taller_id = :taller OR EXISTS (
+             SELECT 1 FROM clientes_taller ct
+              WHERE ct.usuario_id = u.id AND ct.taller_id = :taller))`,
+          { taller: tallerId },
+        )
+        .orderBy('u.nombre', 'ASC');
+      if (rol) q.andWhere('u.rol = :rol', { rol });
+      return q.getMany();
+    }
+    return repo.find({
       where: rol ? { rol } : {},
       select: [
         'id',
@@ -134,9 +180,24 @@ export class UsuariosService {
       rol: input.rol ?? RolUsuario.CLIENTE,
       telefono: input.telefono,
       ciudad: input.ciudad?.trim() || null,
+      tallerId: input.tallerId ?? null,
     });
+    // Con el repositorio inyectado, no el del request: el alta corre en modo
+    // sistema. La cuenta de un cliente es global (no pertenece a ningun
+    // taller, asi que RLS no la dejaria crear), y ademas el enlace de
+    // contrasena que se emite despues tiene que ver la fila ya confirmada.
+    // Los permisos (quien crea que, en que taller) los decide el
+    // controller, antes de llegar aca.
     try {
-      return await this.usuariosRepository.save(usuario);
+      const guardado = await this.usuariosRepository.save(usuario);
+      if (input.vincularA) {
+        await this.usuariosRepository.query(
+          `INSERT INTO clientes_taller (taller_id, usuario_id) VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [input.vincularA, guardado.id],
+        );
+      }
+      return guardado;
     } catch (error) {
       // usuarios_email_key. El filtro global ya lo convertia en 409, pero
       // con el mensaje crudo de Postgres; desde Sprint 17 el admin da de

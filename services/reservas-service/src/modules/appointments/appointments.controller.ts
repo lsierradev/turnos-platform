@@ -56,7 +56,15 @@ export class AppointmentsController {
   ) {
     const { usuarioId, paraCliente } =
       await this.appointmentsService.resolverTitular(user, dto.clienteId);
-    return this.appointmentsService.create(dto, usuarioId, paraCliente);
+    // El turno queda a nombre de un cliente si lo reservo el mismo o si el
+    // admin lo hizo por el: en los dos casos se lo relaciona con el taller.
+    const titularEsCliente = paraCliente || user.rol === Rol.CLIENTE;
+    return this.appointmentsService.create(
+      dto,
+      usuarioId,
+      paraCliente,
+      titularEsCliente,
+    );
   }
 
   // Cerrar un turno no es una accion del cliente: define la tasa de

@@ -43,7 +43,7 @@ test.describe('HU1 - Reservar un turno', () => {
     const inicio = horarioLaboral(9);
 
     const respuesta = await request.post(`${URL_RESERVAS}/appointments`, {
-      headers: encabezados(token),
+      headers: encabezados(token, datos.tallerId),
       data: {
         bahiaId: datos.bahiaId,
         servicioId: datos.servicioId,
@@ -80,7 +80,7 @@ test.describe('HU1 - Reservar un turno', () => {
       `${URL_RESERVAS}/technicians/${datos.tecnicoId}/agenda?date=${fechaISO(
         inicio,
       )}`,
-      { headers: encabezados(tokenAdmin) },
+      { headers: encabezados(tokenAdmin, datos.tallerId) },
     );
     expect(agenda.status()).toBe(200);
     const turnos = await agenda.json();
@@ -93,7 +93,7 @@ test.describe('HU1 - Reservar un turno', () => {
     const inexistente = '00000000-0000-4000-8000-0000000000ff';
 
     const respuesta = await request.post(`${URL_RESERVAS}/appointments`, {
-      headers: encabezados(token),
+      headers: encabezados(token, datos.tallerId),
       data: {
         bahiaId: inexistente,
         servicioId: datos.servicioId,
@@ -111,7 +111,7 @@ test.describe('HU1 - Reservar un turno', () => {
     // El cliente sembrado existe como usuario, pero su rol es 'cliente'.
     // Sin esta comprobacion se le podrian asignar turnos a cualquiera.
     const respuesta = await request.post(`${URL_RESERVAS}/appointments`, {
-      headers: encabezados(token),
+      headers: encabezados(token, datos.tallerId),
       data: {
         bahiaId: datos.bahiaId,
         servicioId: datos.servicioId,
@@ -127,7 +127,7 @@ test.describe('HU1 - Reservar un turno', () => {
     request,
   }) => {
     const respuesta = await request.post(`${URL_RESERVAS}/appointments`, {
-      headers: encabezados(token),
+      headers: encabezados(token, datos.tallerId),
       data: {
         bahiaId: 'no-es-un-uuid',
         servicioId: datos.servicioId,
@@ -146,7 +146,7 @@ test.describe('HU1 - Reservar un turno', () => {
     // cualquier autenticado podia leerla pasando un id en la URL.
     const respuesta = await request.get(
       `${URL_RESERVAS}/technicians/${datos.tecnicoId}/agenda`,
-      { headers: encabezados(token) },
+      { headers: encabezados(token, datos.tallerId) },
     );
 
     expect(respuesta.status()).toBe(403);

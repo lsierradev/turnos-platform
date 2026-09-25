@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { createHash, randomBytes } from 'crypto';
+import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import * as request from 'supertest';
 import { DataSource } from 'typeorm';
@@ -26,6 +27,8 @@ import { HttpExceptionFilter } from '@turnos-platform/http';
 //
 // El test mas barato que cierra esa clase entera de fallas es simplemente
 // arrancar la aplicacion de verdad.
+// Taller de los datos de prueba: el 'Taller principal' de la migracion 015.
+const TALLER = '00000000-0000-4000-8000-000000000001';
 const DATABASE_URL = process.env.DATABASE_URL;
 const describirSiHayDb = DATABASE_URL ? describe : describe.skip;
 
@@ -60,8 +63,8 @@ describirSiHayDb('Usuarios (integration)', () => {
     dataSource = moduleRef.get(DataSource);
 
     const admin = await dataSource.query(
-      `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ('admin-integration-test@turnos.dev', 'hash', 'Admin Integration Test', 'admin')
+      `INSERT INTO usuarios (email, password_hash, nombre, rol, taller_id)
+       VALUES ('admin-integration-test@turnos.dev', 'hash', 'Admin Integration Test', 'admin', '00000000-0000-4000-8000-000000000001')
        RETURNING id`,
     );
     adminId = admin[0].id;
@@ -79,6 +82,7 @@ describirSiHayDb('Usuarios (integration)', () => {
         sub: adminId,
         email: 'admin-integration-test@turnos.dev',
         rol: 'admin',
+        taller: TALLER,
       },
       secret,
     );
@@ -197,6 +201,8 @@ describirSiHayDb('Usuarios (integration)', () => {
       expect(body.email).toBe('creado-por-integration-test@turnos.dev');
       expect(body.rol).toBe('tecnico');
       expect(body.passwordHash).toBeUndefined();
+      // Sprint 20: el personal nace en el taller del admin que lo crea.
+      expect(body.tallerId).toBe(TALLER);
     });
   });
 
@@ -360,6 +366,135 @@ describirSiHayDb('Usuarios (integration)', () => {
         [email],
       );
       expect(n).toBe(1);
+    });
+  });
+
+  describe('talleres (Sprint 20)', () => {
+    const sufijo = Date.now();
+    const slug = `taller-integ-${sufijo}`;
+    const emailAdmin = `admin-nuevo-${sufijo}@turnos.dev`;
+    const secret = process.env.JWT_SECRET ?? 'dev-secret-change-me';
+    // El superadmin no necesita fila: su rol va en el token y RLS lo lee.
+    const tokenSuper = () =>
+      jwt.sign(
+        {
+          sub: '99999999-0000-4000-8000-000000000001',
+          email: 's@turnopro.dev',
+          rol: 'superadmin',
+        },
+        secret,
+      );
+    let tallerId: string;
+    let adminNuevoId: string;
+
+    afterAll(async () => {
+      if (!dataSource) return;
+      await dataSource.query('DELETE FROM usuarios WHERE email = $1', [
+        emailAdmin,
+      ]);
+      await dataSource.query('DELETE FROM talleres WHERE slug = $1', [slug]);
+    });
+
+    it('el superadmin crea un taller con su primer admin, que recibe el enlace', async () => {
+      const { body } = await request(app.getHttpServer())
+        .post('/talleres')
+        .set('Authorization', `Bearer ${tokenSuper()}`)
+        .send({
+          nombre: 'Taller Integracion',
+          slug,
+          admin: { nombre: 'Admin Nuevo', email: emailAdmin },
+        })
+        .expect(201);
+
+      tallerId = body.taller.id;
+      adminNuevoId = body.admin.id;
+      expect(body.taller.slug).toBe(slug);
+      expect(body.invitacion).toEqual({ enviado: false });
+
+      const [admin] = await dataSource.query(
+        'SELECT rol, taller_id FROM usuarios WHERE id = $1',
+        [adminNuevoId],
+      );
+      expect(admin).toEqual({ rol: 'admin', taller_id: tallerId });
+      const tokens = await dataSource.query(
+        "SELECT 1 FROM tokens_contrasena WHERE usuario_id = $1 AND motivo = 'alta'",
+        [adminNuevoId],
+      );
+      expect(tokens).toHaveLength(1);
+    });
+
+    it('un slug repetido es 409 con mensaje claro', async () => {
+      const { body } = await request(app.getHttpServer())
+        .post('/talleres')
+        .set('Authorization', `Bearer ${tokenSuper()}`)
+        .send({
+          nombre: 'Otro',
+          slug,
+          admin: { nombre: 'Otro admin', email: `otro-${sufijo}@turnos.dev` },
+        })
+        .expect(409);
+      expect(body.message).toMatch(/identificador/);
+    });
+
+    it('un admin de taller no puede crear talleres', async () => {
+      await request(app.getHttpServer())
+        .post('/talleres')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          nombre: 'X',
+          slug: `x-${sufijo}`,
+          admin: { nombre: 'X', email: `x-${sufijo}@turnos.dev` },
+        })
+        .expect(403);
+    });
+
+    it('el admin nuevo entra con su taller en el token y solo ve a su gente', async () => {
+      await dataSource.query(
+        'UPDATE usuarios SET password_hash = $1 WHERE id = $2',
+        [await bcrypt.hash('clave-de-prueba', 4), adminNuevoId],
+      );
+      const login = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: emailAdmin, password: 'clave-de-prueba' })
+        .expect(200);
+      const payload = jwt.decode(login.body.accessToken) as {
+        taller: string;
+        rol: string;
+      };
+      expect(payload).toMatchObject({ rol: 'admin', taller: tallerId });
+
+      const { body: usuarios } = await request(app.getHttpServer())
+        .get('/usuarios')
+        .set('Authorization', `Bearer ${login.body.accessToken}`)
+        .expect(200);
+      // Solo el mismo: el admin y los clientes del Taller principal no.
+      expect(usuarios.map((u: { id: string }) => u.id)).toEqual([adminNuevoId]);
+    });
+
+    it('dado de baja: no aparece para los clientes y su personal no entra', async () => {
+      await request(app.getHttpServer())
+        .patch(`/talleres/${tallerId}`)
+        .set('Authorization', `Bearer ${tokenSuper()}`)
+        .send({ activo: false })
+        .expect(200);
+
+      const { body: visibles } = await request(app.getHttpServer())
+        .get('/talleres')
+        .set('Authorization', `Bearer ${clienteToken}`)
+        .expect(200);
+      expect(visibles.map((t: { id: string }) => t.id)).not.toContain(tallerId);
+
+      const { body: todos } = await request(app.getHttpServer())
+        .get('/talleres')
+        .set('Authorization', `Bearer ${tokenSuper()}`)
+        .expect(200);
+      expect(todos.map((t: { id: string }) => t.id)).toContain(tallerId);
+
+      const rechazo = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: emailAdmin, password: 'clave-de-prueba' })
+        .expect(401);
+      expect(rechazo.body.message).toMatch(/dado de baja/);
     });
   });
 });

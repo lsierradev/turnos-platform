@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ContextoDb } from '@turnos-platform/tenant';
 import { DataSource, Raw, Repository } from 'typeorm';
 import { buscarTecnico, esRolTecnico } from '../../common/tecnicos.util';
 import {
@@ -15,18 +16,35 @@ export class TechniciansService {
     @InjectRepository(Turno)
     private readonly turnosRepository: Repository<Turno>,
     private readonly dataSource: DataSource,
+    private readonly db: ContextoDb,
   ) {}
 
+  /**
+   * Tecnicos del taller de la sesion. Filtro explicito: RLS tambien le
+   * muestra al cliente los tecnicos que lo atendieron en otros talleres.
+   */
   async listar(): Promise<{ id: string; nombre: string }[]> {
-    return this.dataSource.query(
-      `SELECT id, nombre FROM usuarios WHERE rol = 'tecnico' ORDER BY nombre, id`,
+    return this.db.query(
+      `SELECT id, nombre FROM usuarios
+        WHERE rol = 'tecnico' AND ($1::uuid IS NULL OR taller_id = $1)
+        ORDER BY nombre, id`,
+      [this.db.tallerActual()],
+      this.dataSource,
     );
   }
 
   /** @param fecha dia de negocio, YYYY-MM-DD (ver fechaDeNegocio). */
   async agendaDelDia(tecnicoId: string, fecha: string): Promise<Turno[]> {
-    const tecnico = await buscarTecnico(this.dataSource, tecnicoId);
-    if (!tecnico || !esRolTecnico(tecnico.rol)) {
+    const tecnico = await buscarTecnico(
+      this.db.ejecutor(this.dataSource),
+      tecnicoId,
+    );
+    const taller = this.db.tallerActual();
+    if (
+      !tecnico ||
+      !esRolTecnico(tecnico.rol) ||
+      (taller !== null && tecnico.tallerId !== taller)
+    ) {
       throw new NotFoundException(
         `Tecnico ${tecnicoId} no encontrado o no tiene rol de tecnico`,
       );
@@ -54,7 +72,7 @@ export class TechniciansService {
     // La segunda condicion mantiene la semantica original ("turnos que
     // EMPIEZAN este dia", no los que vienen del dia anterior y todavia no
     // terminaron); && sola seria un superconjunto.
-    const turnos = await this.turnosRepository.find({
+    const turnos = await this.db.repo(Turno, this.turnosRepository).find({
       where: {
         tecnicoId,
         rangoTiempo: Raw(

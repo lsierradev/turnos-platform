@@ -89,7 +89,7 @@ test.describe('Panel del taller - carga por bahia', () => {
   test('un cliente no puede leer la carga', async ({ request }) => {
     const token = await iniciarSesion(request, datos.clienteEmail);
     const r = await request.get(`${URL_RESERVAS}/bahias/carga`, {
-      headers: encabezados(token),
+      headers: encabezados(token, datos.tallerId),
     });
     expect(r.status()).toBe(403);
   });

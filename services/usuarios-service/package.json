@@ -24,6 +24,7 @@
     "@turnos-platform/auth": "workspace:*",
     "@turnos-platform/crypto": "workspace:*",
     "@turnos-platform/http": "workspace:*",
+    "@turnos-platform/tenant": "workspace:*",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",

@@ -44,6 +44,13 @@ test.describe('Reserva desde el panel', () => {
     await iniciarSesionEnPanel(page, email, PASSWORD_DE_PRUEBA);
     await page.goto(`/reservar?fecha=${fecha}`);
 
+    // Sprint 20: el cliente elige en que taller reservar (siempre hay al
+    // menos dos activos: el de desarrollo y el de la corrida). El admin no
+    // elige: reserva en el suyo.
+    if (email !== datos.adminEmail) {
+      await page.getByLabel('Taller', { exact: true }).selectOption({ label: datos.tallerNombre });
+    }
+
     // Encadenado: el servicio y el tecnico esperan a lo anterior.
     await expect(page.getByLabel('Servicio')).toBeDisabled();
     await page.getByLabel('Bahia').selectOption({ label: `Bahia E2E ${datos.sufijo}` });
@@ -95,7 +102,7 @@ test.describe('Reserva desde el panel', () => {
     const tokenAdmin = await iniciarSesion(request, datos.adminEmail);
     const agenda = await request.get(
       `${URL_RESERVAS}/technicians/${datos.tecnicoId}/agenda?date=${fechaISO(inicio)}`,
-      { headers: encabezados(tokenAdmin) },
+      { headers: encabezados(tokenAdmin, datos.tallerId) },
     );
     const turnos = await agenda.json();
     expect(turnos).toHaveLength(1);
@@ -115,7 +122,7 @@ test.describe('Reserva desde el panel', () => {
     // Con OTRO tecnico, para que el choque sea solo el de la bahia.
     const tokenOtro = await iniciarSesion(request, datos.clientes[2].email);
     const ganador = await request.post(`${URL_RESERVAS}/appointments`, {
-      headers: encabezados(tokenOtro),
+      headers: encabezados(tokenOtro, datos.tallerId),
       data: {
         bahiaId: datos.bahiaId,
         servicioId: datos.servicioId,
@@ -155,7 +162,7 @@ test.describe('Reserva desde el panel', () => {
     const tokenAdmin = await iniciarSesion(request, datos.adminEmail);
     const agenda = await request.get(
       `${URL_RESERVAS}/technicians/${datos.tecnicoId}/agenda?date=${fechaISO(dia)}`,
-      { headers: encabezados(tokenAdmin) },
+      { headers: encabezados(tokenAdmin, datos.tallerId) },
     );
     return (await agenda.json()) as { usuarioId: string; rangoTiempo: { inicio: string } }[];
   }
@@ -208,7 +215,7 @@ test.describe('Reserva desde el panel', () => {
     const tokenAdmin = await iniciarSesion(request, datos.adminEmail);
     const clientes = await (
       await request.get(`${URL_USUARIOS}/usuarios?rol=cliente`, {
-        headers: encabezados(tokenAdmin),
+        headers: encabezados(tokenAdmin, datos.tallerId),
       })
     ).json();
     const nuevo = clientes.find((c: { email: string }) => c.email === emailClienteNuevo);

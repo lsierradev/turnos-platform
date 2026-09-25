@@ -6,7 +6,12 @@ export interface Tokens {
 export interface UsuarioSesion {
   id: string;
   email: string;
-  rol: 'admin' | 'tecnico' | 'cliente';
+  rol: 'admin' | 'tecnico' | 'cliente' | 'superadmin';
+  /**
+   * Taller del personal (admin, tecnico), Sprint 20. null para el cliente y
+   * el superadmin: ellos eligen taller (ver lib/taller.tsx).
+   */
+  taller: string | null;
 }
 
 const CLAVE = 'turnos.sesion';
@@ -86,6 +91,7 @@ export function usuarioDeToken(accessToken: string): UsuarioSesion | null {
       sub?: string;
       email?: string;
       rol?: string;
+      taller?: string | null;
     };
 
     if (!datos.sub || !datos.email || !datos.rol) {
@@ -95,8 +101,17 @@ export function usuarioDeToken(accessToken: string): UsuarioSesion | null {
       id: datos.sub,
       email: datos.email,
       rol: datos.rol as UsuarioSesion['rol'],
+      taller: datos.taller ?? null,
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * Admin, o superadmin operando dentro del taller que eligio (Sprint 20):
+ * para la interfaz son lo mismo. Los permisos reales los decide el backend.
+ */
+export function actuaComoAdmin(usuario: UsuarioSesion | null | undefined): boolean {
+  return usuario?.rol === 'admin' || usuario?.rol === 'superadmin';
 }

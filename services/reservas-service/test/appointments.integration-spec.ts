@@ -11,6 +11,12 @@ import { AppModule } from '../src/app.module';
 // concurrencia. No corre como parte de `pnpm test` (jest-integration.json es
 // un config separado, igual que jest-e2e.json) y se salta si no hay
 // DATABASE_URL.
+// Taller de los datos de prueba: el "Taller principal" que crea la migracion
+// 015 (Sprint 20). Los tokens de admin y tecnico lo llevan; los requests de
+// cliente lo mandan en X-Taller. El aislamiento ENTRE talleres se prueba
+// aparte, en tenant.integration-spec.ts.
+const TALLER = '00000000-0000-4000-8000-000000000001';
+
 const DATABASE_URL = process.env.DATABASE_URL;
 const describirSiHayDb = DATABASE_URL ? describe : describe.skip;
 
@@ -64,18 +70,18 @@ describirSiHayDb('Appointments (integration)', () => {
     dataSource = moduleRef.get(DataSource);
 
     const bahia = await dataSource.query(
-      "INSERT INTO bahias (nombre) VALUES ('Bahia integration test') RETURNING id",
+      "INSERT INTO bahias (nombre, taller_id) VALUES ('Bahia integration test', '00000000-0000-4000-8000-000000000001') RETURNING id",
     );
     bahiaId = bahia[0].id;
 
     const otraBahia = await dataSource.query(
-      "INSERT INTO bahias (nombre) VALUES ('Otra bahia integration test') RETURNING id",
+      "INSERT INTO bahias (nombre, taller_id) VALUES ('Otra bahia integration test', '00000000-0000-4000-8000-000000000001') RETURNING id",
     );
     otraBahiaId = otraBahia[0].id;
 
     const servicio = await dataSource.query(
-      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio)
-       VALUES ('Servicio integration test', 'mecanica', 30, 10000)
+      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio, taller_id)
+       VALUES ('Servicio integration test', 'mecanica', 30, 10000, '00000000-0000-4000-8000-000000000001')
        RETURNING id`,
     );
     servicioId = servicio[0].id;
@@ -95,8 +101,8 @@ describirSiHayDb('Appointments (integration)', () => {
     otroUsuarioId = otroUsuario[0].id;
 
     const tecnico = await dataSource.query(
-      `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ('tecnico-integration-test@turnos.dev', 'hash', 'Tecnico Integration Test', 'tecnico')
+      `INSERT INTO usuarios (email, password_hash, nombre, rol, taller_id)
+       VALUES ('tecnico-integration-test@turnos.dev', 'hash', 'Tecnico Integration Test', 'tecnico', '00000000-0000-4000-8000-000000000001')
        RETURNING id`,
     );
     tecnicoId = tecnico[0].id;
@@ -151,10 +157,12 @@ describirSiHayDb('Appointments (integration)', () => {
       request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .send(body),
       request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${otroToken}`)
+        .set('X-Taller', TALLER)
         .send(body),
     ]);
 
@@ -179,6 +187,7 @@ describirSiHayDb('Appointments (integration)', () => {
       request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .send({
           bahiaId,
           servicioId,
@@ -188,6 +197,7 @@ describirSiHayDb('Appointments (integration)', () => {
       request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${otroToken}`)
+        .set('X-Taller', TALLER)
         .send({
           bahiaId: otraBahiaId,
           servicioId,
@@ -212,13 +222,19 @@ describirSiHayDb('Appointments (integration)', () => {
     const server = app.getHttpServer();
     const inicio = new Date(horaLocalBogota(11, 5)).toISOString();
     const tokenAdmin = jwt.sign(
-      { sub: usuarioId, email: 'admin-integration@turnos.dev', rol: 'admin' },
+      {
+        sub: usuarioId,
+        email: 'admin-integration@turnos.dev',
+        rol: 'admin',
+        taller: TALLER,
+      },
       process.env.JWT_SECRET ?? 'dev-secret-change-me',
     );
     const reservar = (t: string) =>
       request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${t}`)
+        .set('X-Taller', TALLER)
         .send({ bahiaId, servicioId, tecnicoId, inicio });
 
     const original = await reservar(token).expect(201);
@@ -226,6 +242,7 @@ describirSiHayDb('Appointments (integration)', () => {
     await request(server)
       .patch(`/appointments/${original.body.id}/estado`)
       .set('Authorization', `Bearer ${tokenAdmin}`)
+      .set('X-Taller', TALLER)
       .send({ estado: 'cancelado' })
       .expect(200);
 
@@ -237,6 +254,7 @@ describirSiHayDb('Appointments (integration)', () => {
     const reactivar = await request(server)
       .patch(`/appointments/${original.body.id}/estado`)
       .set('Authorization', `Bearer ${tokenAdmin}`)
+      .set('X-Taller', TALLER)
       .send({ estado: 'programado' })
       .expect(409);
     expect(reactivar.body.message).toMatch(/No se puede reactivar/);
@@ -249,6 +267,7 @@ describirSiHayDb('Appointments (integration)', () => {
       const bahias = await request(server)
         .get('/bahias')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .expect(200);
       expect(bahias.body).toContainEqual({
         id: bahiaId,
@@ -258,6 +277,7 @@ describirSiHayDb('Appointments (integration)', () => {
       const tecnicos = await request(server)
         .get('/technicians')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .expect(200);
       const propio = tecnicos.body.find(
         (t: { id: string }) => t.id === tecnicoId,
@@ -275,6 +295,7 @@ describirSiHayDb('Appointments (integration)', () => {
       await request(server)
         .get('/bahias/carga')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .expect(403);
     });
 
@@ -286,6 +307,7 @@ describirSiHayDb('Appointments (integration)', () => {
       await request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${otroToken}`)
+        .set('X-Taller', TALLER)
         .send({ bahiaId, servicioId, tecnicoId, inicio })
         .expect(201);
 
@@ -293,6 +315,7 @@ describirSiHayDb('Appointments (integration)', () => {
         .get('/appointments/disponibilidad')
         .query({ bahiaId, servicioId, tecnicoId, fecha })
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .expect(200);
 
       const inicios = r.body.horarios.map((h: { inicio: string }) =>
@@ -308,6 +331,7 @@ describirSiHayDb('Appointments (integration)', () => {
       await request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .send({
           bahiaId,
           servicioId,
@@ -321,7 +345,12 @@ describirSiHayDb('Appointments (integration)', () => {
       const server = app.getHttpServer();
       const inicio = horaLocalBogota(15, 6);
       const tokenAdmin = jwt.sign(
-        { sub: usuarioId, email: 'admin-integration@turnos.dev', rol: 'admin' },
+        {
+          sub: usuarioId,
+          email: 'admin-integration@turnos.dev',
+          rol: 'admin',
+          taller: TALLER,
+        },
         process.env.JWT_SECRET ?? 'dev-secret-change-me',
       );
 
@@ -329,6 +358,7 @@ describirSiHayDb('Appointments (integration)', () => {
       await request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .send({
           bahiaId: otraBahiaId,
           servicioId,
@@ -341,6 +371,7 @@ describirSiHayDb('Appointments (integration)', () => {
       const creado = await request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${tokenAdmin}`)
+        .set('X-Taller', TALLER)
         .send({
           bahiaId: otraBahiaId,
           servicioId,
@@ -363,6 +394,7 @@ describirSiHayDb('Appointments (integration)', () => {
           clienteId: otroUsuarioId,
         })
         .set('Authorization', `Bearer ${tokenAdmin}`)
+        .set('X-Taller', TALLER)
         .expect(200);
       const inicios = r.body.horarios.map((h: { inicio: string }) =>
         new Date(h.inicio).getTime(),
@@ -373,6 +405,7 @@ describirSiHayDb('Appointments (integration)', () => {
       await request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${tokenAdmin}`)
+        .set('X-Taller', TALLER)
         .send({
           bahiaId,
           servicioId,
@@ -389,6 +422,7 @@ describirSiHayDb('Appointments (integration)', () => {
       const mio = await request(server)
         .post('/appointments')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .send({ bahiaId, servicioId, tecnicoId, inicio })
         .expect(201);
       // El otro cliente ya tiene turnos de los tests anteriores: ninguno
@@ -396,6 +430,7 @@ describirSiHayDb('Appointments (integration)', () => {
       const { body } = await request(server)
         .get('/appointments/mios')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .expect(200);
 
       const propio = body.find((t: { id: string }) => t.id === mio.body.id);
@@ -427,6 +462,7 @@ describirSiHayDb('Appointments (integration)', () => {
           sub: tecnicoId,
           email: 'tecnico-integration-test@turnos.dev',
           rol: 'tecnico',
+          taller: TALLER,
         },
         process.env.JWT_SECRET ?? 'dev-secret-change-me',
       );
@@ -435,6 +471,7 @@ describirSiHayDb('Appointments (integration)', () => {
         .get('/dashboard/kpis')
         .query({ tecnicoId: otroUsuarioId })
         .set('Authorization', `Bearer ${tokenTecnico}`)
+        .set('X-Taller', TALLER)
         .expect(200);
       expect(body.tecnicoId).toBe(tecnicoId);
       expect(body.anterior.rango).toBeDefined();
@@ -442,6 +479,7 @@ describirSiHayDb('Appointments (integration)', () => {
       await request(server)
         .get('/dashboard/kpis')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .expect(403);
     });
 
@@ -450,6 +488,7 @@ describirSiHayDb('Appointments (integration)', () => {
         .get('/appointments/disponibilidad')
         .query({ bahiaId })
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Taller', TALLER)
         .expect(400);
     });
   });

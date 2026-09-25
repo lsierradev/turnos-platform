@@ -2,6 +2,8 @@ import { LogOut, Palette, Wrench } from 'lucide-react';
 import { Suspense, useEffect, useRef } from 'react';
 import { EstadoCargando } from '@/components/estados';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { actuaComoAdmin } from '@/lib/sesion';
+import { useTaller } from '@/lib/taller';
 import { tituloDeRuta, useTituloPagina } from '@/lib/titulo';
 import { SelectorTema } from '@/components/SelectorTema';
 import { Badge } from '@/components/ui/badge';
@@ -121,6 +123,44 @@ function BarraInferior({ items }: { items: ItemNavegacion[] }) {
   );
 }
 
+/**
+ * En que taller se esta operando (Sprint 20). El superadmin lo cambia
+ * desde aca; para el resto es informativo (el cliente lo elige al reservar).
+ */
+function TallerActual() {
+  const { usuario } = useAuth();
+  const { taller, talleres, tallerId, elegir } = useTaller();
+  if (usuario?.rol === 'superadmin') {
+    return (
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="hidden sm:inline">Taller</span>
+        <select
+          aria-label="Taller en el que operas"
+          value={tallerId ?? ''}
+          onChange={(e) => e.target.value && elegir(e.target.value)}
+          className="h-8 max-w-40 rounded-lg border border-input bg-card px-2 text-sm text-foreground dark:bg-input/30"
+        >
+          <option value="" disabled>
+            Elegir…
+          </option>
+          {talleres.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.nombre}
+              {t.activo ? '' : ' (de baja)'}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+  if (!taller) return null;
+  return (
+    <span className="hidden max-w-48 truncate text-sm font-medium md:inline" data-testid="taller-actual">
+      {taller.nombre}
+    </span>
+  );
+}
+
 function Encabezado() {
   const { usuario, cerrarSesion } = useAuth();
   const inicial = usuario?.email.charAt(0).toUpperCase() ?? '?';
@@ -132,9 +172,14 @@ function Encabezado() {
         <div className="lg:hidden">
           <Marca compacta />
         </div>
-        <div className="hidden lg:block" />
+        <div className="hidden lg:block">
+          <TallerActual />
+        </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
+          <div className="lg:hidden">
+            <TallerActual />
+          </div>
           {usuario && (
             <div className="flex items-center gap-2">
               <span
@@ -200,7 +245,8 @@ function useFocoAlNavegar(main: React.RefObject<HTMLElement | null>, pathname: s
 
 export function AppLayout() {
   const { usuario } = useAuth();
-  const items = itemsPara(usuario);
+  const { tallerId } = useTaller();
+  const items = itemsPara(usuario, tallerId !== null);
   const { pathname } = useLocation();
   const main = useRef<HTMLElement>(null);
   useTituloPagina(tituloDeRuta(pathname, usuario?.rol));
@@ -217,7 +263,7 @@ export function AppLayout() {
       >
         Saltar al contenido
       </a>
-      <BarraLateral items={items} esAdmin={usuario?.rol === 'admin'} />
+      <BarraLateral items={items} esAdmin={actuaComoAdmin(usuario)} />
       <div className="lg:pl-60">
         <Encabezado />
         <main

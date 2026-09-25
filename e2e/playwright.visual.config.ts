@@ -41,9 +41,11 @@ export default defineConfig<OpcionesVisuales>({
   fullyParallel: true,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report-visual' }]],
   expect: {
-    // Tolerancia chica para el antialias; un cambio de color, espaciado o
-    // texto la supera de sobra.
-    toHaveScreenshot: { maxDiffPixelRatio: 0.002 },
+    // Tolerancia en PIXELES, no en proporcion: con 0.2% de una pagina
+    // completa (miles de pixeles) un texto nuevo chico pasaba sin aviso -- asi
+    // se escapo el nombre del taller en el encabezado (Sprint 20). Con Edge
+    // en la misma maquina las tomas salen identicas; 50 px cubren antialias.
+    toHaveScreenshot: { maxDiffPixels: 50 },
   },
   use: { baseURL: URL_WEB },
   projects: [

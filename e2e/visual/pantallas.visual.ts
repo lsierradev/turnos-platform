@@ -144,3 +144,13 @@ test.describe('cliente', () => {
     await capturar(page, 'cliente-mis-turnos');
   });
 });
+
+test.describe('superadmin', () => {
+  test.beforeEach(async ({ entrarComo }) => entrarComo('superadmin'));
+
+  test('talleres', async ({ page }) => {
+    await page.goto('/talleres');
+    await expect(page.getByRole('list', { name: 'Talleres' }).getByRole('listitem')).toHaveCount(2);
+    await capturar(page, 'superadmin-talleres');
+  });
+});

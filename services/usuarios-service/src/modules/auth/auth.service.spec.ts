@@ -92,14 +92,21 @@ describe('AuthService', () => {
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
       });
+      // Sprint 20: el token lleva el taller (null para un cliente).
       expect(jwtService.sign).toHaveBeenNthCalledWith(1, {
         sub: usuario.id,
         email: usuario.email,
         rol: usuario.rol,
+        taller: null,
       });
       expect(jwtService.sign).toHaveBeenNthCalledWith(
         2,
-        { sub: usuario.id, email: usuario.email, rol: usuario.rol },
+        {
+          sub: usuario.id,
+          email: usuario.email,
+          rol: usuario.rol,
+          taller: null,
+        },
         expect.objectContaining({ secret: expect.any(String) }),
       );
     });

@@ -5,10 +5,12 @@ import { Button } from '@/components/ui/button';
 import { EstadoError } from '@/components/estados';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { useTaller } from '@/lib/taller';
 import { separarTurnos, useMisTurnosQuery } from '@/features/mis-turnos/mis-turnos';
 import { TarjetaMiTurno } from '@/features/mis-turnos/MisTurnosView';
 
 const DESCRIPCION: Record<string, string> = {
+  Talleres: 'Alta de talleres y en cual operar.',
   Reservar: 'Nuevo turno con bahia, tecnico y horario.',
   Agenda: 'Turnos del dia por tecnico.',
   Panel: 'Carga de trabajo de cada bahia.',
@@ -73,7 +75,8 @@ function Acceso({
 export function HomeView() {
   const navigate = useNavigate();
   const { usuario } = useAuth();
-  const accesos = itemsPara(usuario).filter((i) => i.to !== '/');
+  const { tallerId } = useTaller();
+  const accesos = itemsPara(usuario, tallerId !== null).filter((i) => i.to !== '/');
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-6">
@@ -104,6 +107,14 @@ export function HomeView() {
             .map((item) => (
               <Acceso key={item.to} {...item} />
             ))}
+        </div>
+      )}
+
+      {usuario?.rol === 'superadmin' && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {accesos.map((item) => (
+            <Acceso key={item.to} {...item} />
+          ))}
         </div>
       )}
 

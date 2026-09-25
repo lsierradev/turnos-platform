@@ -39,6 +39,7 @@ export function TarjetaMiTurno({ turno }: { turno: MiTurno }) {
         </p>
         <p className="text-sm">{turno.servicio.nombre}</p>
         <p className="text-xs text-muted-foreground">
+          {turno.taller ? `${turno.taller.nombre} · ` : ''}
           {turno.bahia}
           {turno.tecnico ? ` · con ${turno.tecnico}` : ''}
         </p>

@@ -1,3 +1,4 @@
+import { ContextoDb, DATA_SOURCE_TENANT } from '@turnos-platform/tenant';
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
@@ -44,6 +45,9 @@ describe('DashboardService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DashboardService,
+        // Fuera de un request: modo sistema, usa los mocks de abajo.
+        ContextoDb,
+        { provide: DATA_SOURCE_TENANT, useExisting: DataSource },
         {
           provide: DataSource,
           useValue: {
@@ -327,10 +331,10 @@ describe('DashboardService', () => {
       await service.kpis({ from: '2024-01-08', to: '2024-01-09' });
 
       expect(cache.obtener).toHaveBeenCalledWith(
-        'kpis:America/Bogota:2024-01-08:2024-01-09:todos',
+        'kpis:sistema:America/Bogota:2024-01-08:2024-01-09:todos',
       );
       expect(cache.guardar).toHaveBeenCalledWith(
-        'kpis:America/Bogota:2024-01-08:2024-01-09:todos',
+        'kpis:sistema:America/Bogota:2024-01-08:2024-01-09:todos',
         expect.objectContaining({
           rango: { from: '2024-01-08', to: '2024-01-09' },
         }),
@@ -396,7 +400,7 @@ describe('DashboardService', () => {
       expect(params[3]).toBe('t-1');
       expect(r.tecnicoId).toBe('t-1');
       expect(cache.obtener).toHaveBeenCalledWith(
-        'kpis:America/Bogota:2024-01-08:2024-01-08:t-1',
+        'kpis:sistema:America/Bogota:2024-01-08:2024-01-08:t-1',
       );
     });
 

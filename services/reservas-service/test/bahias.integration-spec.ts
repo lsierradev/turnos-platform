@@ -9,6 +9,12 @@ import { AppModule } from '../src/app.module';
 // migraciones aplicadas; se salta si no hay DATABASE_URL. Los unit tests de
 // BahiasService mockean DataSource: esto es lo que prueba el SQL (recorte a
 // la jornada local, dia del taller, cancelados, CROSS JOIN de bahias).
+// Taller de los datos de prueba: el "Taller principal" que crea la migracion
+// 015 (Sprint 20). Los tokens de admin y tecnico lo llevan; los requests de
+// cliente lo mandan en X-Taller. El aislamiento ENTRE talleres se prueba
+// aparte, en tenant.integration-spec.ts.
+const TALLER = '00000000-0000-4000-8000-000000000001';
+
 const DATABASE_URL = process.env.DATABASE_URL;
 const describirSiHayDb = DATABASE_URL ? describe : describe.skip;
 
@@ -50,8 +56,8 @@ describirSiHayDb('Bahias - carga (integration)', () => {
     // con la llena: si no, las EXCLUDE de tecnico (006) y de cliente (010)
     // rechazarian el INSERT. Los NULL no participan de un EXCLUDE.
     await dataSource.query(
-      `INSERT INTO turnos (bahia_id, servicio_id, usuario_id, tecnico_id, rango_tiempo, estado)
-       VALUES ($1, $2, $3, $4, tstzrange($5::timestamptz, $6::timestamptz, '[)'), $7::estado_turno)`,
+      `INSERT INTO turnos (taller_id, bahia_id, servicio_id, usuario_id, tecnico_id, rango_tiempo, estado)
+       VALUES ('00000000-0000-4000-8000-000000000001', $1, $2, $3, $4, tstzrange($5::timestamptz, $6::timestamptz, '[)'), $7::estado_turno)`,
       [
         bahiaId,
         servicioId,
@@ -77,22 +83,22 @@ describirSiHayDb('Bahias - carga (integration)', () => {
 
     const sufijo = Date.now();
     const [a] = await dataSource.query(
-      `INSERT INTO bahias (nombre) VALUES ($1) RETURNING id`,
+      `INSERT INTO bahias (nombre, taller_id) VALUES ($1, '00000000-0000-4000-8000-000000000001') RETURNING id`,
       [`AAA carga llena ${sufijo}`],
     );
     const [b] = await dataSource.query(
-      `INSERT INTO bahias (nombre) VALUES ($1) RETURNING id`,
+      `INSERT INTO bahias (nombre, taller_id) VALUES ($1, '00000000-0000-4000-8000-000000000001') RETURNING id`,
       [`AAB carga bordes ${sufijo}`],
     );
     const [c] = await dataSource.query(
-      `INSERT INTO bahias (nombre, activa) VALUES ($1, false) RETURNING id`,
+      `INSERT INTO bahias (nombre, activa, taller_id) VALUES ($1, false, '00000000-0000-4000-8000-000000000001') RETURNING id`,
       [`AAC carga inactiva ${sufijo}`],
     );
     [bahiaLlena, bahiaBordes, bahiaInactiva] = [a.id, b.id, c.id];
 
     const [s] = await dataSource.query(
-      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio)
-       VALUES ('Servicio carga test', 'mecanica', 60, 10000) RETURNING id`,
+      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio, taller_id)
+       VALUES ('Servicio carga test', 'mecanica', 60, 10000, '00000000-0000-4000-8000-000000000001') RETURNING id`,
     );
     servicioId = s.id;
     const [cli] = await dataSource.query(
@@ -101,15 +107,20 @@ describirSiHayDb('Bahias - carga (integration)', () => {
       [`cliente-carga-${sufijo}@turnos.dev`],
     );
     const [tec] = await dataSource.query(
-      `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ($1, 'hash', 'Tecnico Carga', 'tecnico') RETURNING id`,
+      `INSERT INTO usuarios (email, password_hash, nombre, rol, taller_id)
+       VALUES ($1, 'hash', 'Tecnico Carga', 'tecnico', '00000000-0000-4000-8000-000000000001') RETURNING id`,
       [`tecnico-carga-${sufijo}@turnos.dev`],
     );
     [clienteId, tecnicoId] = [cli.id, tec.id];
 
     const secreto = process.env.JWT_SECRET ?? 'dev-secret-change-me';
     tokenAdmin = jwt.sign(
-      { sub: clienteId, email: 'admin-carga@turnos.dev', rol: 'admin' },
+      {
+        sub: clienteId,
+        email: 'admin-carga@turnos.dev',
+        rol: 'admin',
+        taller: TALLER,
+      },
       secreto,
     );
     tokenCliente = jwt.sign(
@@ -195,6 +206,7 @@ describirSiHayDb('Bahias - carga (integration)', () => {
     const { body } = await request(app.getHttpServer())
       .get(`/bahias/carga?${query}`)
       .set('Authorization', `Bearer ${tokenAdmin}`)
+      .set('X-Taller', TALLER)
       .expect(200);
     return body;
   }
@@ -257,6 +269,7 @@ describirSiHayDb('Bahias - carga (integration)', () => {
     const { body } = await request(app.getHttpServer())
       .get(`/bahias/${bahiaLlena}/turnos?fecha=${DIA}`)
       .set('Authorization', `Bearer ${tokenAdmin}`)
+      .set('X-Taller', TALLER)
       .expect(200);
 
     expect(body.turnos.map((t: { estado: string }) => t.estado)).toEqual([
@@ -278,6 +291,7 @@ describirSiHayDb('Bahias - carga (integration)', () => {
     await request(app.getHttpServer())
       .get('/bahias/carga')
       .set('Authorization', `Bearer ${tokenCliente}`)
+      .set('X-Taller', TALLER)
       .expect(403);
   });
 
@@ -285,10 +299,12 @@ describirSiHayDb('Bahias - carga (integration)', () => {
     await request(app.getHttpServer())
       .get('/bahias/00000000-0000-4000-8000-0000000000ff/turnos')
       .set('Authorization', `Bearer ${tokenAdmin}`)
+      .set('X-Taller', TALLER)
       .expect(404);
     await request(app.getHttpServer())
       .get('/bahias/no-es-uuid/turnos')
       .set('Authorization', `Bearer ${tokenAdmin}`)
+      .set('X-Taller', TALLER)
       .expect(400);
   });
 
@@ -300,6 +316,7 @@ describirSiHayDb('Bahias - carga (integration)', () => {
       await request(app.getHttpServer())
         .get(`/bahias/carga?${q}`)
         .set('Authorization', `Bearer ${tokenAdmin}`)
+        .set('X-Taller', TALLER)
         .expect(400);
     }
   });

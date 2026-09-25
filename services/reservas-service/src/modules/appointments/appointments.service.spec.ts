@@ -1,3 +1,4 @@
+import { ContextoDb, DATA_SOURCE_TENANT } from '@turnos-platform/tenant';
 import {
   BadRequestException,
   ConflictException,
@@ -34,6 +35,7 @@ describe('AppointmentsService', () => {
 
   const bahia: Bahia = {
     id: 'b-1',
+    tallerId: 'taller-1',
     nombre: 'Bahia 1',
     activa: true,
     creadoEn: new Date(),
@@ -42,6 +44,7 @@ describe('AppointmentsService', () => {
 
   const servicio: Servicio = {
     id: 's-1',
+    tallerId: 'taller-1',
     nombre: 'Cambio de aceite',
     categoria: CategoriaServicio.MECANICA,
     duracionMinutos: 30,
@@ -80,6 +83,9 @@ describe('AppointmentsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AppointmentsService,
+        // Fuera de un request: modo sistema, usa los mocks de abajo.
+        ContextoDb,
+        { provide: DATA_SOURCE_TENANT, useExisting: DataSource },
         {
           provide: getRepositoryToken(Turno),
           useValue: {

@@ -1,3 +1,4 @@
+import { ContextoDb, DATA_SOURCE_TENANT } from '@turnos-platform/tenant';
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -29,6 +30,9 @@ describe('TechniciansService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TechniciansService,
+        // Fuera de un request: modo sistema, usa los mocks de abajo.
+        ContextoDb,
+        { provide: DATA_SOURCE_TENANT, useExisting: DataSource },
         {
           provide: getRepositoryToken(Turno),
           useValue: { find: jest.fn() },

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { ContextoDb } from '@turnos-platform/tenant';
 import { RedisCacheService } from '../../common/redis-cache.service';
 import {
   fechaEnZona,
@@ -89,6 +90,7 @@ const SQL_KPIS = `
   WHERE lower(rango_tiempo) >= $1
     AND lower(rango_tiempo) <  $2
     AND ($4::uuid IS NULL OR tecnico_id = $4)
+    AND ($5::uuid IS NULL OR taller_id = $5)
   GROUP BY 1
   ORDER BY 1
 `;
@@ -173,6 +175,7 @@ export class DashboardService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly cache: RedisCacheService,
+    private readonly db: ContextoDb,
   ) {}
 
   /**
@@ -193,7 +196,10 @@ export class DashboardService {
     // configuracion conviven instancias con valores distintos sobre el
     // mismo Redis. Y el tecnico: sin el, un tecnico veria los numeros del
     // taller entero que dejo cacheados un admin (o al reves).
-    const claveCache = `kpis:${zona}:${from}:${to}:${tecnicoId ?? 'todos'}`;
+    // El taller va primero en la clave (Sprint 20): sin el, dos talleres
+    // compartirian los KPIs cacheados del mismo rango.
+    const tallerId = this.db.tallerActual();
+    const claveCache = `kpis:${tallerId ?? 'sistema'}:${zona}:${from}:${to}:${tecnicoId ?? 'todos'}`;
     const cacheado = await this.cache.obtener<KpisResponse>(claveCache);
     if (cacheado) {
       return cacheado;
@@ -203,7 +209,7 @@ export class DashboardService {
     // del periodo anterior y el reparto se hace en Node por fecha. Mismo
     // costo de ida y vuelta que antes, con el doble de dias escaneados por
     // el mismo indice.
-    const filas = await this.dataSource.transaction(async (manager) => {
+    const filas = await this.db.transaccion(async (manager) => {
       await manager.query(
         `SET LOCAL statement_timeout = ${TIMEOUT_CONSULTA_MS}`,
       );
@@ -212,8 +218,9 @@ export class DashboardService {
         hasta,
         zona,
         tecnicoId,
+        tallerId,
       ])) as FilaKpis[];
-    });
+    }, this.dataSource);
 
     const porDia = new Map<string, FilaKpis>();
     for (const fila of filas) {

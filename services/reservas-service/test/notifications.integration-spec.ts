@@ -94,13 +94,13 @@ describirSiHayInfra('Notificaciones (integration)', () => {
     scheduler = moduleRef.get(NotificationsSchedulerService);
 
     const bahia = await dataSource.query(
-      "INSERT INTO bahias (nombre) VALUES ('Bahia notif test') RETURNING id",
+      "INSERT INTO bahias (nombre, taller_id) VALUES ('Bahia notif test', '00000000-0000-4000-8000-000000000001') RETURNING id",
     );
     bahiaId = bahia[0].id;
 
     const servicio = await dataSource.query(
-      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio)
-       VALUES ('Servicio notif test', 'mecanica', 30, 10000)
+      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio, taller_id)
+       VALUES ('Servicio notif test', 'mecanica', 30, 10000, '00000000-0000-4000-8000-000000000001')
        RETURNING id`,
     );
     servicioId = servicio[0].id;
@@ -113,8 +113,8 @@ describirSiHayInfra('Notificaciones (integration)', () => {
     usuarioId = usuario[0].id;
 
     const tecnico = await dataSource.query(
-      `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ('notif-tecnico@turnos.dev', 'hash', 'Notif Tecnico', 'tecnico')
+      `INSERT INTO usuarios (email, password_hash, nombre, rol, taller_id)
+       VALUES ('notif-tecnico@turnos.dev', 'hash', 'Notif Tecnico', 'tecnico', '00000000-0000-4000-8000-000000000001')
        RETURNING id`,
     );
     tecnicoId = tecnico[0].id;
@@ -123,8 +123,8 @@ describirSiHayInfra('Notificaciones (integration)', () => {
     const inicio = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const fin = new Date(inicio.getTime() + 30 * 60 * 1000);
     const turno = await dataSource.query(
-      `INSERT INTO turnos (bahia_id, servicio_id, usuario_id, tecnico_id, rango_tiempo)
-       VALUES ($1, $2, $3, $4, tstzrange($5, $6, '[)'))
+      `INSERT INTO turnos (taller_id, bahia_id, servicio_id, usuario_id, tecnico_id, rango_tiempo)
+       VALUES ('00000000-0000-4000-8000-000000000001', $1, $2, $3, $4, tstzrange($5, $6, '[)'))
        RETURNING id`,
       [bahiaId, servicioId, usuarioId, tecnicoId, inicio, fin],
     );

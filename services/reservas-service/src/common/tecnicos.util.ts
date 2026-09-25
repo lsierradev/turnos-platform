@@ -1,8 +1,13 @@
-import { DataSource } from 'typeorm';
+/** Lo unico que se necesita para consultar: DataSource, EntityManager o ContextoDb.ejecutor(). */
+export interface Consultable {
+  query(sql: string, params?: unknown[]): Promise<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+}
 
 export interface TecnicoRow {
   id: string;
   rol: string;
+  /** Taller del personal (Sprint 20); null para clientes. */
+  tallerId: string | null;
 }
 
 const ROL_TECNICO = 'tecnico';
@@ -16,11 +21,11 @@ const ROL_TECNICO = 'tecnico';
  * convertirse en una llamada HTTP a ese servicio.
  */
 export async function buscarUsuario(
-  dataSource: DataSource,
+  db: Consultable,
   usuarioId: string,
 ): Promise<TecnicoRow | null> {
-  const filas: TecnicoRow[] = await dataSource.query(
-    'SELECT id, rol FROM usuarios WHERE id = $1',
+  const filas: TecnicoRow[] = await db.query(
+    'SELECT id, rol, taller_id AS "tallerId" FROM usuarios WHERE id = $1',
     [usuarioId],
   );
   return filas[0] ?? null;

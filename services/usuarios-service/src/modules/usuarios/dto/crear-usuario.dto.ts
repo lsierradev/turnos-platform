@@ -1,6 +1,6 @@
 import {
   IsEmail,
-  IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
@@ -23,8 +23,11 @@ export class CrearUsuarioDto {
   @MinLength(1)
   nombre: string;
 
+  // Superadmin no: se crea solo por seed, nunca desde la API (Sprint 20).
   @IsOptional()
-  @IsEnum(RolUsuario)
+  @IsIn([RolUsuario.ADMIN, RolUsuario.TECNICO, RolUsuario.CLIENTE], {
+    message: 'rol debe ser admin, tecnico o cliente',
+  })
   rol?: RolUsuario;
 
   @IsOptional()

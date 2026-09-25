@@ -28,6 +28,12 @@ export async function iniciarSesion(
   return accessToken;
 }
 
-export function encabezados(token: string): Record<string, string> {
-  return { Authorization: `Bearer ${token}` };
+/**
+ * @param tallerId el taller del request (Sprint 20). El cliente lo necesita
+ *   para reservar; al personal el backend se lo ignora (usa el de su token).
+ */
+export function encabezados(token: string, tallerId?: string): Record<string, string> {
+  return tallerId
+    ? { Authorization: `Bearer ${token}`, 'X-Taller': tallerId }
+    : { Authorization: `Bearer ${token}` };
 }

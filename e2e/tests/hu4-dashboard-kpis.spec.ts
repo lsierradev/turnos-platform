@@ -148,7 +148,7 @@ test.describe('HU4 - Dashboard de indicadores', () => {
 
     const respuesta = await request.get(
       `${URL_RESERVAS}/dashboard/kpis?from=${DIA_A}&to=${DIA_B}`,
-      { headers: encabezados(tokenCliente) },
+      { headers: encabezados(tokenCliente, datos.tallerId) },
     );
 
     expect(respuesta.status()).toBe(403);

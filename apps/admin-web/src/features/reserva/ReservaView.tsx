@@ -1,3 +1,4 @@
+import { actuaComoAdmin } from '@/lib/sesion';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarCheck,
@@ -13,6 +14,7 @@ import { NavegadorFecha } from '@/components/NavegadorFecha';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { useTaller } from '@/lib/taller';
 import {
   ApiError,
   crearCliente,
@@ -100,9 +102,71 @@ class ErrorAltaCliente extends Error {
  * compartir el link no pierde lo elegido. El horario no: un horario libre
  * de hace un rato no es una promesa.
  */
+/**
+ * Sprint 20: en que taller se reserva. El personal no elige (es el de su
+ * token). El cliente elige si tiene mas de un taller disponible; el
+ * superadmin, en el encabezado. Cambiar de taller remonta el formulario
+ * (key): una bahia o un tecnico elegidos no pueden pasar de un taller a otro.
+ */
 export function ReservaView() {
   const { usuario } = useAuth();
-  const esAdmin = usuario?.rol === 'admin';
+  const { tallerId, talleres, cargando, elegir } = useTaller();
+  const activos = talleres.filter((t) => t.activo);
+  const clienteElige = usuario?.rol === 'cliente' && activos.length > 1;
+
+  const selector = clienteElige ? (
+    <Card>
+      <CardContent>
+        <label className="flex flex-col gap-1.5 text-sm sm:flex-row sm:items-center sm:gap-3">
+          <span className="font-medium">Taller</span>
+          <select
+            aria-label="Taller"
+            value={tallerId ?? ''}
+            onChange={(e) => e.target.value && elegir(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-card px-2.5 text-sm dark:bg-input/30 sm:w-72"
+          >
+            <option value="" disabled>
+              Elegir taller…
+            </option>
+            {activos.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nombre}
+              </option>
+            ))}
+          </select>
+        </label>
+      </CardContent>
+    </Card>
+  ) : null;
+
+  if (!tallerId) {
+    return (
+      <Contenedor>
+        {cargando ? (
+          <EstadoCargando etiqueta="Cargando talleres…" />
+        ) : (
+          <>
+            {selector}
+            <EstadoVacio
+              icono={Clock}
+              titulo="Elegi un taller"
+              descripcion={
+                usuario?.rol === 'superadmin'
+                  ? 'Elegi en que taller operas desde el encabezado.'
+                  : 'Elegi en que taller queres reservar.'
+              }
+            />
+          </>
+        )}
+      </Contenedor>
+    );
+  }
+  return <ReservaFormulario key={tallerId} selector={selector} />;
+}
+
+function ReservaFormulario({ selector }: { selector: ReactNode }) {
+  const { usuario } = useAuth();
+  const esAdmin = actuaComoAdmin(usuario);
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
 
@@ -314,6 +378,7 @@ export function ReservaView() {
 
   return (
     <Contenedor>
+      {selector}
       {catalogoConError ? (
         <EstadoError error={catalogoConError.error} onReintentar={catalogoConError.refetch} />
       ) : (

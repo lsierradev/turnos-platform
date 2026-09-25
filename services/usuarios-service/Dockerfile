@@ -28,6 +28,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 # ese paquete no tenga nada que ver con esta imagen.
 COPY packages/auth/package.json packages/auth/
 COPY packages/http/package.json packages/http/
+COPY packages/crypto/package.json packages/crypto/
+COPY packages/tenant/package.json packages/tenant/
 COPY packages/database/package.json packages/database/
 COPY services/reservas-service/package.json services/reservas-service/
 COPY services/usuarios-service/package.json services/usuarios-service/

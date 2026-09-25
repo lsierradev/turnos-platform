@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { ContextoDb } from '@turnos-platform/tenant';
 import { RedisCacheService } from '../../common/redis-cache.service';
 import {
   fechaEnZona,
@@ -77,6 +78,7 @@ const SQL_CARGA = `
     WHERE lower(t.rango_tiempo) >= $6
       AND lower(t.rango_tiempo) <  $7
       AND t.estado <> 'cancelado'
+      AND ($8::uuid IS NULL OR t.taller_id = $8)
     GROUP BY 1, 2
   )
   SELECT
@@ -89,6 +91,7 @@ const SQL_CARGA = `
   CROSS JOIN dias d
   LEFT JOIN ocupacion o ON o.bahia_id = b.id AND o.dia = d.dia
   WHERE b.activa
+    AND ($8::uuid IS NULL OR b.taller_id = $8)
   ORDER BY b.nombre, b.id, d.dia
 `;
 
@@ -182,12 +185,21 @@ export class BahiasService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly cache: RedisCacheService,
+    private readonly db: ContextoDb,
   ) {}
 
-  /** Bahias en servicio, para elegir una al reservar. */
+  /**
+   * Bahias en servicio del taller de la sesion, para elegir una al
+   * reservar. Filtro explicito: RLS tambien le muestra al cliente las
+   * bahias de sus turnos en otros talleres.
+   */
   listarActivas(): Promise<{ id: string; nombre: string }[]> {
-    return this.dataSource.query(
-      'SELECT id, nombre FROM bahias WHERE activa ORDER BY nombre, id',
+    return this.db.query(
+      `SELECT id, nombre FROM bahias
+        WHERE activa AND ($1::uuid IS NULL OR taller_id = $1)
+        ORDER BY nombre, id`,
+      [this.db.tallerActual()],
+      this.dataSource,
     );
   }
 
@@ -197,13 +209,16 @@ export class BahiasService {
 
     // Misma forma de clave que el dashboard: la zona entra porque el mismo
     // rango cubre instantes distintos segun TZ_NEGOCIO.
-    const claveCache = `carga-bahias:${zona}:${desde}:${hasta}`;
+    // El taller va en la clave (Sprint 20): sin el, un taller veria la carga
+    // que dejo en cache otro.
+    const tallerId = this.db.tallerActual();
+    const claveCache = `carga-bahias:${tallerId ?? 'sistema'}:${zona}:${desde}:${hasta}`;
     const cacheado = await this.cache.obtener<CargaResponse>(claveCache);
     if (cacheado) {
       return cacheado;
     }
 
-    const filas = await this.dataSource.transaction(async (manager) => {
+    const filas = await this.db.transaccion(async (manager) => {
       await manager.query(
         `SET LOCAL statement_timeout = ${TIMEOUT_CONSULTA_MS}`,
       );
@@ -215,8 +230,9 @@ export class BahiasService {
         horaSql(JORNADA.cierre),
         inicioDelDiaEnZona(desde, zona),
         inicioDelDiaEnZona(sumarDiasFecha(hasta, 1), zona),
+        tallerId,
       ])) as FilaCarga[];
-    });
+    }, this.dataSource);
 
     const bahias = new Map<string, CargaBahia>();
     for (const fila of filas) {
@@ -277,19 +293,25 @@ export class BahiasService {
     const fecha = fechaQuery ?? fechaEnZona(new Date(), zona);
     this.validarFecha(fecha, 'fecha');
 
-    const [bahia] = (await this.dataSource.query(
-      'SELECT id, nombre, activa FROM bahias WHERE id = $1',
-      [bahiaId],
+    const [bahia] = (await this.db.query(
+      `SELECT id, nombre, activa FROM bahias
+        WHERE id = $1 AND ($2::uuid IS NULL OR taller_id = $2)`,
+      [bahiaId, this.db.tallerActual()],
+      this.dataSource,
     )) as TurnosBahiaResponse['bahia'][];
     if (!bahia) {
       throw new NotFoundException(`Bahia ${bahiaId} no encontrada`);
     }
 
-    const filas = (await this.dataSource.query(SQL_TURNOS_BAHIA, [
-      bahiaId,
-      inicioDelDiaEnZona(fecha, zona),
-      inicioDelDiaEnZona(sumarDiasFecha(fecha, 1), zona),
-    ])) as Array<{
+    const filas = (await this.db.query(
+      SQL_TURNOS_BAHIA,
+      [
+        bahiaId,
+        inicioDelDiaEnZona(fecha, zona),
+        inicioDelDiaEnZona(sumarDiasFecha(fecha, 1), zona),
+      ],
+      this.dataSource,
+    )) as Array<{
       id: string;
       inicio: Date;
       fin: Date;

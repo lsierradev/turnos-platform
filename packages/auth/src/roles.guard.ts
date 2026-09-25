@@ -38,7 +38,13 @@ export class RolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<{ user?: JwtPayload }>();
     const rol = request.user?.rol;
 
-    if (!rol || !rolesRequeridos.includes(rol as Rol)) {
+    // El superadmin puede todo lo que puede un admin, pero siempre dentro
+    // del taller que eligio: el aislamiento lo sigue poniendo la base
+    // (Row Level Security), no este guard.
+    const esSuperadminComoAdmin =
+      rol === Rol.SUPERADMIN && rolesRequeridos.includes(Rol.ADMIN);
+
+    if (!rol || (!rolesRequeridos.includes(rol as Rol) && !esSuperadminComoAdmin)) {
       // 403 y no 401: el token es valido, lo que falta es permiso. Mezclar
       // los dos haria que el frontend mande a re-loguear a alguien que ya
       // esta logueado y nunca va a poder entrar.

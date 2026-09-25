@@ -12,6 +12,12 @@ import { AppModule } from '../src/app.module';
 // aritmetica de los KPIs pero NO el SQL: un error de sintaxis, un nombre de
 // columna mal escrito o un predicado que no matchea el indice pasarian
 // invisibles. Eso es lo que cubre este archivo.
+// Taller de los datos de prueba: el "Taller principal" que crea la migracion
+// 015 (Sprint 20). Los tokens de admin y tecnico lo llevan; los requests de
+// cliente lo mandan en X-Taller. El aislamiento ENTRE talleres se prueba
+// aparte, en tenant.integration-spec.ts.
+const TALLER = '00000000-0000-4000-8000-000000000001';
+
 const DATABASE_URL = process.env.DATABASE_URL;
 const describirSiHayDb = DATABASE_URL ? describe : describe.skip;
 
@@ -62,9 +68,9 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
 
     await dataSource.query(
       `INSERT INTO turnos
-         (bahia_id, servicio_id, usuario_id, tecnico_id, rango_tiempo,
+         (taller_id, bahia_id, servicio_id, usuario_id, tecnico_id, rango_tiempo,
           estado, atencion_inicio, atencion_fin)
-       VALUES ($1, $2, $3, $4, tstzrange($5::timestamptz, $6::timestamptz, '[)'),
+       VALUES ('00000000-0000-4000-8000-000000000001', $1, $2, $3, $4, tstzrange($5::timestamptz, $6::timestamptz, '[)'),
                $7::estado_turno, $8::timestamptz, $9::timestamptz)`,
       [
         bahiaId,
@@ -94,13 +100,13 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
     dataSource = moduleRef.get(DataSource);
 
     const bahia = await dataSource.query(
-      "INSERT INTO bahias (nombre) VALUES ('Bahia dashboard test') RETURNING id",
+      "INSERT INTO bahias (nombre, taller_id) VALUES ('Bahia dashboard test', '00000000-0000-4000-8000-000000000001') RETURNING id",
     );
     bahiaId = bahia[0].id;
 
     const servicio = await dataSource.query(
-      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio)
-       VALUES ('Servicio dashboard test', 'mecanica', 60, 10000)
+      `INSERT INTO servicios (nombre, categoria, duracion_minutos, precio, taller_id)
+       VALUES ('Servicio dashboard test', 'mecanica', 60, 10000, '00000000-0000-4000-8000-000000000001')
        RETURNING id`,
     );
     servicioId = servicio[0].id;
@@ -113,14 +119,19 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
     usuarioId = usuario[0].id;
 
     const tecnico = await dataSource.query(
-      `INSERT INTO usuarios (email, password_hash, nombre, rol)
-       VALUES ('tecnico-dashboard-test@turnos.dev', 'hash', 'Tecnico Dashboard', 'tecnico')
+      `INSERT INTO usuarios (email, password_hash, nombre, rol, taller_id)
+       VALUES ('tecnico-dashboard-test@turnos.dev', 'hash', 'Tecnico Dashboard', 'tecnico', '00000000-0000-4000-8000-000000000001')
        RETURNING id`,
     );
     tecnicoId = tecnico[0].id;
 
     token = jwt.sign(
-      { sub: usuarioId, email: 'dashboard-test@turnos.dev', rol: 'admin' },
+      {
+        sub: usuarioId,
+        email: 'dashboard-test@turnos.dev',
+        rol: 'admin',
+        taller: TALLER,
+      },
       process.env.JWT_SECRET ?? 'dev-secret-change-me',
     );
 
@@ -161,6 +172,7 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
     const { body } = await request(app.getHttpServer())
       .get(`/dashboard/kpis?from=${DIA_1}&to=${DIA_2}`)
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Taller', TALLER)
       .expect(200);
 
     // 4 atendidos / (4 atendidos + 1 no_asistio) = 0.8. El cancelado y el
@@ -184,12 +196,14 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
     const { body: noche } = await request(server)
       .get(`/dashboard/kpis?from=${DIA_NOCHE}&to=${DIA_NOCHE}`)
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Taller', TALLER)
       .expect(200);
     const { body: siguiente } = await request(server)
       .get(
         `/dashboard/kpis?from=${DIA_NOCHE_SIGUIENTE}&to=${DIA_NOCHE_SIGUIENTE}`,
       )
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Taller', TALLER)
       .expect(200);
 
     expect(noche.resumen.turnosAtendidos).toBe(1);
@@ -201,6 +215,7 @@ describirSiHayDb('Dashboard KPIs (integration)', () => {
     const { body } = await request(app.getHttpServer())
       .get(`/dashboard/kpis?from=${DIA_1}&to=${DIA_2}`)
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Taller', TALLER)
       .expect(200);
 
     expect(body.serie.map((d: { fecha: string }) => d.fecha)).toEqual([

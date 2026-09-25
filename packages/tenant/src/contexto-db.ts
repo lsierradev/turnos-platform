@@ -1,11 +1,11 @@
-import { AsyncLocalStorage } from 'async_hooks';
+import { AsyncLocalStorage } from "async_hooks";
 import {
   BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
-} from '@nestjs/common';
+} from "@nestjs/common";
 // SOLO tipos: pnpm resuelve una copia de typeorm para este paquete distinta
 // de la de cada servicio, y dos copias de la clase DataSource no son el
 // mismo token para Nest. El DataSource real lo pasa el servicio (ver
@@ -16,10 +16,10 @@ import type {
   EntityTarget,
   ObjectLiteral,
   Repository,
-} from 'typeorm';
+} from "typeorm";
 
 /** Token con el que el servicio le entrega su DataSource a ContextoDb. */
-export const DATA_SOURCE_TENANT = 'TENANT_DATA_SOURCE';
+export const DATA_SOURCE_TENANT = "TENANT_DATA_SOURCE";
 
 /** Quien pide y en que taller (Sprint 20). */
 export interface Sesion {
@@ -36,15 +36,16 @@ interface Contexto extends Sesion {
 const almacen = new AsyncLocalStorage<Contexto>();
 
 /** Rol de Postgres sin privilegios sobre el que corren las politicas RLS. */
-export const ROL_APP = 'turnos_app';
+export const ROL_APP = "turnos_app";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function esUuid(valor: unknown): valor is string {
-  return typeof valor === 'string' && UUID.test(valor);
+  return typeof valor === "string" && UUID.test(valor);
 }
 
-type Consultable = Pick<DataSource, 'query'> | Pick<EntityManager, 'query'>;
+type Consultable = Pick<DataSource, "query"> | Pick<EntityManager, "query">;
 
 /**
  * Acceso a la base consciente del taller.
@@ -69,7 +70,9 @@ export class ContextoDb {
 
   sesion(): Sesion | null {
     const c = almacen.getStore();
-    return c ? { usuarioId: c.usuarioId, rol: c.rol, tallerId: c.tallerId } : null;
+    return c
+      ? { usuarioId: c.usuarioId, rol: c.rol, tallerId: c.tallerId }
+      : null;
   }
 
   tallerId(): string | null {
@@ -81,7 +84,7 @@ export class ContextoDb {
     const taller = this.tallerId();
     if (!taller) {
       throw new BadRequestException(
-        'Elegi un taller: falta el encabezado X-Taller.',
+        "Elegi un taller: falta el encabezado X-Taller.",
       );
     }
     return taller;
@@ -111,7 +114,11 @@ export class ContextoDb {
     return respaldo ?? this.dataSource.getRepository(entidad);
   }
 
-  query<T = unknown>(sql: string, params?: unknown[], respaldo?: Consultable): Promise<T> {
+  query<T = unknown>(
+    sql: string,
+    params?: unknown[],
+    respaldo?: Consultable,
+  ): Promise<T> {
     const c = almacen.getStore();
     return (c ? c.manager : (respaldo ?? this.dataSource)).query(sql, params);
   }
@@ -131,7 +138,7 @@ export class ContextoDb {
    */
   transaccion<T>(
     fn: (manager: EntityManager) => Promise<T>,
-    respaldo?: Pick<DataSource, 'transaction'>,
+    respaldo?: Pick<DataSource, "transaction">,
   ): Promise<T> {
     const c = almacen.getStore();
     if (c) return fn(c.manager);
@@ -147,13 +154,13 @@ export class ContextoDb {
   async conSavepoint<T>(fn: () => Promise<T>): Promise<T> {
     const c = almacen.getStore();
     if (!c) return fn();
-    await c.manager.query('SAVEPOINT paso');
+    await c.manager.query("SAVEPOINT paso");
     try {
       const r = await fn();
-      await c.manager.query('RELEASE SAVEPOINT paso');
+      await c.manager.query("RELEASE SAVEPOINT paso");
       return r;
     } catch (error) {
-      await c.manager.query('ROLLBACK TO SAVEPOINT paso');
+      await c.manager.query("ROLLBACK TO SAVEPOINT paso");
       throw error;
     }
   }
@@ -173,19 +180,22 @@ export class ContextoDb {
         `SELECT set_config('app.taller_id', $1, true),
                 set_config('app.usuario_id', $2, true),
                 set_config('app.rol', $3, true)`,
-        [sesion.tallerId ?? '', sesion.usuarioId, sesion.rol],
+        [sesion.tallerId ?? "", sesion.usuarioId, sesion.rol],
       );
       if (sesion.tallerId) {
         const filas: { activo: boolean }[] = await qr.query(
-          'SELECT activo FROM talleres WHERE id = $1',
+          "SELECT activo FROM talleres WHERE id = $1",
           [sesion.tallerId],
         );
-        if (!filas.length) throw new NotFoundException('Taller no encontrado.');
-        if (!filas[0].activo && sesion.rol !== 'superadmin') {
-          throw new ForbiddenException('El taller esta dado de baja.');
+        if (!filas.length) throw new NotFoundException("Taller no encontrado.");
+        if (!filas[0].activo && sesion.rol !== "superadmin") {
+          throw new ForbiddenException("El taller esta dado de baja.");
         }
       }
-      const resultado = await almacen.run({ ...sesion, manager: qr.manager }, fn);
+      const resultado = await almacen.run(
+        { ...sesion, manager: qr.manager },
+        fn,
+      );
       await qr.commitTransaction();
       return resultado;
     } catch (error) {

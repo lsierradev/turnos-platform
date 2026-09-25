@@ -1,7 +1,7 @@
-import { DynamicModule, Module } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
-import { ContextoDb, DATA_SOURCE_TENANT } from './contexto-db';
-import { ContextoInterceptor } from './contexto.interceptor';
+import { DynamicModule, Module } from "@nestjs/common";
+import { APP_INTERCEPTOR } from "@nestjs/core";
+import { ContextoDb, DATA_SOURCE_TENANT } from "./contexto-db";
+import { ContextoInterceptor } from "./contexto.interceptor";
 
 /**
  * Importar UNA vez en el AppModule, despues de TypeOrmModule:

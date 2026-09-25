@@ -21,7 +21,7 @@ async function main() {
     process.exit(1);
   }
 
-  const { bahiaId, servicioId, usuarioId, tecnicoId, adminId } = JSON.parse(
+  const { tallerId, bahiaId, servicioId, usuarioId, tecnicoId, adminId } = JSON.parse(
     fs.readFileSync(SEED_FILE, 'utf8'),
   );
 
@@ -40,6 +40,11 @@ async function main() {
     await client.query('DELETE FROM usuarios WHERE id = ANY($1)', [
       [usuarioId, tecnicoId, adminId].filter(Boolean),
     ]);
+    // Sprint 20. Va al final: los turnos, bahias y el personal lo referencian.
+    // clientes_taller se borra en cascada.
+    if (tallerId) {
+      await client.query('DELETE FROM talleres WHERE id = $1', [tallerId]);
+    }
 
     fs.unlinkSync(SEED_FILE);
     console.error('Limpieza OK.');

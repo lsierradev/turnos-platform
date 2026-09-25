@@ -50,7 +50,7 @@ async function main() {
     process.exit(1);
   }
 
-  const { bahiaId, servicioId, usuarioId, tecnicoId } = JSON.parse(
+  const { tallerId, bahiaId, servicioId, usuarioId, tecnicoId } = JSON.parse(
     fs.readFileSync(SEED_FILE, 'utf8'),
   );
 
@@ -94,6 +94,7 @@ async function main() {
           medido
             ? new Date(inicio.getTime() + (20 + (indice % 30)) * 60_000).toISOString()
             : null,
+          tallerId,
         ]);
         indice += 1;
 
@@ -128,11 +129,12 @@ async function insertarLote(client, lote) {
   const parametros = [];
 
   lote.forEach((fila, i) => {
-    const base = i * 9;
+    const base = i * 10;
     valores.push(
       `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4},
         tstzrange($${base + 5}::timestamptz, $${base + 6}::timestamptz, '[)'),
-        $${base + 7}::estado_turno, $${base + 8}::timestamptz, $${base + 9}::timestamptz)`,
+        $${base + 7}::estado_turno, $${base + 8}::timestamptz, $${base + 9}::timestamptz,
+        $${base + 10})`,
     );
     parametros.push(...fila);
   });
@@ -140,7 +142,7 @@ async function insertarLote(client, lote) {
   const resultado = await client.query(
     `INSERT INTO turnos
        (bahia_id, servicio_id, usuario_id, tecnico_id, rango_tiempo,
-        estado, atencion_inicio, atencion_fin)
+        estado, atencion_inicio, atencion_fin, taller_id)
      VALUES ${valores.join(',')}
      ON CONFLICT DO NOTHING`,
     parametros,

@@ -52,15 +52,17 @@ const TOKEN = __ENV.K6_TOKEN;
 const BAHIA_ID = __ENV.K6_BAHIA_ID;
 const SERVICIO_ID = __ENV.K6_SERVICIO_ID;
 const TECNICO_ID = __ENV.K6_TECNICO_ID;
+// Sprint 20: el token es de cliente, que elige el taller por encabezado.
+const TALLER_ID = __ENV.K6_TALLER_ID;
 // Mismo horario para todos los VUs -- ese es justamente el punto.
 const INICIO =
   __ENV.K6_INICIO ||
   new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
 export default function () {
-  if (!TOKEN || !BAHIA_ID || !SERVICIO_ID || !TECNICO_ID) {
+  if (!TOKEN || !TALLER_ID || !BAHIA_ID || !SERVICIO_ID || !TECNICO_ID) {
     throw new Error(
-      'Faltan K6_TOKEN/K6_BAHIA_ID/K6_SERVICIO_ID/K6_TECNICO_ID -- correr load-tests/seed.js primero (ver README.md).',
+      'Faltan K6_TOKEN/K6_TALLER_ID/K6_BAHIA_ID/K6_SERVICIO_ID/K6_TECNICO_ID -- correr load-tests/seed.js primero (ver README.md).',
     );
   }
 
@@ -76,6 +78,7 @@ export default function () {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${TOKEN}`,
+        'X-Taller': TALLER_ID,
       },
     },
   );

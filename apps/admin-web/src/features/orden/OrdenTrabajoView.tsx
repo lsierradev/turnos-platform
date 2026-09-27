@@ -24,6 +24,7 @@ import {
 import { formatearFechaHora, formatearHora, ZONA_NEGOCIO } from '@/lib/dates';
 import { formatearPesos, textoPrecioFinal } from '@/lib/dinero';
 import { actuaComoAdmin } from '@/lib/sesion';
+import { RepuestosOrden } from '@/features/inventario/RepuestosOrden';
 import { PagosOrden } from '@/features/pagos/PagosOrden';
 import { esUuid } from '@/lib/uuid';
 import {
@@ -250,6 +251,21 @@ function Orden({
       <Atencion orden={orden} personal={personal} esAdmin={esAdmin} onCambio={onCambio} />
 
       {personal && <Cierre orden={orden} esAdmin={esAdmin} onCambio={onCambio} />}
+
+      {/*
+        Sprint 25: repuestos usados, solo para el personal (el cliente no ve
+        catalogo ni costos internos). Agregar uno nuevo: el admin, o el
+        tecnico asignado a este turno -- cualquier otro tecnico que este
+        mirando la orden puede ver la lista, pero no sumarle repuestos.
+      */}
+      {personal && (
+        <RepuestosOrden
+          turnoId={turno.id}
+          puedeAgregar={
+            turno.estado !== 'cancelado' && (esAdmin || usuario?.id === turno.tecnico?.id)
+          }
+        />
+      )}
 
       {/* Sprint 24: anticipo, saldo, cobros en el mostrador y devoluciones. */}
       <PagosOrden turnoId={turno.id} taller={taller} esAdmin={esAdmin} esTitular={!personal} />

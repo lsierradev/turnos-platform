@@ -1591,3 +1591,112 @@ export function cerrarCaja(fecha: string, contadoCentavos: number, nota?: string
 export function getUrlEventosWompi(): Promise<{ url: string }> {
   return apiFetch<{ url: string }>('/pagos/wompi/url-eventos');
 }
+
+// --- Inventario de repuestos (reservas-service, Sprint 25) ---------------
+
+export type TipoMovimientoInventario = 'entrada' | 'salida' | 'ajuste' | 'devolucion';
+
+export interface ItemInventario {
+  id: string;
+  sku: string;
+  nombre: string;
+  marca: string | null;
+  unidad: string;
+  /** El de la ultima compra; lo actualiza cada 'entrada'. */
+  costoCentavos: number;
+  precioBaseCentavos: number;
+  tarifaIva: TarifaIva;
+  stockMinimo: number;
+  activo: boolean;
+  creadoEn: string;
+  actualizadoEn: string;
+  /** Suma con signo de todo el kardex del item. */
+  stock: number;
+  /** Calculado con la configuracion fiscal del taller, igual que servicios. */
+  precio: Precio;
+  /** stock * costoCentavos, redondeado. */
+  valorCentavos: number;
+}
+
+export function getInventarioItems(estado: 'activos' | 'todos' = 'activos'): Promise<ItemInventario[]> {
+  return apiFetch<ItemInventario[]>(`/inventario/items?estado=${estado}`);
+}
+
+export interface DatosItemInventario {
+  sku: string;
+  nombre: string;
+  marca?: string;
+  unidad?: string;
+  precioBaseCentavos: number;
+  tarifaIva?: TarifaIva;
+  stockMinimo?: number;
+}
+
+export function crearItemInventario(datos: DatosItemInventario): Promise<ItemInventario> {
+  return apiFetch<ItemInventario>('/inventario/items', false, BASE_URL, { method: 'POST', body: datos });
+}
+
+export function actualizarItemInventario(
+  id: string,
+  cambios: Partial<Omit<DatosItemInventario, 'sku'>> & { activo?: boolean },
+): Promise<ItemInventario> {
+  return apiFetch<ItemInventario>(`/inventario/items/${id}`, false, BASE_URL, {
+    method: 'PATCH',
+    body: cambios,
+  });
+}
+
+export interface MovimientoInventario {
+  id: string;
+  itemId: string;
+  itemNombre: string;
+  itemUnidad: string;
+  tipo: TipoMovimientoInventario;
+  /** Con signo: negativa en las salidas. */
+  cantidad: number;
+  costoUnitarioCentavos: number | null;
+  proveedor: string | null;
+  facturaProveedor: string | null;
+  turnoId: string | null;
+  motivo: string | null;
+  creadoPor: string | null;
+  creadoPorNombre: string | null;
+  creadoEn: string;
+}
+
+export interface DatosMovimiento {
+  itemId: string;
+  tipo: TipoMovimientoInventario;
+  /** Siempre positiva: el signo lo decide el tipo (y, en 'ajuste', sentido). */
+  cantidad: number;
+  sentido?: 'incremento' | 'decremento';
+  costoUnitarioCentavos?: number;
+  proveedor?: string;
+  facturaProveedor?: string;
+  turnoId?: string;
+  motivo?: string;
+}
+
+export function registrarMovimientoInventario(
+  datos: DatosMovimiento,
+): Promise<{ movimiento: MovimientoInventario; item: ItemInventario }> {
+  return apiFetch('/inventario/movimientos', false, BASE_URL, { method: 'POST', body: datos });
+}
+
+/** Kardex de un item: cada movimiento con el saldo despues de aplicarlo. */
+export function getKardex(itemId: string): Promise<(MovimientoInventario & { saldo: number })[]> {
+  return apiFetch(`/inventario/movimientos?itemId=${itemId}`);
+}
+
+/** Repuestos usados en un turno (seccion de la orden de trabajo). */
+export function getRepuestosDeTurno(turnoId: string): Promise<MovimientoInventario[]> {
+  return apiFetch(`/inventario/movimientos/turno/${turnoId}`);
+}
+
+export function getValorizacionInventario(): Promise<{ items: ItemInventario[]; totalCentavos: number }> {
+  return apiFetch('/inventario/valorizacion');
+}
+
+export function getAlertasStockBajo(): Promise<ItemInventario[]> {
+  return apiFetch('/inventario/alertas');
+}

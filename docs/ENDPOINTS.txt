@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 24 (pagos con Wompi, devoluciones y caja)
+Actualizado: Sprint 25 (inventario de repuestos)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -1028,6 +1028,62 @@ transaccion en proceso); cada 10 minutos concilia checkouts y transacciones
 sin estado final, expira checkouts de mas de 24 h y reintenta anulaciones.
 
 ----------------------------------------
+MODULO: inventario de repuestos (reservas-service, Sprint 25)
+----------------------------------------
+Migracion 020. El stock de un item NUNCA se guarda como numero: es siempre
+la suma con signo de su kardex (movimientos_inventario). Que esa suma no
+quede negativa, tambien con salidas simultaneas del mismo item, lo protege
+un trigger en la base con un lock de fila sobre el item (ver el comentario
+de la migracion) -- no un chequeo en el codigo antes de insertar.
+
+[GET] /inventario/items[?estado=activos|todos]      (admin | tecnico)
+  Por defecto solo activos. Cada item trae el stock (suma del kardex), el
+  precio con IVA (misma regla que servicios) y el valor (stock * costo).
+  Response 200: [ { id, sku, nombre, marca, unidad, costoCentavos,
+    precioBaseCentavos, tarifaIva, stockMinimo, activo, stock, precio,
+    valorCentavos } ]
+
+[POST] /inventario/items                            (admin)
+  Body: { sku, nombre, marca?, unidad?, precioBaseCentavos, tarifaIva?,
+          stockMinimo? }
+  409 si el sku ya existe en el taller. El sku no se vuelve a editar.
+
+[PATCH] /inventario/items/:id                       (admin)
+  Body: cualquiera de nombre, marca, unidad, precioBaseCentavos, tarifaIva,
+  stockMinimo, activo. NO acepta costoCentavos ni sku: el costo solo
+  cambia con una entrada por compra (ver abajo); el sku, nunca.
+
+[POST] /inventario/movimientos                      (admin | tecnico)
+  Body: { itemId, tipo: entrada|salida|ajuste|devolucion, cantidad,
+          sentido?, costoUnitarioCentavos?, proveedor?, facturaProveedor?,
+          turnoId?, motivo? }
+  cantidad siempre positiva: el signo lo decide tipo (entrada y devolucion
+  suman, salida resta) y, en ajuste, "sentido" (incremento|decremento).
+  entrada exige costoUnitarioCentavos, proveedor y facturaProveedor, y
+  actualiza items.costoCentavos (el de la ULTIMA compra). ajuste exige
+  motivo (minimo 5 caracteres; lo exige ademas un CHECK en la base).
+  tecnico: solo tipo=salida con turnoId de un turno SUYO (403 si no; lo
+  exige tambien la politica RLS de insercion, no solo el controller).
+  409 "Stock insuficiente" si el movimiento dejaria el stock negativo
+  (viene del trigger de la migracion 020, protegido con concurrencia).
+  Response 201: { movimiento, item } (item, con el stock ya actualizado)
+
+[GET] /inventario/movimientos?itemId=               (admin)
+  Kardex completo del item, con el saldo despues de cada movimiento
+  (window function en la consulta, no en el cliente).
+
+[GET] /inventario/movimientos/turno/:turnoId        (admin | tecnico)
+  Repuestos usados en un turno (la seccion de la orden de trabajo). Los ve
+  cualquier personal del taller, no solo el tecnico asignado; el que
+  agrega uno nuevo si esta restringido (ver arriba).
+
+[GET] /inventario/valorizacion                      (admin)
+  Response 200: { items: [...solo con stock distinto de 0...], totalCentavos }
+
+[GET] /inventario/alertas                           (admin)
+  Los items activos con stock <= stockMinimo.
+
+----------------------------------------
 Convenciones generales
 ----------------------------------------
 - Sin prefijo global todavia (ej. /api/v1) — pendiente de definir.
@@ -1102,6 +1158,13 @@ Convenciones generales
     cliente (Sprint 24)    -> POST /pagos/checkout, GET /pagos/referencia/:ref
     autenticado (Sprint 24)-> GET /pagos/turno (RLS: propio o del taller)
     publico (Sprint 24)    -> POST /pagos/wompi/eventos/:tallerId (firma de Wompi)
+    admin (Sprint 25)      -> POST/PATCH /inventario/items, GET
+                              /inventario/movimientos, /inventario/valorizacion,
+                              /inventario/alertas
+    admin | tecnico (Sprint 25) -> GET /inventario/items, POST
+                              /inventario/movimientos (tecnico: solo salida
+                              de un turno suyo), GET
+                              /inventario/movimientos/turno/:id
     publico                -> POST /auth/login, /auth/olvide, /auth/restablecer,
                               GET /legal/documentos*, GET
                               /legal/talleres/:id/condiciones (Sprint 23)

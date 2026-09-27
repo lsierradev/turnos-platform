@@ -263,6 +263,33 @@ de Wompi.
 
 ---
 
+## Inventario de repuestos
+
+En **Mi taller → Inventario** llevás el catálogo de repuestos con su precio
+(con IVA incluido, igual que los servicios), su stock y un mínimo por
+debajo del cual aparece una alerta.
+
+- **Repuesto nuevo.** Código, nombre, marca, unidad de medida y precio. El
+  código no se puede cambiar después: si lo cargaste mal, dalo de baja y
+  creá otro.
+- **Movimientos.** Desde cada repuesto: **Entrada** (una compra: costo,
+  proveedor y número de factura — el costo del repuesto pasa a ser el de
+  esta última compra), **Salida** (una venta de mostrador), **Ajuste** (con
+  un motivo obligatorio: se rompió uno, se contó mal, etc.) o **Devolución**
+  (el cliente lo trajo de vuelta).
+- **Repuestos usados en una orden.** Se cargan desde la propia orden de
+  trabajo, no desde Inventario: el técnico agrega ahí lo que gastó
+  atendiendo ESE turno, y descuenta del stock al instante.
+- **Stock nunca negativo.** Aunque dos personas vendan el mismo repuesto al
+  mismo tiempo, el sistema no deja que el stock quede en negativo: la
+  segunda venta se rechaza con "stock insuficiente".
+- **Kardex.** El historial completo de un repuesto, con el saldo después de
+  cada movimiento — la prueba de cómo se llegó al stock actual.
+- **Valorización y CSV.** El valor total del inventario (stock × costo de
+  cada repuesto) y un botón para exportarlo todo a una planilla.
+
+---
+
 ## Los recordatorios automáticos
 
 El sistema le avisa solo al cliente **24 horas antes** de su turno:

@@ -250,6 +250,21 @@ El cobro con Wompi está implementado (ver
 - [ ] Llaves de producción y URL de eventos cargadas por cada taller.
 - [ ] Monitoreo sobre `Alerta de pago (` y `Tarea de pagos fallo`.
 
+## Inventario de repuestos (Sprint 25)
+
+- [x] Catálogo con precio con IVA incluido (misma regla que servicios).
+- [x] Kardex con entradas, salidas, ajustes y devoluciones; el stock nunca
+      queda negativo, protegido en la base también con movimientos
+      simultáneos del mismo repuesto.
+- [x] Consultas de kardex, valorización y alerta de stock bajo;
+      exportación a CSV.
+- [x] Repuestos usados en una orden, descontados al instante.
+- [ ] Cargar el catálogo real de cada taller (nada se migra: hoy el
+      inventario nace vacío).
+- [ ] Definir si el costo de un repuesto es el de la última compra (lo que
+      hay hoy) o un promedio ponderado, si el volumen de compras lo
+      justifica más adelante.
+
 ## Alcance
 
 - [x] ~~Confirmar que el beta sale sin pagos.~~ Resuelto en el Sprint 24

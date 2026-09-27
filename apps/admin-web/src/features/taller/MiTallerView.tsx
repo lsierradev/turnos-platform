@@ -6,6 +6,7 @@ import { CancelacionesSeccion } from './CancelacionesSeccion';
 import { CondicionesSeccion } from './CondicionesSeccion';
 import { FiscalSeccion } from './FiscalSeccion';
 import { HorarioSeccion } from './HorarioSeccion';
+import { InventarioSeccion } from './InventarioSeccion';
 import { PagosSeccion } from './PagosSeccion';
 import { ServiciosSeccion } from './ServiciosSeccion';
 import { TecnicosSeccion } from './TecnicosSeccion';
@@ -22,6 +23,8 @@ const SECCIONES = [
   { id: 'condiciones', titulo: 'Condiciones' },
   // Sprint 24: alertas, devoluciones y cuadre de caja.
   { id: 'pagos', titulo: 'Pagos y caja' },
+  // Sprint 25: catalogo de repuestos, kardex, valorizacion y stock bajo.
+  { id: 'inventario', titulo: 'Inventario' },
 ] as const;
 
 type Seccion = (typeof SECCIONES)[number]['id'];
@@ -53,7 +56,7 @@ export function MiTallerView() {
       <div>
         <h1 className="text-2xl font-semibold">Mi taller</h1>
         <p className="text-sm text-muted-foreground">
-          {taller ? `${taller.nombre} · ` : ''}Catalogo, horario, configuracion fiscal, cancelaciones, condiciones y pagos.
+          {taller ? `${taller.nombre} · ` : ''}Catalogo, horario, configuracion fiscal, cancelaciones, condiciones, pagos e inventario.
         </p>
       </div>
 
@@ -86,6 +89,7 @@ export function MiTallerView() {
       {seccion === 'cancelaciones' && <CancelacionesSeccion />}
       {seccion === 'condiciones' && <CondicionesSeccion />}
       {seccion === 'pagos' && <PagosSeccion />}
+      {seccion === 'inventario' && <InventarioSeccion />}
     </div>
   );
 }

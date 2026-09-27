@@ -553,6 +553,62 @@ function orden(conRecepcion: boolean) {
   };
 }
 
+// --- Sprint 25: inventario de repuestos -----------------------------------
+const I = ['9a9a9a9a-0000-4000-8000-000000000001', '9a9a9a9a-0000-4000-8000-000000000002', '9a9a9a9a-0000-4000-8000-000000000003'];
+const itemInventario = (
+  id: string,
+  sku: string,
+  nombre: string,
+  marca: string,
+  unidad: string,
+  costo: number,
+  base: number,
+  stock: number,
+  stockMinimo: number,
+) => ({
+  id,
+  sku,
+  nombre,
+  marca,
+  unidad,
+  costoCentavos: costo,
+  precioBaseCentavos: base,
+  tarifaIva: 19,
+  stockMinimo,
+  activo: true,
+  creadoEn: instante(sumarDias(HOY, -120), '09:00'),
+  actualizadoEn: instante(sumarDias(HOY, -2), '11:00'),
+  stock,
+  precio: { baseCentavos: base, ivaCentavos: iva(base), totalCentavos: base + iva(base), tarifaIva: 19 },
+  valorCentavos: Math.round(stock * costo),
+});
+// El filtro queda a proposito por debajo del minimo: dispara la alerta de
+// stock bajo en la captura de Mi taller > Inventario.
+const ITEMS_INVENTARIO = [
+  itemInventario(I[0], 'FIL-001', 'Filtro de aceite', 'Bosch', 'unidad', 1_200_000, 2_500_000, 3, 5),
+  itemInventario(I[1], 'FRE-045', 'Pastillas de freno', 'Brembo', 'juego', 4_500_000, 9_000_000, 12, 4),
+  itemInventario(I[2], 'BOM-H4', 'Bombillo H4', 'Philips', 'unidad', 800_000, 1_800_000, 20, 6),
+];
+// Lo que ya se le cargo al turno de hoy (con recepcion): el filtro que
+// menciona la nota de atencion de orden().
+const REPUESTOS_TURNO_CON_RECEPCION = [
+  {
+    id: 'mov-1',
+    itemId: I[0],
+    itemNombre: 'Filtro de aceite',
+    itemUnidad: 'unidad',
+    tipo: 'salida',
+    cantidad: -1,
+    costoUnitarioCentavos: null,
+    proveedor: null,
+    facturaProveedor: null,
+    turnoId: 'dddddddd-0000-4000-8000-000000000001',
+    motivo: null,
+    creadoPor: T1,
+    creadoPorNombre: 'Carlos Rojas',
+    creadoEn: instante(HOY, '13:05'),
+  },
+];
 
 // --- Sprint 23: documentos legales y datos del titular -------------------
 // Textos cortos y fijos, no los reales: los borradores van a cambiar con la
@@ -713,6 +769,22 @@ export async function simularApi(page: Page, rol: Rol | null, opciones: Opciones
     if (ruta === '/pagos/caja') return responder(route, caja(q('fecha') ?? HOY));
     if (ruta === '/pagos/wompi/url-eventos')
       return responder(route, { url: `https://api.turnopro.dev/pagos/wompi/eventos/${TALLER.id}` });
+    // Sprint 25.
+    if (ruta === '/inventario/items') return responder(route, ITEMS_INVENTARIO);
+    if (ruta === '/inventario/valorizacion')
+      return responder(route, {
+        items: ITEMS_INVENTARIO,
+        totalCentavos: ITEMS_INVENTARIO.reduce((s, i) => s + i.valorCentavos, 0),
+      });
+    if (ruta === '/inventario/alertas')
+      return responder(route, ITEMS_INVENTARIO.filter((i) => i.stock <= i.stockMinimo));
+    const repuestosDeTurno = ruta.match(/^\/inventario\/movimientos\/turno\/([^/]+)$/);
+    if (repuestosDeTurno) {
+      return responder(
+        route,
+        repuestosDeTurno[1] === 'dddddddd-0000-4000-8000-000000000001' ? REPUESTOS_TURNO_CON_RECEPCION : [],
+      );
+    }
     if (ruta === '/strikes/mios') return responder(route, strikes(false));
     if (ruta === '/strikes') return responder(route, q('estado') === 'reclamos' ? strikes(true).slice(0, 1) : strikes(true));
     if (ruta === '/appointments/dddddddd-0000-4000-8000-000000000001/orden') return responder(route, orden(true));

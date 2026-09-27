@@ -200,6 +200,19 @@ esquema nuevo mientras dura el rolling update.
 > anticipo (default `no_requiere`: los turnos existentes no vencen al
 > desplegar) y `'sistema'` como quien cancela.
 
+> **La 020 (Sprint 25) es aditiva:** tablas nuevas (`items_inventario`,
+> `movimientos_inventario`) con su propio trigger de proteccion de stock;
+> no toca ninguna tabla existente. Se puede aplicar en cualquier momento,
+> antes o junto con los servicios del Sprint 25.
+
+### Inventario de repuestos (Sprint 25)
+
+- Sin variables de entorno nuevas.
+- El stock **no** es una columna: es la suma del kardex
+  (`movimientos_inventario`), protegida contra quedar negativa por un
+  trigger con lock de fila — tambien con ventas simultaneas del mismo
+  repuesto. No hay una tarea periodica que reconciliar.
+
 ### Pagos con Wompi (Sprint 24)
 
 - **Variables de reservas-service** (ConfigMap): `WEB_URL` (a donde vuelve

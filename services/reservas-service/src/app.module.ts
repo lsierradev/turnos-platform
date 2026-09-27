@@ -11,6 +11,7 @@ import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { BahiasModule } from './modules/bahias/bahias.module';
 import { ConfiguracionModule } from './modules/configuracion/configuracion.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { InventarioModule } from './modules/inventario/inventario.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PagosModule } from './modules/pagos/pagos.module';
 import { PoliticaModule } from './modules/politica/politica.module';
@@ -65,6 +66,8 @@ import { VehiculosModule } from './modules/vehiculos/vehiculos.module';
     RecepcionesModule,
     // Sprint 24: cobros con Wompi y en el mostrador.
     PagosModule,
+    // Sprint 25: catalogo de repuestos, kardex, valorizacion y alertas.
+    InventarioModule,
   ],
 })
 export class AppModule {}

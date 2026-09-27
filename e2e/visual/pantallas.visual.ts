@@ -178,6 +178,15 @@ test.describe('admin', () => {
     await capturar(page, 'admin-taller-condiciones');
   });
 
+  test('mi taller: inventario', async ({ page }) => {
+    await page.goto('/taller?seccion=inventario');
+    await expect(page.getByRole('list', { name: 'Repuestos' })).toBeVisible();
+    // El filtro de aceite quedo con stock por debajo del minimo (ver
+    // api-simulada.ts): dispara la alerta.
+    await expect(page.getByText('Filtro de aceite esta en o por debajo del stock minimo')).toBeVisible();
+    await capturar(page, 'admin-taller-inventario');
+  });
+
   test('pagina no encontrada', async ({ page }) => {
     await page.goto('/no-existe');
     await expect(page.getByText('Esta pagina no existe')).toBeVisible();

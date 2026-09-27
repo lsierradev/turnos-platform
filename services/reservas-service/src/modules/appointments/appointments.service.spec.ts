@@ -778,6 +778,7 @@ describe('AppointmentsService', () => {
         vigenciaStrikesMeses: 12,
         strikesParaPrepago: 3,
         plazoAnticipoMinutos: 30,
+        descuentoMaximoPorcentaje: 0,
       });
       turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(10 * 60));
 

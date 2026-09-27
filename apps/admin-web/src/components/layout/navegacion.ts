@@ -6,6 +6,7 @@ import {
   House,
   ListChecks,
   Settings,
+  ShoppingCart,
   UserRound,
   Warehouse,
   type LucideIcon,
@@ -47,6 +48,8 @@ export function itemsPara(
   const talleres: ItemNavegacion = { to: '/talleres', etiqueta: 'Talleres', icono: Building2 };
   // Sprint 21: catalogo, horario y configuracion fiscal del taller.
   const miTaller: ItemNavegacion = { to: '/taller', etiqueta: 'Mi taller', icono: Settings };
+  // Sprint 26: ordenes de venta (servicios, repuestos, anticipos y cotizacion).
+  const ventas: ItemNavegacion = { to: '/ventas', etiqueta: 'Ventas', icono: ShoppingCart };
   switch (usuario?.rol) {
     // Sprint 20: el superadmin administra talleres y, dentro del que elige,
     // opera como un admin.
@@ -59,6 +62,7 @@ export function itemsPara(
             { to: '/agenda', etiqueta: 'Agenda', icono: CalendarClock },
             { to: '/admin', etiqueta: 'Panel', icono: Warehouse },
             { to: '/dashboard', etiqueta: 'Dashboard', icono: ChartColumn },
+            ventas,
             miTaller,
           ]
         : [inicio, talleres];
@@ -69,6 +73,7 @@ export function itemsPara(
         { to: '/agenda', etiqueta: 'Agenda', icono: CalendarClock },
         { to: '/admin', etiqueta: 'Panel', icono: Warehouse },
         { to: '/dashboard', etiqueta: 'Dashboard', icono: ChartColumn },
+        ventas,
         miTaller,
       ];
     case 'tecnico':

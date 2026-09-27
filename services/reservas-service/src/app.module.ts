@@ -20,6 +20,7 @@ import { ReservasModule } from './modules/reservas/reservas.module';
 import { ServiciosModule } from './modules/servicios/servicios.module';
 import { TechniciansModule } from './modules/technicians/technicians.module';
 import { VehiculosModule } from './modules/vehiculos/vehiculos.module';
+import { VentasModule } from './modules/ventas/ventas.module';
 
 @Module({
   imports: [
@@ -68,6 +69,8 @@ import { VehiculosModule } from './modules/vehiculos/vehiculos.module';
     PagosModule,
     // Sprint 25: catalogo de repuestos, kardex, valorizacion y alertas.
     InventarioModule,
+    // Sprint 26: orden de venta (servicios, repuestos, anticipos y cotizacion).
+    VentasModule,
   ],
 })
 export class AppModule {}

@@ -45,6 +45,8 @@ const RestablecerView = perezoso(() => import('@/features/auth/ContrasenaViews')
 const DocumentoLegalView = perezoso(() => import('@/features/legal/DocumentoLegalView'), 'DocumentoLegalView');
 const MisDatosView = perezoso(() => import('@/features/legal/MisDatosView'), 'MisDatosView');
 const ResultadoPagoView = perezoso(() => import('@/features/pagos/ResultadoPagoView'), 'ResultadoPagoView');
+const VentasListView = perezoso(() => import('@/features/ventas/VentasListView'), 'VentasListView');
+const VentaDetalleView = perezoso(() => import('@/features/ventas/VentaDetalleView'), 'VentaDetalleView');
 import { TemaProvider } from '@/lib/tema';
 
 const queryClient = new QueryClient({
@@ -100,6 +102,9 @@ export function App() {
                   {/* Sprint 24: vuelta del checkout de Wompi. */}
                   <Route path="/pagos/resultado" element={<ResultadoPagoView />} />
                   <Route path="/turnos/:turnoId" element={<OrdenTrabajoView />} />
+                  {/* Sprint 26: ordenes de venta (servicios, repuestos, cotizacion). */}
+                  <Route path="/ventas" element={<VentasListView />} />
+                  <Route path="/ventas/:ordenId" element={<VentaDetalleView />} />
                   <Route path="/talleres" element={<TalleresView />} />
                   <Route path="/taller" element={<MiTallerView />} />
                   <Route path="/admin" element={<PanelAdministrativoView />} />

@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 25 (inventario de repuestos)
+Actualizado: Sprint 26 (ordenes de venta)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -1083,6 +1083,89 @@ de la migracion) -- no un chequeo en el codigo antes de insertar.
 [GET] /inventario/alertas                           (admin)
   Los items activos con stock <= stockMinimo.
 
+MODULO: ordenes de venta (reservas-service, Sprint 26)
+----------------------------------------
+Migracion 021. El documento de cobro de un turno (sus servicios, con el
+precio guardado del turno -- no el del catalogo -- mas los repuestos que se
+le carguen) o de una venta de mostrador (turnoId null). borrador ->
+confirmada -> pagada -> anulada; anular desde confirmada O pagada (las dos
+marcas quedan). Confirmar descuenta stock de cada linea de repuesto en la
+MISMA transaccion (movimientos_inventario, ver Sprint 25): si algun
+repuesto no alcanza, no se confirma nada. Anular devuelve el stock con un
+movimiento 'devolucion' (nunca corrige el 'salida' original). Un borrador
+se puede enviar por correo como cotizacion; el cliente titular la acepta
+(SECURITY DEFINER aceptar_cotizacion_venta) antes de poder confirmarla.
+
+[GET] /ventas[?estado=][?turnoId=]                  (admin)
+  Resumen de las ordenes del taller. Response 200: [ { id, numero, turnoId,
+  clienteNombre, estado, totalCentavos, creadoEn } ] (totalCentavos null en
+  borrador: todavia no hay total congelado).
+
+[GET] /ventas/:id                                   (admin | cliente)
+  cliente: RLS limita a la suya (usuario_id = el titular). Response 200:
+  { id, numero, turnoId, usuarioId, clienteNombre, clienteEmail, estado,
+    lineas: [...], totales: { subtotalCentavos, descuentoCentavos,
+    ivaCentavos, totalCentavos, anticipoCentavos, saldoCentavos },
+    congelado, creadoPor, creadoPorNombre, creadoEn, confirmadaEn,
+    confirmadaPorNombre, pagadaEn, pagadaPorNombre, medioPago,
+    comprobantePago, anuladaEn, anuladaPorNombre, motivoAnulacion,
+    cotizacionEnviadaEn, cotizacionAceptadaEn }
+  congelado=false: totales calculados al vuelo con la config fiscal
+  vigente (borrador). true: los que se guardaron al confirmar.
+
+[POST] /ventas                                      (admin)
+  Body: { turnoId?, usuarioId? }. Con turnoId: agrega sola la linea del
+  servicio del turno (precio y tarifa guardados en el turno, Sprint 21) y
+  toma su titular como cliente (usuarioId, si se manda, tiene que ser un
+  cliente visible para el taller). Sin turnoId: venta de mostrador, con o
+  sin cliente.
+
+[POST] /ventas/:id/lineas/servicio                  (admin)
+  Solo en borrador. Body: { servicioId, cantidad? } (default 1).
+
+[POST] /ventas/:id/lineas/repuesto                  (admin)
+  Solo en borrador. Body: { itemId, cantidad, descuentoPorcentaje? }.
+  descuentoPorcentaje > el tope de politica_cancelacion.descuento_maximo_
+  porcentaje (default 0) -> 400. No descuenta stock todavia (eso pasa al
+  confirmar); si no alcanza, se ve recien ahi.
+
+[PATCH] /ventas/:id/lineas/:lineaId                 (admin)
+  Solo en borrador. Body: { cantidad?, descuentoPorcentaje? }.
+
+[DELETE] /ventas/:id/lineas/:lineaId                (admin)
+  Solo en borrador.
+
+[DELETE] /ventas/:id                                (admin)
+  Solo un borrador se borra (nunca toco stock ni cobros). 204. Confirmada
+  en adelante: anular, no borrar (409).
+
+[POST] /ventas/:id/confirmar                        (admin)
+  400 sin lineas. 409 si ya no esta en borrador, o si se envio una
+  cotizacion y todavia no la acepto el cliente. 409 "Stock insuficiente"
+  si algun repuesto no alcanza (nada queda descontado: la orden sigue en
+  borrador). Congela subtotal, descuento, IVA, total, anticipo (lo ya
+  pagado del turno, Sprint 24), saldo y responsable_iva (foto del precio,
+  igual que el turno).
+
+[POST] /ventas/:id/pagar                            (admin)
+  Solo desde confirmada. Body: { medioPago: efectivo|datafono|
+  transferencia|wompi|otro, comprobante? }. No integra con la tabla pagos
+  del Sprint 24 (ver docs/VENTAS-PENDIENTES.md).
+
+[POST] /ventas/:id/anular                           (admin)
+  Desde confirmada o pagada. Body: { motivo (minimo 10 caracteres) }.
+  Devuelve el stock de cada linea de repuesto.
+
+[POST] /ventas/:id/cotizacion/enviar                (admin)
+  Solo en borrador y con un cliente con correo (400 si no). El envio de
+  correo no pasa por la cola de notificaciones (turno_id NOT NULL, Sprint
+  8): si SendGrid falla, la orden igual queda marcada como cotizada
+  (enviado:false en la respuesta) y el fallo va al log, sin reintento.
+
+[POST] /ventas/:id/cotizacion/aceptar               (cliente)
+  Solo el titular, solo si se le envio y todavia no la acepto (404 si no
+  aplica: mismo criterio que aceptar_recepcion, Sprint 22).
+
 ----------------------------------------
 Convenciones generales
 ----------------------------------------
@@ -1165,6 +1248,11 @@ Convenciones generales
                               /inventario/movimientos (tecnico: solo salida
                               de un turno suyo), GET
                               /inventario/movimientos/turno/:id
+    admin (Sprint 26)      -> POST /ventas, /ventas/:id/lineas/*, /confirmar,
+                              /pagar, /anular, /cotizacion/enviar, DELETE
+                              /ventas/:id[/lineas/:id], GET /ventas
+    admin | cliente (Sprint 26) -> GET /ventas/:id (RLS: propio o del taller)
+    cliente (Sprint 26)    -> POST /ventas/:id/cotizacion/aceptar
     publico                -> POST /auth/login, /auth/olvide, /auth/restablecer,
                               GET /legal/documentos*, GET
                               /legal/talleres/:id/condiciones (Sprint 23)

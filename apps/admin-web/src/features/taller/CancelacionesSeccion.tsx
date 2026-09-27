@@ -46,11 +46,13 @@ function PoliticaFormulario() {
   const [ventana, setVentana] = useState('');
   const [vigencia, setVigencia] = useState('');
   const [plazo, setPlazo] = useState('');
+  const [descuentoMaximo, setDescuentoMaximo] = useState('');
   useEffect(() => {
     if (!politica.data) return;
     setVentana(String(politica.data.ventanaHoras));
     setVigencia(String(politica.data.vigenciaStrikesMeses));
     setPlazo(String(politica.data.plazoAnticipoMinutos ?? 30));
+    setDescuentoMaximo(String(politica.data.descuentoMaximoPorcentaje ?? 0));
   }, [politica.data]);
   const guardar = useMutation({
     mutationFn: () =>
@@ -58,6 +60,7 @@ function PoliticaFormulario() {
         ventanaHoras: Number(ventana),
         vigenciaStrikesMeses: Number(vigencia),
         plazoAnticipoMinutos: Number(plazo),
+        descuentoMaximoPorcentaje: Number(descuentoMaximo),
       }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['politica'] }),
   });
@@ -100,6 +103,20 @@ function PoliticaFormulario() {
                 ayuda="De 10 a 1440. Si el cliente no paga en linea en ese tiempo, el horario se libera. Solo aplica si el taller cobra con Wompi."
               >
                 <Input type="number" min={10} max={1440} required value={plazo} onChange={(e) => setPlazo(e.target.value)} />
+              </Campo>
+              {/* Sprint 26. */}
+              <Campo
+                etiqueta="Descuento maximo por linea (%)"
+                ayuda="De 0 a 100. En 0 (default) nadie puede aplicar descuentos en una orden de venta."
+              >
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  required
+                  value={descuentoMaximo}
+                  onChange={(e) => setDescuentoMaximo(e.target.value)}
+                />
               </Campo>
             </div>
             {guardar.isSuccess && <Aviso tipo="exito">Politica guardada.</Aviso>}

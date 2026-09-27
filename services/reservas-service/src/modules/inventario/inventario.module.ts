@@ -8,5 +8,8 @@ import { InventarioService } from './inventario.service';
   imports: [ServiciosModule, JwtAuthModule],
   controllers: [InventarioController],
   providers: [InventarioService],
+  // Sprint 26: una orden de venta descuenta y devuelve stock a traves de
+  // este servicio.
+  exports: [InventarioService],
 })
 export class InventarioModule {}

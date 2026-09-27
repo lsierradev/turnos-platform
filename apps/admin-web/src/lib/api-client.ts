@@ -944,6 +944,8 @@ export interface Politica {
   strikesParaPrepago: number;
   /** Sprint 24: minutos para pagar el anticipo antes de que se libere. */
   plazoAnticipoMinutos: number;
+  /** Sprint 26: tope de descuento por linea en una orden de venta. */
+  descuentoMaximoPorcentaje: number;
 }
 
 export interface PoliticaCliente extends Politica {
@@ -963,6 +965,7 @@ export function guardarPolitica(datos: {
   ventanaHoras: number;
   vigenciaStrikesMeses: number;
   plazoAnticipoMinutos?: number;
+  descuentoMaximoPorcentaje?: number;
 }): Promise<Politica> {
   return apiFetch<Politica>('/politica', false, BASE_URL, { method: 'PUT', body: datos });
 }
@@ -1699,4 +1702,165 @@ export function getValorizacionInventario(): Promise<{ items: ItemInventario[]; 
 
 export function getAlertasStockBajo(): Promise<ItemInventario[]> {
   return apiFetch('/inventario/alertas');
+}
+
+// --- Ordenes de venta (reservas-service, Sprint 26) ----------------------
+
+export type EstadoOrdenVenta = 'borrador' | 'confirmada' | 'pagada' | 'anulada';
+export type MedioPagoVenta = 'efectivo' | 'datafono' | 'transferencia' | 'wompi' | 'otro';
+
+export interface LineaOrdenVenta {
+  id: string;
+  tipo: 'servicio' | 'repuesto';
+  servicioId: string | null;
+  itemId: string | null;
+  descripcion: string;
+  cantidad: number;
+  precioUnitarioCentavos: number;
+  tarifaIva: TarifaIva;
+  descuentoPorcentaje: number;
+  descuentoAplicadoPor: string | null;
+  descuentoAplicadoPorNombre: string | null;
+  /** precioUnitario * cantidad, redondeado a centavos enteros. */
+  baseCentavos: number;
+  descuentoCentavos: number;
+  baseConDescuentoCentavos: number;
+  ivaCentavos: number;
+  totalCentavos: number;
+}
+
+export interface TotalesOrdenVenta {
+  subtotalCentavos: number;
+  descuentoCentavos: number;
+  ivaCentavos: number;
+  totalCentavos: number;
+  anticipoCentavos: number;
+  saldoCentavos: number;
+}
+
+export interface OrdenVenta {
+  id: string;
+  numero: number;
+  turnoId: string | null;
+  usuarioId: string | null;
+  clienteNombre: string | null;
+  clienteEmail: string | null;
+  estado: EstadoOrdenVenta;
+  lineas: LineaOrdenVenta[];
+  totales: TotalesOrdenVenta;
+  /** true: los totales son los congelados al confirmar, no un calculo al vuelo. */
+  congelado: boolean;
+  creadoPor: string;
+  creadoPorNombre: string | null;
+  creadoEn: string;
+  confirmadaEn: string | null;
+  confirmadaPorNombre: string | null;
+  pagadaEn: string | null;
+  pagadaPorNombre: string | null;
+  medioPago: MedioPagoVenta | null;
+  comprobantePago: string | null;
+  anuladaEn: string | null;
+  anuladaPorNombre: string | null;
+  motivoAnulacion: string | null;
+  cotizacionEnviadaEn: string | null;
+  cotizacionAceptadaEn: string | null;
+}
+
+export interface ResumenOrdenVenta {
+  id: string;
+  numero: number;
+  turnoId: string | null;
+  clienteNombre: string | null;
+  estado: EstadoOrdenVenta;
+  /** null: borrador (no tiene total congelado; abrila para ver el calculo). */
+  totalCentavos: number | null;
+  creadoEn: string;
+}
+
+export function getVentas(
+  query: { estado?: EstadoOrdenVenta; turnoId?: string } = {},
+): Promise<ResumenOrdenVenta[]> {
+  const params = new URLSearchParams();
+  if (query.estado) params.set('estado', query.estado);
+  if (query.turnoId) params.set('turnoId', query.turnoId);
+  const qs = params.toString();
+  return apiFetch<ResumenOrdenVenta[]>(`/ventas${qs ? `?${qs}` : ''}`);
+}
+
+export function getVenta(id: string): Promise<OrdenVenta> {
+  return apiFetch<OrdenVenta>(`/ventas/${id}`);
+}
+
+/** Sin turnoId: venta de mostrador. */
+export function crearVenta(datos: { turnoId?: string; usuarioId?: string }): Promise<OrdenVenta> {
+  return apiFetch<OrdenVenta>('/ventas', false, BASE_URL, { method: 'POST', body: datos });
+}
+
+export function agregarLineaServicioVenta(
+  ordenId: string,
+  datos: { servicioId: string; cantidad?: number },
+): Promise<OrdenVenta> {
+  return apiFetch<OrdenVenta>(`/ventas/${ordenId}/lineas/servicio`, false, BASE_URL, {
+    method: 'POST',
+    body: datos,
+  });
+}
+
+export function agregarLineaRepuestoVenta(
+  ordenId: string,
+  datos: { itemId: string; cantidad: number; descuentoPorcentaje?: number },
+): Promise<OrdenVenta> {
+  return apiFetch<OrdenVenta>(`/ventas/${ordenId}/lineas/repuesto`, false, BASE_URL, {
+    method: 'POST',
+    body: datos,
+  });
+}
+
+export function actualizarLineaVenta(
+  ordenId: string,
+  lineaId: string,
+  cambios: { cantidad?: number; descuentoPorcentaje?: number },
+): Promise<OrdenVenta> {
+  return apiFetch<OrdenVenta>(`/ventas/${ordenId}/lineas/${lineaId}`, false, BASE_URL, {
+    method: 'PATCH',
+    body: cambios,
+  });
+}
+
+export function borrarLineaVenta(ordenId: string, lineaId: string): Promise<OrdenVenta> {
+  return apiFetch<OrdenVenta>(`/ventas/${ordenId}/lineas/${lineaId}`, false, BASE_URL, {
+    method: 'DELETE',
+  });
+}
+
+/** Solo un borrador se borra: nunca toco stock ni cobros. */
+export function borrarVenta(ordenId: string): Promise<void> {
+  return apiFetch<void>(`/ventas/${ordenId}`, false, BASE_URL, { method: 'DELETE' });
+}
+
+export function confirmarVenta(ordenId: string): Promise<OrdenVenta> {
+  return apiFetch<OrdenVenta>(`/ventas/${ordenId}/confirmar`, false, BASE_URL, { method: 'POST' });
+}
+
+export function marcarPagadaVenta(
+  ordenId: string,
+  datos: { medioPago: MedioPagoVenta; comprobante?: string },
+): Promise<OrdenVenta> {
+  return apiFetch<OrdenVenta>(`/ventas/${ordenId}/pagar`, false, BASE_URL, { method: 'POST', body: datos });
+}
+
+export function anularVenta(ordenId: string, motivo: string): Promise<OrdenVenta> {
+  return apiFetch<OrdenVenta>(`/ventas/${ordenId}/anular`, false, BASE_URL, {
+    method: 'POST',
+    body: { motivo },
+  });
+}
+
+export function enviarCotizacionVenta(ordenId: string): Promise<{ enviado: boolean }> {
+  return apiFetch(`/ventas/${ordenId}/cotizacion/enviar`, false, BASE_URL, { method: 'POST' });
+}
+
+/** La acepta el cliente desde su cuenta (SECURITY DEFINER, migracion 021). */
+export function aceptarCotizacionVenta(ordenId: string): Promise<OrdenVenta> {
+  return apiFetch<OrdenVenta>(`/ventas/${ordenId}/cotizacion/aceptar`, false, BASE_URL, { method: 'POST' });
 }

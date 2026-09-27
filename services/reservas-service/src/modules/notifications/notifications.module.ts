@@ -22,7 +22,12 @@ import { EMAIL_PROVIDER, WHATSAPP_PROVIDER } from './providers/provider.tokens';
     { provide: EMAIL_PROVIDER, useClass: SendgridEmailProvider },
     { provide: WHATSAPP_PROVIDER, useClass: TwilioWhatsappProvider },
   ],
-  // La recepcion (Sprint 22) manda la constancia por esta cola.
-  exports: [CorreosService],
+  // La recepcion (Sprint 22) manda la constancia por esta cola. La
+  // cotizacion de una orden de venta (Sprint 26) no puede: notificaciones
+  // exige turno_id NOT NULL y una venta de mostrador no tiene turno, asi
+  // que VentasService manda ese correo directo con el proveedor, sin pasar
+  // por la cola ni quedar en notificaciones (sin reintentos ni control de
+  // cobertura para ese correo puntual -- ver docs/VENTAS-PENDIENTES.md).
+  exports: [CorreosService, EMAIL_PROVIDER],
 })
 export class NotificationsModule {}

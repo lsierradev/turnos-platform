@@ -33,6 +33,16 @@ export class PoliticaDto {
   @Min(10)
   @Max(1440)
   plazoAnticipoMinutos?: number;
+
+  /**
+   * Sprint 26: hasta cuanto puede descontar el admin en una linea de una
+   * orden de venta. 0 (default) = sin descuentos. Sin el campo, no cambia.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  descuentoMaximoPorcentaje?: number;
 }
 
 export class PoliticaQueryDto {

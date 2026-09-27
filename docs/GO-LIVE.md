@@ -265,6 +265,25 @@ El cobro con Wompi está implementado (ver
       hay hoy) o un promedio ponderado, si el volumen de compras lo
       justifica más adelante.
 
+## Orden de venta (Sprint 26)
+
+Ver [VENTAS-PENDIENTES.md](VENTAS-PENDIENTES.md).
+
+- [x] Servicios del turno (precio guardado) y repuestos con descuento por
+      línea (con tope y quién lo aplicó) e IVA por tarifa.
+- [x] borrador → confirmada → pagada → anulada; confirmar descuenta stock
+      (protegido igual que el Sprint 25: nada se confirma si algún
+      repuesto no alcanza) y congela los totales; anular devuelve el
+      stock.
+- [x] Cotización por correo de un borrador, aceptada por el cliente antes
+      de poder confirmarla.
+- [ ] Subir el tope de descuento (`Mi taller → Cancelaciones`, arranca en
+      0 %) en cada taller que vaya a usar descuentos.
+- [ ] Decidir si "pagada" debe integrarse con el cuadre de caja del Sprint
+      24 (hoy es independiente de la tabla `pagos`).
+- [ ] Monitoreo sobre `No se pudo enviar la cotizacion de la orden` (sin
+      reintento automático).
+
 ## Alcance
 
 - [x] ~~Confirmar que el beta sale sin pagos.~~ Resuelto en el Sprint 24

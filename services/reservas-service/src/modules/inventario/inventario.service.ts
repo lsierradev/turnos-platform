@@ -266,10 +266,7 @@ export class InventarioService {
       )) as MovimientoInventario[];
       return { movimiento, item: await this.obtener(dto.itemId) };
     } catch (error) {
-      if (
-        this.codigoError(error) === 'check_violation' ||
-        this.codigoError(error) === '23514'
-      ) {
+      if (this.esStockInsuficiente(error)) {
         const item = await this.obtener(dto.itemId);
         throw new ConflictException(
           `Stock insuficiente: quedan ${item.stock} ${item.unidad} de ${item.nombre}.`,
@@ -277,6 +274,75 @@ export class InventarioService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Descuenta stock por una linea de repuesto de una orden de venta
+   * confirmada (Sprint 26). `usuarioId` es quien confirma la orden, no
+   * necesariamente quien la va a usar (a diferencia de una salida
+   * registrada a mano, esta la dispara el servicio de ventas).
+   */
+  async registrarSalidaPorConfirmarVenta(args: {
+    itemId: string;
+    cantidad: number;
+    ordenVentaId: string;
+    turnoId: string | null;
+    usuarioId: string;
+  }): Promise<void> {
+    const taller = this.db.exigirTaller();
+    try {
+      await this.db.conSavepoint(() =>
+        this.db.query(
+          `INSERT INTO movimientos_inventario
+             (taller_id, item_id, tipo, cantidad, turno_id, orden_venta_id, creado_por)
+           VALUES ($1, $2, 'salida', $3, $4, $5, $6)`,
+          [
+            taller,
+            args.itemId,
+            -args.cantidad,
+            args.turnoId,
+            args.ordenVentaId,
+            args.usuarioId,
+          ],
+        ),
+      );
+    } catch (error) {
+      if (this.esStockInsuficiente(error)) {
+        const item = await this.obtener(args.itemId);
+        throw new ConflictException(
+          `Stock insuficiente para ${item.nombre}: quedan ${item.stock} ${item.unidad}.`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /** Devuelve el stock de una linea de repuesto al anular la orden que la descuento. */
+  async registrarDevolucionPorAnularVenta(args: {
+    itemId: string;
+    cantidad: number;
+    ordenVentaId: string;
+    usuarioId: string;
+  }): Promise<void> {
+    const taller = this.db.exigirTaller();
+    await this.db.query(
+      `INSERT INTO movimientos_inventario
+         (taller_id, item_id, tipo, cantidad, orden_venta_id, motivo, creado_por)
+       VALUES ($1, $2, 'devolucion', $3, $4, $5, $6)`,
+      [
+        taller,
+        args.itemId,
+        args.cantidad,
+        args.ordenVentaId,
+        'Anulacion de la orden de venta',
+        args.usuarioId,
+      ],
+    );
+  }
+
+  private esStockInsuficiente(error: unknown): boolean {
+    const codigo = this.codigoError(error);
+    return codigo === 'check_violation' || codigo === '23514';
   }
 
   /** El turno tiene que ser del taller y, si pide un tecnico, ser suyo. */

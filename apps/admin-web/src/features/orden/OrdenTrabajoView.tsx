@@ -26,6 +26,7 @@ import { formatearPesos, textoPrecioFinal } from '@/lib/dinero';
 import { actuaComoAdmin } from '@/lib/sesion';
 import { RepuestosOrden } from '@/features/inventario/RepuestosOrden';
 import { PagosOrden } from '@/features/pagos/PagosOrden';
+import { VentaOrden } from '@/features/ventas/VentaOrden';
 import { esUuid } from '@/lib/uuid';
 import {
   AceptarRecepcion,
@@ -269,6 +270,9 @@ function Orden({
 
       {/* Sprint 24: anticipo, saldo, cobros en el mostrador y devoluciones. */}
       <PagosOrden turnoId={turno.id} taller={taller} esAdmin={esAdmin} esTitular={!personal} />
+
+      {/* Sprint 26: la orden de venta de este turno (servicios y repuestos). */}
+      <VentaOrden turnoId={turno.id} esAdmin={esAdmin} />
 
       <Card className="print:shadow-none">
         <CardHeader>

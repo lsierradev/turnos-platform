@@ -205,6 +205,27 @@ esquema nuevo mientras dura el rolling update.
 > no toca ninguna tabla existente. Se puede aplicar en cualquier momento,
 > antes o junto con los servicios del Sprint 25.
 
+> **La 021 (Sprint 26) es aditiva:** tablas nuevas (`ordenes_venta`,
+> `ordenes_venta_lineas`), una columna nueva en `movimientos_inventario`
+> (`orden_venta_id`, nullable) y una columna nueva en
+> `politica_cancelacion` (`descuento_maximo_porcentaje SMALLINT NOT NULL
+> DEFAULT 0`). El default en 0 es a proposito: **ningun taller puede
+> aplicar descuentos en una orden de venta hasta que un admin suba el tope
+> en Mi taller -> Cancelaciones** (avisar a los talleres, ver
+> [VENTAS-PENDIENTES.md](VENTAS-PENDIENTES.md)).
+
+### Orden de venta (Sprint 26)
+
+- Sin variables de entorno nuevas (reusa `WEB_URL`, ya seteada desde el
+  Sprint 24, para armar el enlace de la cotizacion en el correo).
+- El correo de la cotizacion sale por el mismo `EMAIL_PROVIDER` que el
+  resto del sistema (SendGrid), pero sin pasar por la cola de
+  notificaciones del Sprint 8: si falla, no hay reintento automatico (ver
+  [VENTAS-PENDIENTES.md](VENTAS-PENDIENTES.md)).
+- Confirmar una orden descuenta stock igual que una salida directa del
+  Sprint 25 (mismo trigger, misma proteccion de concurrencia); no agrega
+  ninguna tarea periodica nueva.
+
 ### Inventario de repuestos (Sprint 25)
 
 - Sin variables de entorno nuevas.

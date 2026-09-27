@@ -23,6 +23,8 @@ export interface Politica {
   strikesParaPrepago: number;
   /** Sprint 24: minutos para pagar el anticipo antes de que se libere. */
   plazoAnticipoMinutos: number;
+  /** Sprint 26: tope de descuento por linea en una orden de venta. */
+  descuentoMaximoPorcentaje: number;
 }
 
 /** Politica + como esta un cliente en este taller. */
@@ -129,11 +131,13 @@ export class PoliticaService {
         ventanaHoras: number;
         vigenciaStrikesMeses: number;
         plazoAnticipoMinutos: number;
+        descuentoMaximoPorcentaje: number;
       }[]
     >(
       `SELECT ventana_horas AS "ventanaHoras",
               vigencia_strikes_meses AS "vigenciaStrikesMeses",
-              plazo_anticipo_minutos AS "plazoAnticipoMinutos"
+              plazo_anticipo_minutos AS "plazoAnticipoMinutos",
+              descuento_maximo_porcentaje AS "descuentoMaximoPorcentaje"
          FROM politica_cancelacion WHERE taller_id = $1`,
       [tallerId],
     );
@@ -143,6 +147,7 @@ export class PoliticaService {
       vigenciaStrikesMeses: fila?.vigenciaStrikesMeses ?? 12,
       strikesParaPrepago: STRIKES_PARA_PREPAGO,
       plazoAnticipoMinutos: fila?.plazoAnticipoMinutos ?? 30,
+      descuentoMaximoPorcentaje: fila?.descuentoMaximoPorcentaje ?? 0,
     };
   }
 
@@ -152,6 +157,7 @@ export class PoliticaService {
       `UPDATE politica_cancelacion
           SET ventana_horas = $2, vigencia_strikes_meses = $3,
               plazo_anticipo_minutos = coalesce($4, plazo_anticipo_minutos),
+              descuento_maximo_porcentaje = coalesce($5, descuento_maximo_porcentaje),
               actualizado_en = now()
         WHERE taller_id = $1`,
       [
@@ -159,6 +165,7 @@ export class PoliticaService {
         dto.ventanaHoras,
         dto.vigenciaStrikesMeses,
         dto.plazoAnticipoMinutos ?? null,
+        dto.descuentoMaximoPorcentaje ?? null,
       ],
     );
     return this.obtener(taller);

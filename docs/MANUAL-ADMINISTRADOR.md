@@ -290,6 +290,41 @@ debajo del cual aparece una alerta.
 
 ---
 
+## Órdenes de venta
+
+En **Ventas** armás el documento de cobro de un turno o de una venta de
+mostrador: qué servicios y qué repuestos se cobran, con descuentos, IVA y
+lo que ya se pagó de anticipo.
+
+- **De un turno.** Desde la orden de trabajo del turno, **Venta → Crear
+  orden de venta**: agrega sola la línea del servicio, con el precio que
+  tenía el turno cuando se reservó (no el del catálogo, que puede haber
+  cambiado desde entonces).
+- **De mostrador.** Desde **Ventas → Nueva venta de mostrador**, con o sin
+  cliente. Sin turno detrás.
+- **Repuestos y descuentos.** Se agregan a mano, con la cantidad y, si
+  corresponde, un descuento por línea. El descuento tiene un tope que
+  configurás en **Mi taller → Cancelaciones** (arranca en 0 %: nadie puede
+  aplicar descuentos hasta que lo subas) y queda registrado quién lo
+  aplicó.
+- **Confirmar.** Descuenta el stock de cada repuesto al instante (la misma
+  protección del inventario: si algo no alcanza, no se confirma nada) y
+  congela los totales — un cambio de precio o de IVA después no los
+  altera. El anticipo que el cliente ya pagó del turno se descuenta solo
+  del total.
+- **Cotización.** Con la orden todavía en borrador, **Enviar cotización**
+  se la manda por correo al cliente. El taller no puede confirmarla hasta
+  que el cliente la acepte desde su cuenta.
+- **Pagar y anular.** Marcás la orden como pagada (efectivo, datáfono,
+  transferencia u otro) una vez confirmada. Anularla — desde confirmada o
+  ya pagada — devuelve el stock de los repuestos; pide un motivo.
+
+Los repuestos que el técnico carga directo en **Repuestos usados** (dentro
+de la orden de trabajo, ver la sección de Inventario) son independientes
+de esto: una orden de venta no los importa ni los duplica.
+
+---
+
 ## Los recordatorios automáticos
 
 El sistema le avisa solo al cliente **24 horas antes** de su turno:

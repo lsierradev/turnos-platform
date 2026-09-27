@@ -101,6 +101,16 @@ export function LoginView() {
               ¿Olvidaste tu contraseña?
             </Link>
           </form>
+          {/* Sprint 23: se pueden leer antes de tener cuenta. */}
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            <Link to="/legal/politica_datos" className="hover:text-foreground hover:underline">
+              Política de datos personales
+            </Link>
+            {' · '}
+            <Link to="/legal/terminos_taller" className="hover:text-foreground hover:underline">
+              Términos para talleres
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </main>

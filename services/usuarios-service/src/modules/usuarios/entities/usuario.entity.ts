@@ -70,6 +70,11 @@ export class Usuario {
   @Column({ default: true })
   activo: boolean;
 
+  // Supresion a pedido del titular (Sprint 23, migracion 018): la fila
+  // queda anonimizada e inactiva, con la fecha.
+  @Column({ name: 'suprimido_en', type: 'timestamptz', nullable: true })
+  suprimidoEn?: Date | null;
+
   @CreateDateColumn({ name: 'creado_en' })
   creadoEn: Date;
 

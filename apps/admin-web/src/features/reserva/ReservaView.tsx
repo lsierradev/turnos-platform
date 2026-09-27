@@ -16,6 +16,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { useTaller } from '@/lib/taller';
 import {
+  aceptarDocumento,
+  aceptarEnMostrador,
   ApiError,
   crearCliente,
   crearTurno,
@@ -54,6 +56,7 @@ import {
 } from './useReservaQueries';
 import { CLIENTE_NUEVO_VACIO, validarClienteNuevo } from './cliente-nuevo';
 import { SelectorCliente, type ModoCliente } from './SelectorCliente';
+import { CondicionesReserva, useCondicionesPorAceptar } from './CondicionesReserva';
 
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 type Campo = 'bahia' | 'servicio' | 'tecnico';
@@ -82,6 +85,8 @@ interface Intento {
   turno: NuevoTurno;
   /** Cliente a dar de alta antes de reservar (admin, "Cliente nuevo"). */
   nuevo?: DatosClienteNuevo;
+  /** Sprint 23: version de las condiciones del taller a aceptar antes. */
+  condiciones?: number;
 }
 
 /** Fallo el alta del cliente, no la reserva: se muestra distinto. */
@@ -227,6 +232,16 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
   const vehiculo = vehiculos.data?.find((v) => v.id === vehiculoId);
   const prepago = politica.data?.requierePrepago ?? false;
 
+  // Sprint 23: condiciones del taller que el titular todavia no acepto.
+  const condiciones = useCondicionesPorAceptar({
+    activo: !reprogramarId,
+    esAdmin,
+    clienteId: clienteElegido?.id,
+    clienteNuevo: esAdmin && modoCliente === 'nuevo',
+  });
+  const [aceptaCondiciones, setAceptaCondiciones] = useState(false);
+  const [errorCondiciones, setErrorCondiciones] = useState(false);
+
   const clienteListo =
     !esAdmin ||
     (modoCliente === 'existente'
@@ -258,7 +273,7 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
     // (usuarios-service), despues el turno a su nombre. No es atomico (son
     // dos servicios): si el turno falla, la cuenta queda creada y elegida
     // para el reintento, en vez de intentar crearla otra vez.
-    mutationFn: async ({ turno, nuevo }: Intento) => {
+    mutationFn: async ({ turno, nuevo, condiciones: version }: Intento) => {
       if (reprogramarId) {
         const r = await reprogramarTurno(
           reprogramarId,
@@ -282,6 +297,13 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
         setModoCliente('existente');
         void queryClient.invalidateQueries({ queryKey: ['clientes'] });
       }
+      // La aceptacion antes del turno: sin ella reservas-service lo
+      // rechaza. El admin deja constancia de que el cliente acepto en el
+      // mostrador; el cliente la acepta el mismo.
+      if (version !== undefined) {
+        if (esAdmin && clienteId) await aceptarEnMostrador(clienteId, ['condiciones_taller']);
+        else if (!esAdmin) await aceptarDocumento('condiciones_taller', version);
+      }
       return crearTurno({ ...turno, clienteId });
     },
     onSuccess: (turno) => {
@@ -298,11 +320,17 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
         reprogramado: reprogramarId ? { strike: reprogramadoConStrike.current } : undefined,
       });
       // Todo lo que muestra ocupacion quedo viejo.
-      for (const clave of ['disponibilidad', 'agenda', 'carga-bahias', 'turnos-bahia', 'kpis', 'mis-turnos', 'strikes', 'politica']) {
+      for (const clave of ['disponibilidad', 'agenda', 'carga-bahias', 'turnos-bahia', 'kpis', 'mis-turnos', 'strikes', 'politica', 'condiciones']) {
         void queryClient.invalidateQueries({ queryKey: [clave] });
       }
     },
     onError: (error, { turno }) => {
+      // El taller publico otra version mientras se reservaba: se muestra la
+      // nueva para aceptarla.
+      if (error instanceof ApiError && (error.body as { codigo?: string })?.codigo === 'CONDICIONES_PENDIENTES') {
+        setAceptaCondiciones(false);
+        void condiciones.refetch();
+      }
       const sugerencias = sugerenciasDeConflicto(error);
       if (sugerencias !== null) {
         setConflicto({ mensaje: error.message, intentado: turno.inicio, sugerencias });
@@ -346,6 +374,10 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
       document.getElementById('reserva-cliente')?.scrollIntoView({ block: 'start' });
       return;
     }
+    if (condiciones.porAceptar && !aceptaCondiciones) {
+      setErrorCondiciones(true);
+      return;
+    }
     setInicio(instante);
     // Una sugerencia puede caer en otro dia (el backend mira 3 dias).
     irAFecha(fechaDeInstante(instante));
@@ -356,6 +388,7 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
             email: datosNuevo.email.trim(),
             telefono: datosNuevo.telefono?.trim() || undefined,
             ciudad: datosNuevo.ciudad.trim(),
+            autorizacionDatos: datosNuevo.autorizacionDatos,
           }
         : undefined;
     reserva.mutate({
@@ -368,11 +401,15 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
         vehiculoId: vehiculoId || undefined,
       },
       nuevo,
+      condiciones: condiciones.porAceptar?.version,
     });
   }
 
   function cambiarCliente(cambio: () => void) {
     cambio();
+    // La casilla de las condiciones es por cliente.
+    setAceptaCondiciones(false);
+    setErrorCondiciones(false);
     limpiarIntento();
   }
 
@@ -607,6 +644,18 @@ function ReservaFormulario({ selector }: { selector: ReactNode }) {
                 </p>
               )}
 
+              {condiciones.porAceptar && (
+                <CondicionesReserva
+                  condiciones={condiciones.porAceptar}
+                  esAdmin={esAdmin}
+                  aceptadas={aceptaCondiciones}
+                  onAceptadas={(v) => {
+                    setAceptaCondiciones(v);
+                    if (v) setErrorCondiciones(false);
+                  }}
+                  mostrarError={errorCondiciones}
+                />
+              )}
               {conflicto && (
                 <Conflicto
                   conflicto={conflicto}

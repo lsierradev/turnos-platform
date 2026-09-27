@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtAuthModule } from '@turnos-platform/auth';
+import { LegalModule } from '../legal/legal.module';
 import { ContrasenaService } from './contrasena.service';
 import { CorreoService } from './correo.service';
 import { TokenContrasena } from './entities/token-contrasena.entity';
@@ -12,6 +13,7 @@ import { UsuariosService } from './usuarios.service';
   imports: [
     TypeOrmModule.forFeature([Usuario, TokenContrasena]),
     JwtAuthModule,
+    LegalModule,
   ],
   controllers: [UsuariosController],
   providers: [UsuariosService, ContrasenaService, CorreoService],

@@ -415,8 +415,108 @@ function orden(conRecepcion: boolean) {
   };
 }
 
+
+// --- Sprint 23: documentos legales y datos del titular -------------------
+// Textos cortos y fijos, no los reales: los borradores van a cambiar con la
+// revision del abogado y cada cambio moveria los pixeles de estas capturas.
+const TEXTO_POLITICA = [
+  '# Politica de Tratamiento de Datos Personales',
+  '',
+  'Esta politica explica que datos se recogen en TurnoPro, para que, y como ejercer sus derechos.',
+  '',
+  '## Sus derechos',
+  '',
+  '1. **Conocer** los datos que se tienen sobre usted.',
+  '2. **Actualizarlos y rectificarlos**.',
+  '3. **Suprimirlos**, salvo lo que la ley obliga a conservar.',
+  '',
+  '| Categoria | Datos |',
+  '|---|---|',
+  '| Contacto | Nombre, correo, telefono y ciudad |',
+  '| Vehiculos | Placa, marca, modelo y kilometraje |',
+  '',
+  'Responsable: ⟦COMPLETAR: razon social⟧.',
+].join('\n');
+const documentoLegal = (documento: string, titulo: string, contenido: string) => ({
+  documento,
+  version: 1,
+  titulo,
+  sha256: 'e618f18e41ee89db974bd6d44242a8f87cc0011f9aebb853ab7866caa945110a',
+  vigenteDesde: '2026-09-20',
+  borrador: true,
+  contenido,
+});
+const PENDIENTES_CLIENTE = [
+  documentoLegal('politica_datos', 'Política de Tratamiento de Datos Personales', TEXTO_POLITICA),
+  documentoLegal(
+    'autorizacion_datos',
+    'Autorización para el tratamiento de datos personales',
+    '# Autorizacion\n\nAutorizo de manera previa, expresa e informada a TurnoPro y al taller para tratar mis datos personales.',
+  ),
+];
+const CONDICIONES = [
+  '# Condiciones del servicio de Taller Centro',
+  '',
+  '## 1. Precios',
+  '',
+  'Todos los precios que ve al reservar **incluyen el IVA**.',
+  '',
+  '## 3. Cancelacion y reprogramacion',
+  '',
+  '- Puede cancelar sin costo hasta 4 horas antes.',
+  '- Despues, o si no asiste, se registra un strike.',
+].join('\n');
+const aceptacion = (documento: string, version: number, canal: string, horas: number, taller: string | null) => ({
+  id: `ac-${documento}-${version}-${canal}`,
+  documento,
+  version,
+  sha256: 'x'.repeat(64),
+  tallerId: taller ? TALLER.id : null,
+  tallerNombre: taller,
+  canal,
+  ip: canal === 'presencial' ? '181.52.10.4' : '190.24.8.77',
+  registradoPor: canal === 'presencial' ? 'Ana Admin' : null,
+  aceptadoEn: new Date(AHORA.getTime() - horas * 3_600_000).toISOString(),
+});
+const MIS_DATOS = {
+  perfil: {
+    id: USUARIOS.cliente.sub,
+    email: USUARIOS.cliente.email,
+    nombre: 'Maria Gomez',
+    rol: 'cliente',
+    telefono: '+57 300 123 4567',
+    ciudad: 'Bogota',
+    creadoEn: '2026-08-01T15:00:00.000Z',
+  },
+  resumen: { vehiculos: 1, turnos: 6, recepciones: 2, strikes: 1 },
+  aceptaciones: [
+    aceptacion('condiciones_taller', 2, 'web', 30, TALLER.nombre),
+    aceptacion('politica_datos', 1, 'web', 24 * 20, null),
+    aceptacion('autorizacion_datos', 1, 'web', 24 * 20, null),
+    aceptacion('politica_datos', 1, 'presencial', 24 * 21, TALLER.nombre),
+  ],
+  solicitudes: [
+    {
+      id: 's1',
+      tipo: 'rectificacion',
+      detalle: { campos: ['telefono'] },
+      creadoEn: new Date(AHORA.getTime() - 48 * 3_600_000).toISOString(),
+    },
+  ],
+  supresion: { posible: false, motivo: 'Tenes 1 turno(s) por delante. Cancelalos primero desde "Mis turnos".' },
+};
+const VERSIONES_CONDICIONES = [
+  { version: 2, sha256: 'y'.repeat(64), plantillaVersion: 1, publicadoEn: '2026-09-20T15:00:00.000Z', publicadoPor: 'Ana Admin', aceptaciones: 14 },
+  { version: 1, sha256: 'z'.repeat(64), plantillaVersion: 1, publicadoEn: '2026-09-01T15:00:00.000Z', publicadoPor: 'Ana Admin', aceptaciones: 31 },
+];
+
 /** Engancha la API simulada a la pagina. */
-export async function simularApi(page: Page, rol: Rol | null): Promise<void> {
+export interface OpcionesApi {
+  /** Sprint 23: el usuario tiene documentos por aceptar ("Antes de continuar"). */
+  pendientesLegales?: boolean;
+}
+
+export async function simularApi(page: Page, rol: Rol | null, opciones: OpcionesApi = {}): Promise<void> {
   const responder = (route: Route, json: unknown, status = 200) => route.fulfill({ status, json });
 
   await page.route(/localhost:300[12]\//, async (route) => {
@@ -460,6 +560,13 @@ export async function simularApi(page: Page, rol: Rol | null): Promise<void> {
     if (ruta === '/appointments/mios') return responder(route, misTurnos());
     if (ruta === '/vehiculos') return responder(route, [VEHICULO]);
     if (ruta === '/politica') return responder(route, POLITICA);
+    if (ruta === '/legal/pendientes') return responder(route, opciones.pendientesLegales ? PENDIENTES_CLIENTE : []);
+    if (ruta === '/legal/documentos/politica_datos') return responder(route, PENDIENTES_CLIENTE[0]);
+    if (ruta === '/legal/condiciones/estado') return responder(route, { vigente: null, aceptada: true });
+    if (ruta === '/legal/condiciones/versiones') return responder(route, VERSIONES_CONDICIONES);
+    if (ruta === '/legal/condiciones/borrador')
+      return responder(route, { contenido: CONDICIONES, basadoEn: 'publicada', plantillaVersion: 1, pendientes: [] });
+    if (ruta === '/mis-datos') return responder(route, MIS_DATOS);
     if (ruta === '/strikes/mios') return responder(route, strikes(false));
     if (ruta === '/strikes') return responder(route, q('estado') === 'reclamos' ? strikes(true).slice(0, 1) : strikes(true));
     if (ruta === '/appointments/dddddddd-0000-4000-8000-000000000001/orden') return responder(route, orden(true));

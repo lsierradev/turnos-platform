@@ -5,6 +5,7 @@ import { TenantModule } from '@turnos-platform/tenant';
 import { join } from 'path';
 import { DataSource } from 'typeorm';
 import { AuthModule } from './modules/auth/auth.module';
+import { LegalModule } from './modules/legal/legal.module';
 import { TalleresModule } from './modules/talleres/talleres.module';
 import { UsuariosModule } from './modules/usuarios/usuarios.module';
 
@@ -26,6 +27,8 @@ import { UsuariosModule } from './modules/usuarios/usuarios.module';
     UsuariosModule,
     AuthModule,
     TalleresModule,
+    // Documentos legales, aceptaciones y derechos del titular (Sprint 23).
+    LegalModule,
   ],
 })
 export class AppModule {}

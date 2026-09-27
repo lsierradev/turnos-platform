@@ -5,6 +5,7 @@ export const CLIENTE_NUEVO_VACIO: DatosClienteNuevo = {
   email: '',
   telefono: '',
   ciudad: '',
+  autorizacionDatos: false,
 };
 
 type Errores = Partial<Record<keyof DatosClienteNuevo, string>>;
@@ -24,5 +25,8 @@ export function validarClienteNuevo(d: DatosClienteNuevo): Errores {
   const ciudad = d.ciudad.trim();
   if (ciudad.length < 2) errores.ciudad = 'Ingresa la ciudad del cliente.';
   else if (ciudad.length > 80) errores.ciudad = 'Maximo 80 caracteres.';
+  if (!d.autorizacionDatos) {
+    errores.autorizacionDatos = 'Sin la autorizacion del cliente no se pueden guardar sus datos.';
+  }
   return errores;
 }

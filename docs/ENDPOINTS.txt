@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 22 (recepcion del vehiculo, ciclo del turno, politica de cancelacion)
+Actualizado: Sprint 23 (documentos legales, aceptaciones y derechos del titular)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -811,6 +811,125 @@ Servicios (POST/PATCH /servicios): "garantiaDias" (0..3650 o null =
 rige la garantia legal), impreso en la orden (Decreto 735 de 2013).
 
 ----------------------------------------
+MODULO: documentos legales, aceptaciones y datos del titular (usuarios-service, Sprint 23)
+----------------------------------------
+Migracion 018. Los textos de TurnoPro (terminos del taller, politica de
+datos, autorizacion) estan versionados en
+services/usuarios-service/src/modules/legal/textos (ver docs/legal/README.md).
+Las condiciones de cada taller con sus clientes se guardan en
+condiciones_taller, una fila inmutable por version publicada.
+Cada aceptacion queda en aceptaciones_legales: usuario, documento, version,
+SHA-256 del texto, fecha, IP (respeta TRUST_PROXY), navegador y canal
+(web | app | presencial). La app no puede modificarla ni borrarla.
+
+documento: terminos_taller | politica_datos | autorizacion_datos | condiciones_taller
+
+--- Publicos (sin token) ---
+
+[GET] /legal/documentos
+  Vigentes de TurnoPro, sin el texto.
+  Response 200: [ { documento, version, titulo, sha256, vigenteDesde, borrador } ]
+
+[GET] /legal/documentos/:tipo[?version=N]
+  El texto (Markdown) de la vigente o de una version anterior. 404 si la
+  version no existe; 400 si el tipo no es de TurnoPro.
+  Response 200: { documento, version, titulo, sha256, vigenteDesde, borrador, contenido }
+
+[GET] /legal/talleres/:tallerId/condiciones[?version=N]
+  Condiciones publicadas del taller (la ultima o la version pedida). 404 si
+  el taller no publico condiciones.
+
+--- Con sesion ---
+
+[GET] /legal/pendientes
+  Lo que el usuario tiene que aceptar: la version vigente de cada documento
+  de su rol que no acepto. cliente y tecnico: politica + autorizacion. admin:
+  ademas terminos_taller (por su taller: con que lo acepte un admin, no se
+  les pide a los demas). superadmin: nada. La constancia 'presencial' que
+  deja el admin al dar de alta a un cliente NO cuenta: el titular acepta por
+  si mismo en su primer ingreso. El panel no deja pasar sin aceptar.
+  Response 200: [ { documento, version, titulo, sha256, vigenteDesde, borrador, contenido } ]
+
+[POST] /legal/aceptaciones
+  Body: { documento, version, canal?: "web" | "app" }   (default web)
+  version = la que el usuario leyo. Si ya no es la vigente -> 409
+  { message, versionVigente }. terminos_taller: solo admin (403 a otros).
+  condiciones_taller: las del taller de X-Taller (404 si no publico).
+  Response 201: { id, documento, version, sha256, tallerId, tallerNombre, canal, ip, registradoPor, aceptadoEn }
+
+[GET] /legal/aceptaciones/mias
+  Historial de aceptaciones propias, la mas reciente primero.
+
+[POST] /legal/aceptaciones/presenciales            (admin)
+  Body: { clienteId, documentos: [condiciones_taller | politica_datos | autorizacion_datos] }
+  El admin deja constancia de que el cliente acepto en el mostrador
+  (canal presencial, registrado_por = el admin). El cliente tiene que ser
+  del taller (404 si no). Siempre la version vigente.
+
+[GET] /legal/condiciones/borrador[?desde=plantilla]   (admin)
+  Para el editor: la ultima version publicada o, si no hay (o desde=
+  plantilla), la plantilla de TurnoPro llena con los datos fiscales y la
+  politica de cancelacion del taller.
+  Response 200: { contenido, basadoEn: "plantilla" | "publicada", plantillaVersion, pendientes: [marcas] }
+
+[POST] /legal/condiciones                          (admin)
+  Body: { contenido }  (Markdown, 200..60000 caracteres)
+  Publica la version siguiente. 400 { message, pendientes } si quedan marcas
+  ⟦COMPLETAR…⟧, ⟦REVISION LEGAL…⟧ o {{marcador}}; 409 si es el mismo texto
+  de la vigente o si otro admin publico a la vez.
+
+[GET] /legal/condiciones/versiones                 (admin)
+  [ { version, sha256, plantillaVersion, publicadoEn, publicadoPor, aceptaciones } ]
+  aceptaciones = clientes distintos que aceptaron esa version.
+
+[GET] /legal/condiciones/estado[?clienteId=uuid]   (admin | cliente)
+  Condiciones vigentes del taller de la sesion y si el cliente (uno mismo,
+  o clienteId si pregunta un admin) acepto esa version.
+  Response 200: { vigente: {...} | null, aceptada }
+  vigente null = el taller no publico condiciones: no hay nada que aceptar.
+
+--- Reservas (reservas-service) ---
+
+POST /appointments: si el taller publico condiciones y el cliente titular
+no acepto la version VIGENTE (por su cuenta o presencial), responde
+409 { message, codigo: "CONDICIONES_PENDIENTES", version }. Reprogramar no
+las pide (sigue el acuerdo del turno original).
+
+--- Alta de cliente (cambio) ---
+
+POST /usuarios con rol cliente (o sin rol) exige "autorizacionDatos": true
+(400 si falta): el admin confirma que el cliente autorizo el tratamiento de
+sus datos. Queda como aceptacion presencial de politica y autorizacion.
+
+--- Derechos del titular (Ley 1581 de 2012) ---
+
+[GET] /mis-datos
+  Consulta: { perfil, resumen: { vehiculos, turnos, recepciones, strikes },
+  aceptaciones, solicitudes, supresion: { posible, motivo } }
+
+[PATCH] /mis-datos
+  Rectificacion. Body: { nombre?, telefono?, ciudad? } (telefono "" lo
+  borra). El correo no se cambia aca (es el usuario de ingreso). Queda en
+  solicitudes_titular QUE campos cambiaron, sin los valores.
+  Response 200: perfil actualizado.
+
+[GET] /mis-datos/exportar
+  Descarga JSON (Content-Disposition: attachment) con perfil, vehiculos,
+  turnos de todos los talleres, recepciones con fotos (data URL), strikes y
+  reclamos, notificaciones, aceptaciones y solicitudes. Queda registrada.
+
+[POST] /mis-datos/suprimir
+  Body: { password }. Solo cliente (403 al personal: lo da de baja su
+  taller). 403 si la contrasena no coincide (no 401: el panel cerraria la
+  sesion). 409 si tiene turnos programados por delante.
+  Anonimiza la cuenta (nombre "Titular suprimido", correo
+  suprimido-<id>@suprimido.invalid, sin telefono ni ciudad, inactiva),
+  borra strikes, reclamos, relaciones con talleres, enlaces de contrasena y
+  vehiculos sin orden de trabajo; conserva turnos (soporte contable),
+  recepciones (garantia) y aceptaciones (prueba de la autorizacion).
+  Response 200: { conservado: [ ...lo que se conservo y por que ] }
+
+----------------------------------------
 Convenciones generales
 ----------------------------------------
 - Sin prefijo global todavia (ej. /api/v1) — pendiente de definir.
@@ -874,6 +993,14 @@ Convenciones generales
                               GET /appointments/:id/orden, POST
                               /recepciones/:id/aceptar (Sprint 22; RLS
                               limita a lo propio o al taller)
-    publico                -> POST /auth/login, /auth/olvide, /auth/restablecer
+    admin (Sprint 23)      -> /legal/condiciones (borrador, versiones, publicar),
+                              POST /legal/aceptaciones/presenciales
+    admin | cliente        -> GET /legal/condiciones/estado
+    autenticado (Sprint 23)-> GET /legal/pendientes, POST /legal/aceptaciones,
+                              GET /legal/aceptaciones/mias, /mis-datos
+                              (suprimir: solo cliente)
+    publico                -> POST /auth/login, /auth/olvide, /auth/restablecer,
+                              GET /legal/documentos*, GET
+                              /legal/talleres/:id/condiciones (Sprint 23)
   Falta de permiso responde 403 (el token es valido); 401 queda solo para
   token ausente o invalido.

@@ -73,6 +73,9 @@ export class AppointmentsController {
     // El turno queda a nombre de un cliente si lo reservo el mismo o si el
     // admin lo hizo por el: en los dos casos se lo relaciona con el taller.
     const titularEsCliente = paraCliente || user.rol === Rol.CLIENTE;
+    if (titularEsCliente) {
+      await this.appointmentsService.exigirCondicionesAceptadas(usuarioId);
+    }
     return this.appointmentsService.create(
       dto,
       usuarioId,

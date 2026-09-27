@@ -180,8 +180,17 @@ function Encabezado() {
           <div className="lg:hidden">
             <TallerActual />
           </div>
+          {/* Sprint 23: el acceso a "Mis datos" (derechos del titular) para
+              todos los roles, sin gastar un lugar de la barra inferior. */}
           {usuario && (
-            <div className="flex items-center gap-2">
+            <Link
+              to="/mis-datos"
+              title="Mis datos"
+              className="flex items-center gap-2 rounded-lg focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
+              {/* Nombre accesible que empieza por el destino y conserva el
+                  texto visible (WCAG 2.5.3). */}
+              <span className="sr-only">Mis datos:</span>
               <span
                 className="flex size-8 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-foreground"
                 aria-hidden
@@ -194,7 +203,7 @@ function Encabezado() {
                 </span>
               </div>
               <Badge variant="secondary">{ROL_LABEL[usuario.rol] ?? usuario.rol}</Badge>
-            </div>
+            </Link>
           )}
           <SelectorTema />
           <Button variant="outline" size="sm" onClick={cerrarSesion} aria-label="Salir">

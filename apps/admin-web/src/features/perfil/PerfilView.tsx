@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Car, CircleCheck, LoaderCircle, Plus, ShieldAlert } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { EstadoCargando, EstadoError, EstadoVacio } from '@/components/estados';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,7 +31,14 @@ export function PerfilView() {
     <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-6">
       <div>
         <h1 className="font-heading text-2xl font-semibold">Mi perfil</h1>
-        <p className="text-sm text-muted-foreground">Tus vehiculos y tu historial de cancelaciones.</p>
+        <p className="text-sm text-muted-foreground">
+          Tus vehiculos y tu historial de cancelaciones. Para consultar, corregir, descargar o
+          suprimir tus datos personales, entra a{' '}
+          <Link to="/mis-datos" className="font-medium text-marca-texto underline-offset-4 hover:underline">
+            Mis datos
+          </Link>
+          .
+        </p>
       </div>
       <VehiculosCliente />
       <StrikesCliente />

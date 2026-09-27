@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEmail,
   IsIn,
   IsOptional,
@@ -38,4 +39,12 @@ export class CrearUsuarioDto {
   @IsString()
   @MaxLength(80)
   ciudad?: string;
+
+  // Sprint 23: al dar de alta un CLIENTE, el admin confirma que el cliente
+  // autorizo en el mostrador el tratamiento de sus datos (politica y
+  // autorizacion vigentes). Obligatorio para clientes (lo exige el
+  // controller); queda como aceptacion 'presencial' a nombre del admin.
+  @IsOptional()
+  @IsBoolean()
+  autorizacionDatos?: boolean;
 }

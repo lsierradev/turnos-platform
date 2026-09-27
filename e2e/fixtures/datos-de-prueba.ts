@@ -154,6 +154,20 @@ export async function sembrar(): Promise<DatosSembrados> {
       [`tecnico2-e2e-${sufijo}@turnos.dev`, passwordHash, `Otro tecnico E2E ${sufijo}`, tallerId],
     );
 
+    // Sprint 23: los usuarios sembrados ya aceptaron los documentos
+    // vigentes; si no, cada login por el panel se detendria en "Antes de
+    // continuar". El spec del sprint 23 prueba esa pantalla con un usuario
+    // propio.
+    await sembrarAceptaciones(db, {
+      usuarios: [
+        ...clientes.map((c) => c.id),
+        admin.rows[0].id,
+        tecnico.rows[0].id,
+        otroTecnico.rows[0].id,
+      ],
+      adminDelTaller: { usuarioId: admin.rows[0].id, tallerId },
+    });
+
     return {
       sufijo,
       tallerId,
@@ -172,6 +186,47 @@ export async function sembrar(): Promise<DatosSembrados> {
       otroTecnicoId: otroTecnico.rows[0].id,
     };
   });
+}
+
+/**
+ * Versiones VIGENTES de los documentos legales de TurnoPro. Espeja
+ * CATALOGO en services/usuarios-service/src/modules/legal/catalogo.ts: al
+ * publicar una version nueva hay que subirla aca, o toda la suite queda
+ * frenada en la pantalla de aceptacion.
+ */
+export const VERSIONES_LEGALES = {
+  terminos_taller: 1,
+  politica_datos: 1,
+  autorizacion_datos: 1,
+} as const;
+
+// El hash no lo mira el calculo de pendientes (compara versiones): uno
+// fijo alcanza para la siembra.
+const HASH_SEMBRADO = '0'.repeat(64);
+
+async function sembrarAceptaciones(
+  db: Client,
+  { usuarios, adminDelTaller }: {
+    usuarios: string[];
+    adminDelTaller?: { usuarioId: string; tallerId: string };
+  },
+): Promise<void> {
+  for (const usuarioId of usuarios) {
+    for (const documento of ['politica_datos', 'autorizacion_datos'] as const) {
+      await db.query(
+        `INSERT INTO aceptaciones_legales (usuario_id, documento, version, sha256, canal)
+         VALUES ($1, $2, $3, $4, 'web')`,
+        [usuarioId, documento, VERSIONES_LEGALES[documento], HASH_SEMBRADO],
+      );
+    }
+  }
+  if (adminDelTaller) {
+    await db.query(
+      `INSERT INTO aceptaciones_legales (usuario_id, documento, version, sha256, taller_id, canal)
+       VALUES ($1, 'terminos_taller', $2, $3, $4, 'web')`,
+      [adminDelTaller.usuarioId, VERSIONES_LEGALES.terminos_taller, HASH_SEMBRADO, adminDelTaller.tallerId],
+    );
+  }
 }
 
 export async function limpiar(datos: DatosSembrados): Promise<void> {
@@ -383,4 +438,14 @@ export async function borrarTalleresPorSlug(slugs: string[]): Promise<void> {
     );
     await db.query('DELETE FROM talleres WHERE slug = ANY($1)', [slugs]);
   });
+}
+
+/**
+ * Sprint 23: deja a un usuario sembrado sin aceptaciones, como una cuenta
+ * recien creada que todavia no paso por "Antes de continuar".
+ */
+export async function borrarAceptaciones(usuarioId: string): Promise<void> {
+  await conConexion((db) =>
+    db.query('DELETE FROM aceptaciones_legales WHERE usuario_id = $1', [usuarioId]),
+  );
 }

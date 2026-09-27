@@ -203,6 +203,8 @@ test.describe('Reserva desde el panel', () => {
     await page.getByLabel('Correo', { exact: true }).fill(emailClienteNuevo);
     await page.getByLabel('Telefono (opcional)').fill('+57 300 000 0000');
     await page.getByLabel('Ciudad').fill('Medellin');
+    // Sprint 23: sin la autorizacion de datos no se da de alta.
+    await page.getByLabel(/autorizo el tratamiento de sus datos/).check();
 
     await page.getByRole('button', { name: '11:00', exact: true }).click();
     await page.getByRole('button', { name: 'Confirmar reserva' }).click();

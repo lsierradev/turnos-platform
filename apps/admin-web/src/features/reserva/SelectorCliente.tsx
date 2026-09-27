@@ -210,6 +210,40 @@ function ClienteNuevo({
           />
         )}
       </Campo>
+      {/* Sprint 23: autorizacion previa (Ley 1581 de 2012). El cliente la
+          vuelve a leer y aceptar por su cuenta en su primer ingreso. */}
+      <div className="space-y-1.5 sm:col-span-2">
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 accent-primary"
+            checked={datos.autorizacionDatos}
+            onChange={(e) => {
+              onDatos({ ...datos, autorizacionDatos: e.target.checked });
+              tocar('autorizacionDatos');
+            }}
+            aria-invalid={Boolean(error('autorizacionDatos'))}
+            aria-describedby="autorizacion-datos-error"
+          />
+          <span>
+            El cliente autorizo el tratamiento de sus datos personales según la{' '}
+            <a
+              href="/legal/politica_datos"
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-marca-texto underline-offset-4 hover:underline"
+            >
+              política de datos
+            </a>
+            .
+          </span>
+        </label>
+        {error('autorizacionDatos') && (
+          <p id="autorizacion-datos-error" className="text-xs text-destructive">
+            {error('autorizacionDatos')}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

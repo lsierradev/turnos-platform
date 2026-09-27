@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { PuertaLegal } from '@/features/legal/PuertaLegal';
 import { useAuth } from './AuthProvider';
 
 /**
@@ -24,5 +25,10 @@ export function RutaProtegida() {
     );
   }
 
-  return <Outlet />;
+  // Sprint 23: antes de entrar, lo que falte aceptar (politica, terminos).
+  return (
+    <PuertaLegal>
+      <Outlet />
+    </PuertaLegal>
+  );
 }

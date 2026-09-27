@@ -237,7 +237,12 @@ describirSiHayDb('Usuarios (integration)', () => {
       const { body } = await request(app.getHttpServer())
         .post('/usuarios')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ email, nombre: 'Invitado', ciudad: 'Cali' })
+        .send({
+          email,
+          nombre: 'Invitado',
+          ciudad: 'Cali',
+          autorizacionDatos: true,
+        })
         .expect(201);
 
       expect(body.ciudad).toBe('Cali');

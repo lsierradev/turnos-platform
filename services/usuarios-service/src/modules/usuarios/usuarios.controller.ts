@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -8,11 +9,14 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard, Rol, Roles, RolesGuard } from '@turnos-platform/auth';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
+import { origenDe } from '../legal/origen.util';
+import { LegalService } from '../legal/legal.service';
 import { ContrasenaService } from './contrasena.service';
 import { ContextoDb } from '@turnos-platform/tenant';
 import { CrearUsuarioDto } from './dto/crear-usuario.dto';
@@ -26,6 +30,7 @@ export class UsuariosController {
     private readonly usuariosService: UsuariosService,
     private readonly contrasenaService: ContrasenaService,
     private readonly db: ContextoDb,
+    private readonly legal: LegalService,
   ) {}
 
   @Get('health')
@@ -50,19 +55,36 @@ export class UsuariosController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Rol.ADMIN)
-  async crear(@Body() dto: CrearUsuarioDto) {
+  async crear(@Body() dto: CrearUsuarioDto, @Req() req: Request) {
     // Sprint 20: el personal nace en el taller de la sesion; el cliente es
     // una cuenta global que queda relacionada con ese taller. Un superadmin
     // tiene que haber elegido taller (X-Taller).
     const tallerId = this.db.exigirTaller();
     const esPersonal =
       dto.rol === RolUsuario.ADMIN || dto.rol === RolUsuario.TECNICO;
+    // Sprint 23: los datos de un cliente se cargan con su autorizacion
+    // previa (Ley 1581 de 2012). En el mostrador la da de palabra o por
+    // escrito y el admin deja constancia; el cliente la vuelve a ver y
+    // aceptar por su cuenta en su primer ingreso.
+    if (!esPersonal && dto.autorizacionDatos !== true) {
+      throw new BadRequestException(
+        'Confirma que el cliente autorizo el tratamiento de sus datos personales.',
+      );
+    }
     const usuario = await this.usuariosService.create({
       ...dto,
       tallerId: esPersonal ? tallerId : null,
       vincularA: esPersonal ? null : tallerId,
     });
     const { passwordHash: _passwordHash, ...usuarioSinPassword } = usuario;
+    if (!esPersonal) {
+      await this.legal.aceptarPresencial(
+        this.db.sesion()!,
+        usuario.id,
+        ['politica_datos', 'autorizacion_datos'],
+        origenDe(req),
+      );
+    }
 
     // Sin password (Sprint 18): la cuenta nace con una al azar que nadie
     // conoce y el usuario recibe por correo el enlace para definir la suya.

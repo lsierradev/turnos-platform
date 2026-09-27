@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useTaller } from '@/lib/taller';
 import { BahiasSeccion } from './BahiasSeccion';
 import { CancelacionesSeccion } from './CancelacionesSeccion';
+import { CondicionesSeccion } from './CondicionesSeccion';
 import { FiscalSeccion } from './FiscalSeccion';
 import { HorarioSeccion } from './HorarioSeccion';
 import { ServiciosSeccion } from './ServiciosSeccion';
@@ -16,6 +17,8 @@ const SECCIONES = [
   { id: 'fiscal', titulo: 'Datos fiscales y pagos' },
   // Sprint 22: politica de cancelacion y strikes.
   { id: 'cancelaciones', titulo: 'Cancelaciones' },
+  // Sprint 23: condiciones del servicio que aceptan los clientes.
+  { id: 'condiciones', titulo: 'Condiciones' },
 ] as const;
 
 type Seccion = (typeof SECCIONES)[number]['id'];
@@ -47,7 +50,7 @@ export function MiTallerView() {
       <div>
         <h1 className="text-2xl font-semibold">Mi taller</h1>
         <p className="text-sm text-muted-foreground">
-          {taller ? `${taller.nombre} · ` : ''}Catalogo, horario, configuracion fiscal y cancelaciones.
+          {taller ? `${taller.nombre} · ` : ''}Catalogo, horario, configuracion fiscal, cancelaciones y condiciones.
         </p>
       </div>
 
@@ -78,6 +81,7 @@ export function MiTallerView() {
       {seccion === 'horario' && <HorarioSeccion />}
       {seccion === 'fiscal' && <FiscalSeccion />}
       {seccion === 'cancelaciones' && <CancelacionesSeccion />}
+      {seccion === 'condiciones' && <CondicionesSeccion />}
     </div>
   );
 }

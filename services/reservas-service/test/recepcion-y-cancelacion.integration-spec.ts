@@ -968,5 +968,70 @@ describirSiHayDb(
         });
       });
     });
+    // ------------------------------------ condiciones del taller (Sprint 23)
+    describe('condiciones del taller publicadas', () => {
+      const sabado = proximo(6);
+      const aceptar = (usuario: string, canal = 'web') =>
+        ds.query(
+          `INSERT INTO aceptaciones_legales
+             (usuario_id, documento, version, sha256, taller_id, canal, registrado_por)
+           VALUES ($1, 'condiciones_taller', 1, $2, $3, $4, $5)`,
+          [
+            usuario,
+            'a'.repeat(64),
+            taller,
+            canal,
+            canal === 'presencial' ? adminId : null,
+          ],
+        );
+
+      beforeAll(async () => {
+        await ds.query(
+          `INSERT INTO condiciones_taller
+             (taller_id, version, contenido, sha256, plantilla_version, publicado_por)
+           VALUES ($1, 1, $2, $3, 1, $4)`,
+          [
+            taller,
+            'Condiciones de prueba. '.repeat(20),
+            'a'.repeat(64),
+            adminId,
+          ],
+        );
+      });
+
+      it('el cliente que no las acepto no reserva: 409 con el codigo', async () => {
+        const r = await comoCliente(http().post('/appointments'))
+          .send({ bahiaId, servicioId, tecnicoId, inicio: a(sabado, '11:00') })
+          .expect(409);
+        expect(r.body).toMatchObject({
+          codigo: 'CONDICIONES_PENDIENTES',
+          version: 1,
+        });
+      });
+
+      it('aceptadas, reserva', async () => {
+        await aceptar(clienteId);
+        await comoCliente(http().post('/appointments'))
+          .send({ bahiaId, servicioId, tecnicoId, inicio: a(sabado, '11:00') })
+          .expect(201);
+      });
+
+      it('el admin que reserva por un cliente necesita su aceptacion en el mostrador', async () => {
+        const cuerpo = {
+          bahiaId,
+          servicioId,
+          tecnicoId,
+          clienteId: otroClienteId,
+          inicio: a(sabado, '15:00'),
+        };
+        const r = await comoAdmin(http().post('/appointments'))
+          .send(cuerpo)
+          .expect(409);
+        expect(r.body.codigo).toBe('CONDICIONES_PENDIENTES');
+
+        await aceptar(otroClienteId, 'presencial');
+        await comoAdmin(http().post('/appointments')).send(cuerpo).expect(201);
+      });
+    });
   },
 );

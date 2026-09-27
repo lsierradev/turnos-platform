@@ -179,6 +179,57 @@ La política se configura en **Mi taller → Cancelaciones**:
 
 ---
 
+## Documentos legales y datos personales
+
+**Al entrar por primera vez**, y cada vez que TurnoPro publique una versión
+nueva, la plataforma muestra "Antes de continuar" con los documentos que
+faltan aceptar. Como administrador, aceptás los **Términos y
+Condiciones de TurnoPro en nombre del taller** (con que lo haga un
+administrador alcanza para todo el taller), la **Política de Tratamiento de
+Datos** y la **Autorización**. Queda registrado quién aceptó, qué versión,
+cuándo y desde qué dirección.
+
+> Los textos son borradores pendientes de revisión legal. Revisalos con tu
+> abogado.
+
+### Condiciones del servicio con tus clientes
+
+En **Mi taller → Condiciones** se escriben las condiciones que tus clientes
+aceptan al reservar: precios con IVA, anticipo, ventana de cancelación,
+strikes, garantía y retracto.
+
+- La primera vez aparece la **plantilla de TurnoPro**, ya completada con tus
+  datos fiscales y tu política de cancelación.
+- Lo marcado entre **⟦ ⟧** hay que completarlo o quitarlo: mientras quede
+  algo marcado, no se puede publicar. Razón social, NIT y dirección salen de
+  **Datos fiscales y pagos**; si faltan ahí, cargalos y volvé a la
+  plantilla.
+- **Publicar** crea una versión nueva. Las anteriores no se borran: se ven
+  en "Versiones publicadas", con cuántos clientes aceptaron cada una.
+- Desde que publicás, **cada cliente tiene que aceptar la versión vigente en
+  su próxima reserva**. Si reservás vos por él, marcá la casilla "El
+  cliente leyó y aceptó en el mostrador".
+- Mientras no publiques nada, tus clientes reservan sin aceptar condiciones.
+
+Las condiciones son del taller: el taller responde por lo que dicen.
+
+### Dar de alta a un cliente
+
+Al crear un cliente desde **Reservar → Cliente nuevo** hay que marcar que **el
+cliente autorizó el tratamiento de sus datos**. Sin esa casilla la cuenta no
+se crea. Queda como constancia a tu nombre; el cliente vuelve a leer y
+aceptar la política cuando entra por primera vez.
+
+### Mis datos
+
+Tocando tu correo, arriba a la derecha, cualquier usuario entra a **Mis
+datos**: corregir nombre, teléfono y ciudad, descargar todos sus datos,
+ver qué documentos aceptó y, si es cliente, suprimir su cuenta. Al suprimir,
+el taller sigue viendo los turnos (con sus precios) y las órdenes de
+trabajo, pero a nombre de "Titular suprimido".
+
+---
+
 ## Los recordatorios automáticos
 
 El sistema le avisa solo al cliente **24 horas antes** de su turno:

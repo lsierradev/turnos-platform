@@ -26,6 +26,7 @@ export function tituloDeRuta(pathname: string, rol?: string): string {
   if (pathname === '/talleres') return 'Talleres';
   if (pathname === '/taller') return 'Mi taller';
   if (pathname === '/perfil') return 'Mi perfil';
+  if (pathname === '/mis-datos') return 'Mis datos';
   if (pathname.startsWith('/turnos/')) return 'Orden de trabajo';
   return 'Pagina no encontrada';
 }

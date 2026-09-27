@@ -630,6 +630,12 @@ export interface DatosClienteNuevo {
   email: string;
   telefono?: string;
   ciudad: string;
+  /**
+   * Sprint 23: el admin confirma que el cliente autorizo en el mostrador el
+   * tratamiento de sus datos. usuarios-service no da de alta un cliente sin
+   * esto y lo registra como aceptacion presencial.
+   */
+  autorizacionDatos: boolean;
 }
 
 /**
@@ -1190,5 +1196,173 @@ export function cerrarTurno(
   return apiFetch(`/appointments/${turnoId}/estado`, false, BASE_URL, {
     method: 'PATCH',
     body: motivo ? { estado, motivo } : { estado },
+  });
+}
+
+// --- Legal y datos personales (usuarios-service, Sprint 23) --------------
+
+export type DocumentoPlataforma = 'terminos_taller' | 'politica_datos' | 'autorizacion_datos';
+export type TipoDocumento = DocumentoPlataforma | 'condiciones_taller';
+
+export interface DocumentoLegal {
+  documento: TipoDocumento;
+  version: number;
+  titulo: string;
+  sha256: string;
+  vigenteDesde: string;
+  /** Pendiente de revision de abogado. */
+  borrador: boolean;
+  tallerId?: string;
+  contenido: string;
+}
+
+export interface AceptacionLegal {
+  id: string;
+  documento: TipoDocumento;
+  version: number;
+  sha256: string;
+  tallerId: string | null;
+  tallerNombre: string | null;
+  canal: 'web' | 'app' | 'presencial';
+  ip: string | null;
+  /** Presencial: quien la registro en el mostrador. */
+  registradoPor: string | null;
+  aceptadoEn: string;
+}
+
+/** Publico: se lee sin sesion (login, pie de pagina). */
+export function getDocumentoLegal(tipo: DocumentoPlataforma, version?: number): Promise<DocumentoLegal> {
+  const query = version ? `?version=${version}` : '';
+  return apiFetch<DocumentoLegal>(`/legal/documentos/${tipo}${query}`, false, AUTH_URL);
+}
+
+/** Publico: las condiciones vigentes (o una version) de un taller. */
+export function getCondicionesDeTaller(tallerId: string, version?: number): Promise<DocumentoLegal> {
+  const query = version ? `?version=${version}` : '';
+  return apiFetch<DocumentoLegal>(`/legal/talleres/${tallerId}/condiciones${query}`, false, AUTH_URL);
+}
+
+/** Lo que el usuario tiene que aceptar antes de seguir usando el panel. */
+export function getPendientesLegales(): Promise<DocumentoLegal[]> {
+  return apiFetch<DocumentoLegal[]>('/legal/pendientes', false, AUTH_URL);
+}
+
+/**
+ * Acepta la version que el usuario leyo. 409 si mientras tanto se publico
+ * otra. Las condiciones de un taller se aceptan EN ese taller (X-Taller).
+ */
+export function aceptarDocumento(
+  documento: TipoDocumento,
+  version: number,
+  taller?: string,
+): Promise<AceptacionLegal> {
+  return apiFetch<AceptacionLegal>(
+    '/legal/aceptaciones',
+    false,
+    AUTH_URL,
+    { method: 'POST', body: { documento, version, canal: 'web' } },
+    taller ? { taller } : {},
+  );
+}
+
+/** Admin: constancia de lo que el cliente acepto en el mostrador. */
+export function aceptarEnMostrador(
+  clienteId: string,
+  documentos: TipoDocumento[],
+): Promise<AceptacionLegal[]> {
+  return apiFetch<AceptacionLegal[]>('/legal/aceptaciones/presenciales', false, AUTH_URL, {
+    method: 'POST',
+    body: { clienteId, documentos },
+  });
+}
+
+export interface EstadoCondiciones {
+  /** null: el taller no publico condiciones (nada que aceptar). */
+  vigente: DocumentoLegal | null;
+  aceptada: boolean;
+}
+
+/** Cliente: las propias. Admin: las del cliente por el que reserva. */
+export function getEstadoCondiciones(clienteId?: string): Promise<EstadoCondiciones> {
+  const query = clienteId ? `?clienteId=${clienteId}` : '';
+  return apiFetch<EstadoCondiciones>(`/legal/condiciones/estado${query}`, false, AUTH_URL);
+}
+
+export interface BorradorCondiciones {
+  contenido: string;
+  basadoEn: 'plantilla' | 'publicada';
+  plantillaVersion: number;
+  /** Marcas ⟦…⟧ o {{…}} que bloquean la publicacion. */
+  pendientes: string[];
+}
+
+export function getBorradorCondiciones(desdePlantilla = false): Promise<BorradorCondiciones> {
+  const query = desdePlantilla ? '?desde=plantilla' : '';
+  return apiFetch<BorradorCondiciones>(`/legal/condiciones/borrador${query}`, false, AUTH_URL);
+}
+
+export interface VersionCondiciones {
+  version: number;
+  sha256: string;
+  plantillaVersion: number;
+  publicadoEn: string;
+  publicadoPor: string | null;
+  /** Clientes que aceptaron esta version. */
+  aceptaciones: number;
+}
+
+export function getVersionesCondiciones(): Promise<VersionCondiciones[]> {
+  return apiFetch<VersionCondiciones[]>('/legal/condiciones/versiones', false, AUTH_URL);
+}
+
+export function publicarCondiciones(contenido: string): Promise<DocumentoLegal> {
+  return apiFetch<DocumentoLegal>('/legal/condiciones', false, AUTH_URL, {
+    method: 'POST',
+    body: { contenido },
+  });
+}
+
+export interface MisDatos {
+  perfil: {
+    id: string;
+    email: string;
+    nombre: string;
+    rol: string;
+    telefono: string | null;
+    ciudad: string | null;
+    creadoEn: string;
+  };
+  resumen: { vehiculos: number; turnos: number; recepciones: number; strikes: number };
+  aceptaciones: AceptacionLegal[];
+  solicitudes: {
+    id: string;
+    tipo: 'exportacion' | 'rectificacion' | 'supresion';
+    detalle: { campos?: string[] };
+    creadoEn: string;
+  }[];
+  supresion: { posible: boolean; motivo: string | null };
+}
+
+export function getMisDatos(): Promise<MisDatos> {
+  return apiFetch<MisDatos>('/mis-datos', false, AUTH_URL);
+}
+
+export function rectificarMisDatos(cambios: {
+  nombre?: string;
+  telefono?: string;
+  ciudad?: string;
+}): Promise<MisDatos['perfil']> {
+  return apiFetch<MisDatos['perfil']>('/mis-datos', false, AUTH_URL, { method: 'PATCH', body: cambios });
+}
+
+/** El archivo con todos los datos del titular (JSON). */
+export function exportarMisDatos(): Promise<Blob> {
+  return apiFetch<Blob>('/mis-datos/exportar', false, AUTH_URL, undefined, { blob: true });
+}
+
+export function suprimirMiCuenta(password: string): Promise<{ conservado: string[] }> {
+  return apiFetch<{ conservado: string[] }>('/mis-datos/suprimir', false, AUTH_URL, {
+    method: 'POST',
+    body: { password },
   });
 }

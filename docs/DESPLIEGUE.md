@@ -188,6 +188,36 @@ esquema nuevo mientras dura el rolling update.
 > columnas nullable o con default en `turnos` y `servicios`. Se puede
 > aplicar antes de subir los servicios del Sprint 22.
 
+> **La 018 (Sprint 23) es aditiva:** tablas nuevas (`condiciones_taller`,
+> `aceptaciones_legales`, `solicitudes_titular`) y `usuarios.suprimido_en`.
+> Se puede aplicar antes de subir los servicios del Sprint 23. Al desplegar
+> el panel nuevo, ningún usuario tiene aceptaciones: **cada uno verá "Antes de continuar" en
+> su próximo ingreso** (avisar a los talleres, ver
+> [legal/PENDIENTES.md](legal/PENDIENTES.md)).
+
+### Documentos legales y consentimiento (Sprint 23)
+
+- **`TRUST_PROXY`** (ConfigMap, `'1'` detrás del ALB): cuántos proxies hay
+  delante. Cada aceptación guarda la IP de quien acepta; sin esta variable
+  queda la IP del balanceador. No usar `true`: Express tomaría la primera IP
+  de `X-Forwarded-For`, que la escribe el cliente. Después del primer
+  despliegue, verificar:
+  ```sql
+  SELECT host(ip), count(*) FROM aceptaciones_legales GROUP BY 1 ORDER BY 2 DESC LIMIT 5;
+  ```
+  Si casi todo sale con una misma IP privada (10.x, 172.16-31.x), el número
+  de saltos está mal.
+- Los textos legales van dentro de la imagen de usuarios-service
+  (`dist/modules/legal/textos`, los copia `nest build`). Cambiar un texto es
+  publicar una imagen nueva, con una versión nueva (ver
+  [legal/README.md](legal/README.md)).
+- Mientras algún documento vigente siga en borrador, usuarios-service lo
+  avisa en el log al arrancar: `Documentos legales vigentes en BORRADOR`.
+  No corta el arranque; el corte es el checklist de GO-LIVE.
+- `aceptaciones_legales` y `condiciones_taller` son de solo inserción para
+  el rol de la app. Una corrección a mano (como dueño de las tablas) borra
+  la prueba de un consentimiento: no se hace sin el abogado.
+
 ### Recepción del vehículo y cancelaciones (Sprint 22)
 
 - **Tamaño del body:** reservas-service acepta JSON de hasta 4 MB (las

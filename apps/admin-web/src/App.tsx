@@ -42,6 +42,8 @@ const OrdenTrabajoView = perezoso(
 const DesignView = perezoso(() => import('@/features/design/DesignView'), 'DesignView');
 const OlvideView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'OlvideView');
 const RestablecerView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'RestablecerView');
+const DocumentoLegalView = perezoso(() => import('@/features/legal/DocumentoLegalView'), 'DocumentoLegalView');
+const MisDatosView = perezoso(() => import('@/features/legal/MisDatosView'), 'MisDatosView');
 import { TemaProvider } from '@/lib/tema';
 
 const queryClient = new QueryClient({
@@ -78,6 +80,9 @@ export function App() {
               {/* Publicas: quien las usa todavia no puede entrar. */}
               <Route path="/olvide" element={<OlvideView />} />
               <Route path="/restablecer" element={<RestablecerView />} />
+              {/* Sprint 23: documentos legales, con o sin sesion. */}
+              <Route path="/legal/:documento" element={<DocumentoLegalView />} />
+              <Route path="/legal/talleres/:tallerId/condiciones" element={<DocumentoLegalView />} />
 
               <Route element={<RutaProtegida />}>
                 <Route element={<AppLayout />}>
@@ -90,6 +95,7 @@ export function App() {
                   <Route path="/reservar" element={<ReservaView />} />
                   <Route path="/mis-turnos" element={<MisTurnosView />} />
                   <Route path="/perfil" element={<PerfilView />} />
+                  <Route path="/mis-datos" element={<MisDatosView />} />
                   <Route path="/turnos/:turnoId" element={<OrdenTrabajoView />} />
                   <Route path="/talleres" element={<TalleresView />} />
                   <Route path="/taller" element={<MiTallerView />} />

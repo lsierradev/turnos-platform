@@ -1,5 +1,5 @@
 import { expect, test as base, type Page } from '@playwright/test';
-import { AHORA, simularApi, tokenDe, type Rol } from './api-simulada';
+import { AHORA, simularApi, tokenDe, type OpcionesApi, type Rol } from './api-simulada';
 
 export interface OpcionesVisuales {
   tema: 'claro' | 'oscuro';
@@ -10,7 +10,9 @@ export interface OpcionesVisuales {
  * - `entrarComo(rol)`: API simulada + sesion inyectada, sin pasar por el
  *   login (el login tiene su propia captura).
  */
-export const test = base.extend<OpcionesVisuales & { entrarComo: (rol: Rol | null) => Promise<void> }>({
+export const test = base.extend<
+  OpcionesVisuales & { entrarComo: (rol: Rol | null, opciones?: OpcionesApi) => Promise<void> }
+>({
   tema: ['claro', { option: true }],
 
   page: async ({ page, tema }, usar) => {
@@ -31,8 +33,8 @@ export const test = base.extend<OpcionesVisuales & { entrarComo: (rol: Rol | nul
   },
 
   entrarComo: async ({ page }, usar) => {
-    await usar(async (rol) => {
-      await simularApi(page, rol);
+    await usar(async (rol, opciones) => {
+      await simularApi(page, rol, opciones);
       if (rol) {
         const sesion = JSON.stringify({ accessToken: tokenDe(rol), refreshToken: 'r' });
         await page.addInitScript((s) => sessionStorage.setItem('turnos.sesion', s), sesion);

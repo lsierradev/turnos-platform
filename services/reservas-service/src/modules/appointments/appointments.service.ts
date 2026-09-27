@@ -356,6 +356,40 @@ export class AppointmentsService {
   }
 
   /**
+   * Sprint 23: si el taller publico condiciones del servicio, el cliente
+   * titular del turno tiene que haber aceptado la version VIGENTE (por su
+   * cuenta, o el admin en el mostrador) antes de reservar. Publicar una
+   * version nueva se la vuelve a pedir en la proxima reserva. Un taller sin
+   * condiciones publicadas no exige nada.
+   *
+   * Solo al reservar: reprogramar sigue el acuerdo con el que se tomo el
+   * turno.
+   */
+  async exigirCondicionesAceptadas(usuarioId: string): Promise<void> {
+    const tallerId = this.db.tallerActual();
+    if (!tallerId) return;
+    const [vigente] = (await this.sql.query(
+      `SELECT c.version,
+              EXISTS (SELECT 1 FROM aceptaciones_legales a
+                       WHERE a.usuario_id = $2 AND a.taller_id = c.taller_id
+                         AND a.documento = 'condiciones_taller'
+                         AND a.version = c.version) AS aceptada
+         FROM condiciones_taller c
+        WHERE c.taller_id = $1
+        ORDER BY c.version DESC
+        LIMIT 1`,
+      [tallerId, usuarioId],
+    )) as { version: number; aceptada: boolean }[];
+    if (vigente && !vigente.aceptada) {
+      throw new ConflictException({
+        message: `Antes de reservar hay que aceptar las condiciones del taller (version ${vigente.version}).`,
+        codigo: 'CONDICIONES_PENDIENTES',
+        version: vigente.version,
+      });
+    }
+  }
+
+  /**
    * Bahia, servicio y tecnico tienen que existir y estar en uso. Comun a la
    * reserva y a la grilla de disponibilidad: si la grilla aceptara algo que
    * el POST rechaza, el usuario elegiria un horario que no puede reservar.

@@ -23,6 +23,13 @@ test.describe('publicas', () => {
     await capturar(page, 'olvide');
   });
 
+  // Sprint 23.
+  test('documento legal', async ({ page }) => {
+    await page.goto('/legal/politica_datos');
+    await expect(page.getByRole('heading', { name: 'Politica de Tratamiento de Datos Personales' })).toBeVisible();
+    await capturar(page, 'legal-politica');
+  });
+
   test('definir contrasena', async ({ page }) => {
     await page.goto(`/restablecer?token=${'x'.repeat(43)}`);
     await expect(page.getByRole('heading', { name: 'Defini tu contraseña' })).toBeVisible();
@@ -157,6 +164,13 @@ test.describe('admin', () => {
     await capturar(page, 'admin-design');
   });
 
+  test('mi taller: condiciones del servicio', async ({ page }) => {
+    await page.goto('/taller?seccion=condiciones');
+    await expect(page.getByText('Versión 2 publicada')).toBeVisible();
+    await expect(page.getByLabel('Texto (Markdown)')).toHaveValue(/Condiciones del servicio/);
+    await capturar(page, 'admin-taller-condiciones');
+  });
+
   test('pagina no encontrada', async ({ page }) => {
     await page.goto('/no-existe');
     await expect(page.getByText('Esta pagina no existe')).toBeVisible();
@@ -196,10 +210,26 @@ test.describe('cliente', () => {
     await capturar(page, 'cliente-mis-turnos');
   });
 
+  test('mis datos', async ({ page }) => {
+    await page.goto('/mis-datos');
+    await expect(page.getByRole('heading', { name: 'Documentos que aceptaste' })).toBeVisible();
+    await capturar(page, 'cliente-mis-datos');
+  });
+
   test('mi perfil: vehiculos y strikes', async ({ page }) => {
     await page.goto('/perfil');
     await expect(page.getByRole('list', { name: 'Strikes' })).toContainText('Cancelacion tardia');
     await capturar(page, 'cliente-perfil');
+  });
+});
+
+test.describe('cliente con documentos por aceptar', () => {
+  test.beforeEach(async ({ entrarComo }) => entrarComo('cliente', { pendientesLegales: true }));
+
+  test('antes de continuar', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Antes de continuar' })).toBeVisible();
+    await capturar(page, 'cliente-antes-de-continuar');
   });
 });
 

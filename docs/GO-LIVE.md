@@ -211,6 +211,28 @@ empieza a medir. Lo verificable ahora son los prerequisitos.
 - [ ] `docs/DESPLIEGUE.md` leído por alguien que no lo escribió, y que ese
       alguien pueda hacer un rollback.
 
+## Legal y datos personales (Sprint 23)
+
+La plataforma registra cada aceptación (versión, fecha, IP, canal), vuelve
+a pedirla con cada versión nueva y deja al titular consultar, corregir,
+exportar y suprimir sus datos. Los **textos** son borradores: sin la
+revisión del abogado no se sale. Detalle en
+[legal/PENDIENTES.md](legal/PENDIENTES.md).
+
+- [x] Registro de aceptaciones y re-aceptación por versión.
+- [x] Condiciones por taller, exigidas al reservar.
+- [x] Derechos del titular en autoservicio (Mis datos).
+- [ ] **Revisión del abogado** de los cuatro borradores y respuesta a cada
+      ⟦REVISIÓN LEGAL⟧.
+- [ ] Datos de TurnoPro completos (razón social, NIT, contacto de datos
+      personales, tarifas, plazos).
+- [ ] Versiones definitivas publicadas (`borrador: false`): el log de
+      usuarios-service ya no avisa "Documentos legales vigentes en BORRADOR".
+- [ ] Buzón y procedimiento para solicitudes de titulares por correo.
+- [ ] Talleres avisados de la aceptación al entrar, y con sus condiciones
+      publicadas.
+- [ ] IP real registrada en las aceptaciones (`TRUST_PROXY`).
+
 ## Alcance
 
 - [ ] **Confirmar que el beta sale sin pagos.** Sprint 7 no está

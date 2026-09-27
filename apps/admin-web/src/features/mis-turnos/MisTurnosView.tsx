@@ -16,6 +16,7 @@ import {
   ZONA_NEGOCIO,
 } from '@/lib/dates';
 import { formatearPesos, textoPrecioFinal } from '@/lib/dinero';
+import { BotonPagar } from '@/features/pagos/BotonPagar';
 import { separarTurnos, useMisTurnosQuery } from './mis-turnos';
 
 // El estado con icono Y texto: nunca solo color.
@@ -222,8 +223,38 @@ function DetallesSprint22({
       )}
       {turno.canceladoPor && (
         <p className="text-xs text-muted-foreground">
-          {turno.canceladoPor === 'taller' ? 'Lo cancelo el taller.' : 'Lo cancelaste vos.'}
+          {turno.canceladoPor === 'taller'
+            ? 'Lo cancelo el taller.'
+            : turno.canceladoPor === 'sistema'
+              ? 'Se libero: el anticipo no se pago a tiempo.'
+              : 'Lo cancelaste vos.'}
         </p>
+      )}
+      {/* Sprint 24: anticipo por pagar (confirma el turno) y saldo de la orden. */}
+      {turno.estado === 'programado' && turno.anticipo?.estado === 'pendiente' && (
+        <div className="space-y-2 rounded-lg border border-advertencia/40 bg-advertencia-suave p-3">
+          <p className="text-xs">
+            {turno.anticipo.venceEn
+              ? `Reservado hasta las ${formatearHora(turno.anticipo.venceEn)}: pagá el anticipo para confirmarlo, o el horario se libera.`
+              : 'Falta pagar el anticipo para confirmar el turno.'}
+          </p>
+          {turno.pagos?.cobraEnLinea ? (
+            <BotonPagar
+              turnoId={turno.id}
+              taller={taller}
+              concepto="anticipo"
+              montoCentavos={turno.anticipo.centavos - (turno.pagos?.pagadoCentavos ?? 0)}
+            />
+          ) : (
+            <p className="text-xs text-muted-foreground">Este taller cobra el anticipo en el mostrador.</p>
+          )}
+        </div>
+      )}
+      {turno.anticipo?.estado === 'pagado' && turno.estado === 'programado' && (
+        <p className="text-xs text-exito-texto">Anticipo pagado: turno confirmado.</p>
+      )}
+      {turno.estado === 'atendido' && turno.pagos?.cobraEnLinea && (turno.pagos.saldoCentavos ?? 0) > 0 && (
+        <BotonPagar turnoId={turno.id} taller={taller} concepto="saldo" montoCentavos={turno.pagos.saldoCentavos} />
       )}
       {turno.garantia && (
         <p className="text-xs text-muted-foreground">

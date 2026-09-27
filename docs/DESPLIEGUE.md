@@ -195,6 +195,26 @@ esquema nuevo mientras dura el rolling update.
 > su próximo ingreso** (avisar a los talleres, ver
 > [legal/PENDIENTES.md](legal/PENDIENTES.md)).
 
+> **La 019 (Sprint 24) es aditiva:** tablas de pagos, devoluciones,
+> eventos de Wompi, alertas y cierres de caja; en `turnos`, el estado del
+> anticipo (default `no_requiere`: los turnos existentes no vencen al
+> desplegar) y `'sistema'` como quien cancela.
+
+### Pagos con Wompi (Sprint 24)
+
+- **Variables de reservas-service** (ConfigMap): `WEB_URL` (a donde vuelve
+  el cliente desde el checkout) y `RESERVAS_URL_PUBLICA` (con la que Wompi
+  llega al webhook; HTTPS).
+- **Webhook público:** `POST /pagos/wompi/eventos/<taller>` entra sin token
+  (lo autentica la firma con el secreto de eventos del taller). El ingress
+  de la API ya lo expone; un WAF adelante no lo puede bloquear.
+- **Salida a internet:** `production.wompi.co` y `sandbox.wompi.co` por
+  443 (conciliación y anulaciones), además de lo ya listado.
+- **Tareas periódicas:** cada minuto se liberan los turnos con anticipo
+  vencido y cada 10 minutos se concilia con Wompi. Corren en las dos
+  réplicas; es seguro (cada paso es condicional en la base).
+- Pendientes y prueba básica en el sandbox: [PAGOS-PENDIENTES.md](PAGOS-PENDIENTES.md).
+
 ### Documentos legales y consentimiento (Sprint 23)
 
 - **`TRUST_PROXY`** (ConfigMap, `'1'` detrás del ALB): cuántos proxies hay

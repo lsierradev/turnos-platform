@@ -455,9 +455,19 @@ export interface MiTurno {
   /** Precio con el que se reservo (Sprint 21); null en turnos anteriores. */
   precio: Precio | null;
   /** Sprint 22: lo que se paga por adelantado (100% con 3 strikes). */
-  anticipo: { centavos: number; porStrikes: boolean } | null;
+  anticipo: {
+    centavos: number;
+    porStrikes: boolean;
+    /** Sprint 24: pendiente = reservado a la espera del pago. */
+    estado: AnticipoEstado;
+    /** Hasta cuando se puede pagar antes de que se libere (null: no vence). */
+    venceEn: string | null;
+  } | null;
+  /** Sprint 24: lo pagado (neto de devoluciones) y lo que falta. */
+  pagos: { pagadoCentavos: number; saldoCentavos: number | null; cobraEnLinea: boolean };
   vehiculo: { id: string; placa: string; marca: string; modelo: string } | null;
-  canceladoPor: 'cliente' | 'taller' | null;
+  /** 'sistema' (Sprint 24): se libero porque el anticipo no se pago a tiempo. */
+  canceladoPor: 'cliente' | 'taller' | 'sistema' | null;
   /** Solo si se puede cancelar: hasta cuando es gratis (instante). */
   cancelacion: { gratisHasta: string; ventanaHoras: number } | null;
   recepcion: { id: string; numero: number; aceptada: boolean } | null;
@@ -578,6 +588,9 @@ export interface TurnoCreado {
   /** Sprint 22: con 3 strikes, anticipo = total (pago 100% por adelantado). */
   anticipoCentavos: number | null;
   anticipoPorStrikes: boolean;
+  /** Sprint 24. */
+  anticipoEstado: AnticipoEstado;
+  anticipoVenceEn: string | null;
 }
 
 export function crearTurno(turno: NuevoTurno): Promise<TurnoCreado> {
@@ -929,6 +942,8 @@ export interface Politica {
   ventanaHoras: number;
   vigenciaStrikesMeses: number;
   strikesParaPrepago: number;
+  /** Sprint 24: minutos para pagar el anticipo antes de que se libere. */
+  plazoAnticipoMinutos: number;
 }
 
 export interface PoliticaCliente extends Politica {
@@ -947,6 +962,7 @@ export function getPolitica(clienteId?: string): Promise<PoliticaCliente> {
 export function guardarPolitica(datos: {
   ventanaHoras: number;
   vigenciaStrikesMeses: number;
+  plazoAnticipoMinutos?: number;
 }): Promise<Politica> {
   return apiFetch<Politica>('/politica', false, BASE_URL, { method: 'PUT', body: datos });
 }
@@ -1365,4 +1381,213 @@ export function suprimirMiCuenta(password: string): Promise<{ conservado: string
     method: 'POST',
     body: { password },
   });
+}
+
+// --- Pagos (reservas-service, Sprint 24) ---------------------------------
+
+export type AnticipoEstado = 'no_requiere' | 'pendiente' | 'pagado';
+export type ConceptoPago = 'anticipo' | 'saldo';
+export type EstadoPago =
+  | 'creado'
+  | 'pendiente'
+  | 'aprobado'
+  | 'rechazado'
+  | 'error'
+  | 'anulado'
+  | 'expirado'
+  | 'en_disputa'
+  | 'revertido';
+
+export interface Checkout {
+  /** Checkout de Wompi con monto y firma armados en el servidor. */
+  url: string;
+  referencia: string;
+  montoCentavos: number;
+  venceEn: string | null;
+}
+
+/**
+ * Pide el checkout de un turno propio. Va con X-Taller = el taller del
+ * turno. El monto no se manda: lo calcula el backend.
+ */
+export function crearCheckout(turnoId: string, concepto: ConceptoPago, taller?: string): Promise<Checkout> {
+  return apiFetch<Checkout>(
+    '/pagos/checkout',
+    false,
+    BASE_URL,
+    { method: 'POST', body: { turnoId, concepto } },
+    taller ? { taller } : {},
+  );
+}
+
+export interface EstadoPagoCliente {
+  referencia: string;
+  estado: EstadoPago;
+  concepto: ConceptoPago;
+  montoCentavos: number;
+  metodo: string | null;
+  turnoId: string;
+  tallerId: string;
+}
+
+/** Estado segun el servidor (que le pregunta a Wompi), no segun la redireccion. */
+export function getPagoPorReferencia(referencia: string): Promise<EstadoPagoCliente> {
+  return apiFetch<EstadoPagoCliente>(`/pagos/referencia/${encodeURIComponent(referencia)}`);
+}
+
+export interface ResumenPagos {
+  totalCentavos: number | null;
+  anticipoCentavos: number | null;
+  anticipoEstado: AnticipoEstado;
+  anticipoVenceEn: string | null;
+  pagadoCentavos: number;
+  saldoCentavos: number | null;
+  cobraEnLinea: boolean;
+}
+
+export interface PagoDeTurno {
+  id: string;
+  concepto: ConceptoPago;
+  canal: 'wompi' | 'efectivo' | 'datafono' | 'transferencia';
+  montoCentavos: number;
+  estado: EstadoPago;
+  metodo: string | null;
+  referencia: string | null;
+  transaccionId: string | null;
+  comprobante: string | null;
+  duplicado: boolean;
+  aprobadoEn: string | null;
+  creadoEn: string;
+  disputaTipo: 'reversion' | 'contracargo' | null;
+  disputaDetalle: string | null;
+  reembolsoId: string | null;
+  reembolsoEstado: EstadoReembolso | null;
+  reembolsoVia: 'wompi_anulacion' | 'manual' | null;
+  reembolsoMotivo: string | null;
+  reembolsoNota: string | null;
+  reembolsoCompletadoEn: string | null;
+}
+
+export type EstadoReembolso = 'por_anular' | 'solicitado' | 'pendiente_manual' | 'completado';
+
+export function getPagosTurno(
+  turnoId: string,
+  taller?: string,
+): Promise<{ resumen: ResumenPagos; pagos: PagoDeTurno[] }> {
+  return apiFetch(`/pagos/turno?turnoId=${turnoId}`, false, BASE_URL, undefined, taller ? { taller } : {});
+}
+
+export type MedioPresencial = 'efectivo' | 'datafono' | 'transferencia';
+
+export function registrarPagoPresencial(datos: {
+  turnoId: string;
+  concepto: ConceptoPago;
+  medio: MedioPresencial;
+  montoCentavos?: number;
+  comprobante?: string;
+}): Promise<{ id: string; montoCentavos: number }> {
+  return apiFetch('/pagos/presencial', false, BASE_URL, { method: 'POST', body: datos });
+}
+
+export interface Reembolso {
+  id: string;
+  estado: EstadoReembolso;
+  via: 'wompi_anulacion' | 'manual';
+  motivo: string;
+  montoCentavos: number;
+  nota: string | null;
+  creadoEn: string;
+  completadoEn: string | null;
+  pagoId: string;
+  canal: string;
+  metodo: string | null;
+  turnoId: string;
+  turnoInicio: string;
+  cliente: string | null;
+}
+
+export function getReembolsos(todos = false): Promise<Reembolso[]> {
+  return apiFetch<Reembolso[]>(`/pagos/reembolsos${todos ? '?estado=todos' : ''}`);
+}
+
+export function completarReembolso(id: string, nota: string): Promise<void> {
+  return apiFetch<void>(`/pagos/reembolsos/${id}/completar`, false, BASE_URL, { method: 'POST', body: { nota } });
+}
+
+export function abrirDisputa(
+  pagoId: string,
+  tipo: 'reversion' | 'contracargo',
+  detalle: string,
+): Promise<void> {
+  return apiFetch<void>(`/pagos/${pagoId}/disputa`, false, BASE_URL, { method: 'POST', body: { tipo, detalle } });
+}
+
+export function resolverDisputa(pagoId: string, resultado: 'revertido' | 'a_favor'): Promise<void> {
+  return apiFetch<void>(`/pagos/${pagoId}/disputa/resolver`, false, BASE_URL, {
+    method: 'POST',
+    body: { resultado },
+  });
+}
+
+export interface AlertaPago {
+  id: string;
+  tipo: string;
+  mensaje: string;
+  pagoId: string | null;
+  turnoId: string | null;
+  creadaEn: string;
+  atendidaEn: string | null;
+}
+
+export function getAlertasPago(): Promise<AlertaPago[]> {
+  return apiFetch<AlertaPago[]>('/pagos/alertas');
+}
+
+export function atenderAlertaPago(id: string): Promise<void> {
+  return apiFetch<void>(`/pagos/alertas/${id}/atender`, false, BASE_URL, { method: 'POST' });
+}
+
+export interface Caja {
+  fecha: string;
+  cobros: { canal: string; metodo: string; cantidad: number; total: number }[];
+  devoluciones: { canal: string; via: string; cantidad: number; total: number }[];
+  totalCobrado: number;
+  efectivoEsperado: number;
+  movimientos: {
+    id: string;
+    concepto: ConceptoPago;
+    canal: string;
+    metodo: string;
+    montoCentavos: number;
+    estado: EstadoPago;
+    comprobante: string | null;
+    aprobadoEn: string;
+    cliente: string | null;
+    turnoId: string;
+    registradoPor: string | null;
+  }[];
+  cierre: {
+    esperadoCentavos: number;
+    contadoCentavos: number;
+    diferenciaCentavos: number;
+    nota: string | null;
+    cerradoEn: string;
+    cerradoPor: string | null;
+  } | null;
+}
+
+export function getCaja(fecha: string): Promise<Caja> {
+  return apiFetch<Caja>(`/pagos/caja?fecha=${fecha}`);
+}
+
+export function cerrarCaja(fecha: string, contadoCentavos: number, nota?: string): Promise<Caja> {
+  return apiFetch<Caja>('/pagos/caja/cierre', false, BASE_URL, {
+    method: 'POST',
+    body: { fecha, contadoCentavos, nota },
+  });
+}
+
+/** La URL que el admin pega en Wompi como URL de eventos. */
+export function getUrlEventosWompi(): Promise<{ url: string }> {
+  return apiFetch<{ url: string }>('/pagos/wompi/url-eventos');
 }

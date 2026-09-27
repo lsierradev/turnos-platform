@@ -56,7 +56,7 @@ interface FilaOrden {
   tarifaIva: number | null;
   anticipoCentavos: string | null;
   anticipoPorStrikes: boolean;
-  canceladoPor: 'cliente' | 'taller' | null;
+  canceladoPor: 'cliente' | 'taller' | 'sistema' | null;
   motivoCancelacion: string | null;
   atencionInicio: Date | null;
   atencionFin: Date | null;

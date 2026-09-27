@@ -12,6 +12,7 @@ import { BahiasModule } from './modules/bahias/bahias.module';
 import { ConfiguracionModule } from './modules/configuracion/configuracion.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PagosModule } from './modules/pagos/pagos.module';
 import { PoliticaModule } from './modules/politica/politica.module';
 import { RecepcionesModule } from './modules/recepciones/recepciones.module';
 import { ReservasModule } from './modules/reservas/reservas.module';
@@ -62,6 +63,8 @@ import { VehiculosModule } from './modules/vehiculos/vehiculos.module';
     PoliticaModule,
     VehiculosModule,
     RecepcionesModule,
+    // Sprint 24: cobros con Wompi y en el mostrador.
+    PagosModule,
   ],
 })
 export class AppModule {}

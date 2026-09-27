@@ -24,6 +24,7 @@ notificaciones omnicanal.
 - [`docs/GO-LIVE.md`](docs/GO-LIVE.md) — **qué falta antes de salir a producción**
 - [`docs/QA-CHECKLIST.md`](docs/QA-CHECKLIST.md) — criterios de aceptación y estado
 - [`docs/AUDITORIA-ENDPOINTS.md`](docs/AUDITORIA-ENDPOINTS.md) — validación, errores y autorización
+- [`docs/PAGOS-PENDIENTES.md`](docs/PAGOS-PENDIENTES.md) — pagos con Wompi: prueba básica en el sandbox y pendientes
 - [`docs/legal/`](docs/legal/README.md) — borradores legales versionados y [pendientes fuera del código](docs/legal/PENDIENTES.md)
 
 ## Arranque rápido

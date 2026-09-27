@@ -301,8 +301,21 @@ function misTurnos() {
       tecnico: 'Carlos Rojas',
       taller: { id: TALLER.id, nombre: TALLER.nombre },
       precio: estado === 'cancelado' ? null : SERVICIOS[s].precio,
-      // Sprint 22.
-      anticipo: null,
+      // Sprint 22. Sprint 24: el del jueves espera el anticipo (vence en 25 min).
+      anticipo:
+        i === 2
+          ? {
+              centavos: Math.round(SERVICIOS[s].precio.totalCentavos * 0.3),
+              porStrikes: false,
+              estado: 'pendiente',
+              venceEn: new Date(AHORA.getTime() + 25 * 60_000).toISOString(),
+            }
+          : null,
+      pagos: {
+        pagadoCentavos: estado === 'atendido' ? SERVICIOS[s].precio.totalCentavos : 0,
+        saldoCentavos: estado === 'cancelado' ? null : estado === 'atendido' ? 0 : SERVICIOS[s].precio.totalCentavos,
+        cobraEnLinea: true,
+      },
       vehiculo: i === 2 || i === 3 ? { id: VEHICULO.id, placa: VEHICULO.placa, marca: VEHICULO.marca, modelo: VEHICULO.modelo } : null,
       canceladoPor: estado === 'cancelado' ? 'cliente' : null,
       cancelacion: estado === 'programado' ? { gratisHasta: masMin(inicio, -4 * 60), ventanaHoras: 4 } : null,
@@ -330,7 +343,132 @@ const VEHICULO = {
   kilometraje: 45210,
   activo: true,
 };
-const POLITICA = { ventanaHoras: 4, vigenciaStrikesMeses: 12, strikesParaPrepago: 3, strikesVigentes: 1, requierePrepago: false };
+const POLITICA = {
+  ventanaHoras: 4,
+  vigenciaStrikesMeses: 12,
+  strikesParaPrepago: 3,
+  plazoAnticipoMinutos: 30,
+  strikesVigentes: 1,
+  requierePrepago: false,
+};
+
+// --- Sprint 24: pagos -----------------------------------------------------
+const hace = (min: number) => new Date(AHORA.getTime() - min * 60_000).toISOString();
+function pagosTurno(conRecepcion: boolean) {
+  const total = SERVICIOS[0].precio.totalCentavos;
+  const anticipo = Math.round(total * 0.3);
+  const pago = (id: string, concepto: string, canal: string, metodo: string, monto: number, min: number, extra = {}) => ({
+    id,
+    concepto,
+    canal,
+    montoCentavos: monto,
+    estado: 'aprobado',
+    metodo,
+    referencia: canal === 'wompi' ? `tp_${id.replace(/-/g, '').padEnd(32, '0')}` : null,
+    transaccionId: canal === 'wompi' ? '12345-1727200000-10001' : null,
+    comprobante: canal === 'datafono' ? 'Voucher 004512' : null,
+    duplicado: false,
+    aprobadoEn: hace(min),
+    creadoEn: hace(min + 2),
+    disputaTipo: null,
+    disputaDetalle: null,
+    reembolsoId: null,
+    reembolsoEstado: null,
+    reembolsoVia: null,
+    reembolsoMotivo: null,
+    reembolsoNota: null,
+    reembolsoCompletadoEn: null,
+    ...extra,
+  });
+  return {
+    resumen: {
+      totalCentavos: total,
+      anticipoCentavos: anticipo,
+      anticipoEstado: 'pagado',
+      anticipoVenceEn: null,
+      pagadoCentavos: anticipo,
+      saldoCentavos: total - anticipo,
+      cobraEnLinea: true,
+    },
+    pagos: conRecepcion
+      ? [pago('9a9a9a9a-0000-4000-8000-000000000001', 'anticipo', 'wompi', 'CARD', anticipo, 60 * 26)]
+      : [],
+  };
+}
+const ALERTAS_PAGO = [
+  {
+    id: 'a1a1a1a1-0000-4000-8000-000000000001',
+    tipo: 'reembolso_pendiente',
+    mensaje: 'Hay que devolver $ 29.400 a mano (PSE): este medio no tiene devolucion automatica.',
+    pagoId: null,
+    turnoId: 'dddddddd-0000-4000-8000-000000000001',
+    creadaEn: hace(90),
+    atendidaEn: null,
+  },
+  {
+    id: 'a1a1a1a1-0000-4000-8000-000000000002',
+    tipo: 'reversion',
+    mensaje: 'Reversion del pago solicitada (Ley 1480, art. 51): aviso del banco, radicado 4455.',
+    pagoId: null,
+    turnoId: null,
+    creadaEn: hace(60 * 5),
+    atendidaEn: null,
+  },
+];
+const REEMBOLSOS = [
+  {
+    id: 'b2b2b2b2-0000-4000-8000-000000000001',
+    estado: 'pendiente_manual',
+    via: 'manual',
+    motivo: 'cancelacion_taller',
+    montoCentavos: 2940000,
+    nota: null,
+    creadoEn: hace(90),
+    completadoEn: null,
+    pagoId: 'c3c3c3c3-0000-4000-8000-000000000001',
+    canal: 'wompi',
+    metodo: 'PSE',
+    turnoId: 'dddddddd-0000-4000-8000-000000000001',
+    turnoInicio: instante(sumarDias(HOY, 1), '09:00'),
+    cliente: 'Maria Gomez',
+  },
+];
+function caja(fecha: string) {
+  const mov = (id: string, metodo: string, canal: string, monto: number, hora: string, cliente: string, extra = {}) => ({
+    id,
+    concepto: 'saldo',
+    canal,
+    metodo,
+    montoCentavos: monto,
+    estado: 'aprobado',
+    comprobante: null,
+    aprobadoEn: instante(fecha, hora),
+    cliente,
+    turnoId: 'dddddddd-0000-4000-8000-000000000001',
+    registradoPor: canal === 'wompi' ? null : 'Ana Admin',
+    ...extra,
+  });
+  const movimientos = [
+    mov('m1', 'efectivo', 'efectivo', 8330000, '09:40', 'Maria Gomez'),
+    mov('m2', 'CARD', 'wompi', 2940000, '10:15', 'Jorge Ruiz', { concepto: 'anticipo' }),
+    mov('m3', 'datafono', 'datafono', 17850000, '12:05', 'Laura Diaz', { comprobante: 'Voucher 004512' }),
+    mov('m4', 'NEQUI', 'wompi', 4165000, '13:30', 'Pedro Leon', { concepto: 'anticipo' }),
+  ];
+  return {
+    fecha,
+    cobros: [
+      { canal: 'datafono', metodo: 'datafono', cantidad: 1, total: 17850000 },
+      { canal: 'efectivo', metodo: 'efectivo', cantidad: 1, total: 8330000 },
+      { canal: 'wompi', metodo: 'CARD', cantidad: 1, total: 2940000 },
+      { canal: 'wompi', metodo: 'NEQUI', cantidad: 1, total: 4165000 },
+    ],
+    devoluciones: [],
+    totalCobrado: 33285000,
+    efectivoEsperado: 8330000,
+    movimientos,
+    cierre: null,
+  };
+}
 
 function strikes(conCliente: boolean) {
   const base = {
@@ -567,6 +705,14 @@ export async function simularApi(page: Page, rol: Rol | null, opciones: Opciones
     if (ruta === '/legal/condiciones/borrador')
       return responder(route, { contenido: CONDICIONES, basadoEn: 'publicada', plantillaVersion: 1, pendientes: [] });
     if (ruta === '/mis-datos') return responder(route, MIS_DATOS);
+    // Sprint 24.
+    if (ruta === '/pagos/turno')
+      return responder(route, pagosTurno(q('turnoId') === 'dddddddd-0000-4000-8000-000000000001'));
+    if (ruta === '/pagos/alertas') return responder(route, ALERTAS_PAGO);
+    if (ruta === '/pagos/reembolsos') return responder(route, REEMBOLSOS);
+    if (ruta === '/pagos/caja') return responder(route, caja(q('fecha') ?? HOY));
+    if (ruta === '/pagos/wompi/url-eventos')
+      return responder(route, { url: `https://api.turnopro.dev/pagos/wompi/eventos/${TALLER.id}` });
     if (ruta === '/strikes/mios') return responder(route, strikes(false));
     if (ruta === '/strikes') return responder(route, q('estado') === 'reclamos' ? strikes(true).slice(0, 1) : strikes(true));
     if (ruta === '/appointments/dddddddd-0000-4000-8000-000000000001/orden') return responder(route, orden(true));

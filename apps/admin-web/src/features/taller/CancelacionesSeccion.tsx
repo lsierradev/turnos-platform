@@ -45,14 +45,20 @@ function PoliticaFormulario() {
   const politica = useQuery({ queryKey: ['politica', 'taller'], queryFn: () => getPolitica() });
   const [ventana, setVentana] = useState('');
   const [vigencia, setVigencia] = useState('');
+  const [plazo, setPlazo] = useState('');
   useEffect(() => {
     if (!politica.data) return;
     setVentana(String(politica.data.ventanaHoras));
     setVigencia(String(politica.data.vigenciaStrikesMeses));
+    setPlazo(String(politica.data.plazoAnticipoMinutos ?? 30));
   }, [politica.data]);
   const guardar = useMutation({
     mutationFn: () =>
-      guardarPolitica({ ventanaHoras: Number(ventana), vigenciaStrikesMeses: Number(vigencia) }),
+      guardarPolitica({
+        ventanaHoras: Number(ventana),
+        vigenciaStrikesMeses: Number(vigencia),
+        plazoAnticipoMinutos: Number(plazo),
+      }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['politica'] }),
   });
 
@@ -87,6 +93,13 @@ function PoliticaFormulario() {
                 ayuda="De 1 a 36. Los strikes ya puestos conservan su vencimiento."
               >
                 <Input type="number" min={1} max={36} required value={vigencia} onChange={(e) => setVigencia(e.target.value)} />
+              </Campo>
+              {/* Sprint 24. */}
+              <Campo
+                etiqueta="Plazo para pagar el anticipo (minutos)"
+                ayuda="De 10 a 1440. Si el cliente no paga en linea en ese tiempo, el horario se libera. Solo aplica si el taller cobra con Wompi."
+              >
+                <Input type="number" min={10} max={1440} required value={plazo} onChange={(e) => setPlazo(e.target.value)} />
               </Campo>
             </div>
             {guardar.isSuccess && <Aviso tipo="exito">Politica guardada.</Aviso>}

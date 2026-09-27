@@ -164,6 +164,13 @@ test.describe('admin', () => {
     await capturar(page, 'admin-design');
   });
 
+  test('mi taller: pagos y caja', async ({ page }) => {
+    await page.goto('/taller?seccion=pagos');
+    await expect(page.getByRole('list', { name: 'Cobros del dia' })).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Alertas de pagos' })).toBeVisible();
+    await capturar(page, 'admin-taller-pagos');
+  });
+
   test('mi taller: condiciones del servicio', async ({ page }) => {
     await page.goto('/taller?seccion=condiciones');
     await expect(page.getByText('Versión 2 publicada')).toBeVisible();

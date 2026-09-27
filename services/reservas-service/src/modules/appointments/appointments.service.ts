@@ -37,13 +37,20 @@ import {
   sumarDiasFecha,
   zonaHorariaNegocio,
 } from '../../common/zona-horaria.util';
+import { exigirCondiciones } from '../../common/condiciones.util';
 import { Bahia } from '../../entities/bahia.entity';
-import { EstadoTurno, Turno } from '../../entities/turno.entity';
+import {
+  AnticipoEstado,
+  CanceladoPor,
+  EstadoTurno,
+  Turno,
+} from '../../entities/turno.entity';
 import { HorarioService } from '../configuracion/horario.service';
 import {
   type MotivoStrike,
   PoliticaService,
 } from '../politica/politica.service';
+import { PagosService } from '../pagos/pagos.service';
 import { ServiciosService } from '../servicios/servicios.service';
 import { VehiculosService } from '../vehiculos/vehiculos.service';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto';
@@ -214,7 +221,11 @@ interface FilaMiTurno {
   tarifaIva: number | null;
   anticipoCentavos: string | null;
   anticipoPorStrikes: boolean;
-  canceladoPor: 'cliente' | 'taller' | null;
+  anticipoEstado: AnticipoEstado;
+  anticipoVenceEn: Date | null;
+  pagadoCentavos: string;
+  cobraEnLinea: boolean;
+  canceladoPor: CanceladoPor | null;
   ventanaHoras: number | null;
   vehiculoId: string | null;
   placa: string | null;
@@ -252,10 +263,22 @@ export interface MiTurno {
   /** null en turnos anteriores al Sprint 21. */
   precio: PrecioTurno | null;
   /** Sprint 22: lo que se paga por adelantado (100% con 3 strikes). */
-  anticipo: { centavos: number; porStrikes: boolean } | null;
+  anticipo: {
+    centavos: number;
+    porStrikes: boolean;
+    /** Sprint 24: pendiente = reservado a la espera del pago. */
+    estado: AnticipoEstado;
+    venceEn: string | null;
+  } | null;
+  /** Sprint 24: lo pagado (neto de devoluciones) y lo que falta. */
+  pagos: {
+    pagadoCentavos: number;
+    saldoCentavos: number | null;
+    cobraEnLinea: boolean;
+  };
   vehiculo: { id: string; placa: string; marca: string; modelo: string } | null;
   /** Quien cancelo (null si no esta cancelado o es anterior al Sprint 22). */
-  canceladoPor: 'cliente' | 'taller' | null;
+  canceladoPor: CanceladoPor | null;
   /**
    * Solo en un turno programado que no empezo: hasta cuando cancelarlo o
    * reprogramarlo es gratis (instante), con la ventana del SU taller.
@@ -302,6 +325,7 @@ export class AppointmentsService {
     private readonly horarios: HorarioService,
     private readonly politica: PoliticaService,
     private readonly vehiculos: VehiculosService,
+    private readonly pagos: PagosService,
   ) {}
 
   // Repositorios del request (transaccion con RLS, Sprint 20); fuera de un
@@ -367,25 +391,8 @@ export class AppointmentsService {
    */
   async exigirCondicionesAceptadas(usuarioId: string): Promise<void> {
     const tallerId = this.db.tallerActual();
-    if (!tallerId) return;
-    const [vigente] = (await this.sql.query(
-      `SELECT c.version,
-              EXISTS (SELECT 1 FROM aceptaciones_legales a
-                       WHERE a.usuario_id = $2 AND a.taller_id = c.taller_id
-                         AND a.documento = 'condiciones_taller'
-                         AND a.version = c.version) AS aceptada
-         FROM condiciones_taller c
-        WHERE c.taller_id = $1
-        ORDER BY c.version DESC
-        LIMIT 1`,
-      [tallerId, usuarioId],
-    )) as { version: number; aceptada: boolean }[];
-    if (vigente && !vigente.aceptada) {
-      throw new ConflictException({
-        message: `Antes de reservar hay que aceptar las condiciones del taller (version ${vigente.version}).`,
-        codigo: 'CONDICIONES_PENDIENTES',
-        version: vigente.version,
-      });
+    if (tallerId) {
+      await exigirCondiciones(this.sql, tallerId, usuarioId, 'reservar');
     }
   }
 
@@ -567,6 +574,25 @@ export class AppointmentsService {
         ? calcularAnticipo(precio.totalCentavos, servicio.porcentajeAnticipo)
         : null;
 
+    // Sprint 24: un turno con anticipo queda reservado a la espera del
+    // pago. Si el taller cobra en linea, vence a los N minutos (o al empezar
+    // el turno, lo que llegue antes) y se libera si no se paga; si no cobra
+    // en linea, no vence: se paga en el mostrador.
+    let anticipoVenceEn: Date | null = null;
+    if (tallerId && anticipo !== null) {
+      const [conf] = (await this.sql.query(
+        `SELECT taller_cobra_en_linea($1) AS cobra,
+                (SELECT plazo_anticipo_minutos FROM politica_cancelacion
+                  WHERE taller_id = $1) AS plazo`,
+        [tallerId],
+      )) as { cobra: boolean; plazo: number | null }[];
+      if (conf?.cobra) {
+        anticipoVenceEn = new Date(
+          Math.min(Date.now() + (conf.plazo ?? 30) * 60_000, inicio.getTime()),
+        );
+      }
+    }
+
     const turno = this.turnos.create({
       ...(tallerId ? { tallerId } : {}),
       bahiaId: dto.bahiaId,
@@ -581,6 +607,8 @@ export class AppointmentsService {
       tarifaIva: precio.tarifaIva,
       anticipoCentavos: anticipo,
       anticipoPorStrikes: prepagoPorStrikes,
+      anticipoEstado: anticipo === null ? 'no_requiere' : 'pendiente',
+      anticipoVenceEn,
     });
 
     try {
@@ -717,6 +745,8 @@ export class AppointmentsService {
         turno.canceladoEn = new Date();
         turno.motivoCancelacion =
           dto.motivo?.trim() || 'Cancelado por el taller';
+        // Sprint 24: el taller cancela, el anticipo se devuelve completo.
+        this.pagos.devolverAlCancelar(turno.id, 'cancelacion_taller');
       }
     } else {
       // Reactivado: los datos de la cancelacion ya no aplican (017 lo exige).
@@ -929,6 +959,15 @@ export class AppointmentsService {
             detalleTardio('Cancelaste', turno, evaluacion),
           )
         : false;
+
+    // Sprint 24: lo pagado se devuelve completo si cancela el taller o el
+    // cliente dentro de la ventana. Fuera de ella el anticipo son arras y
+    // lo conserva el taller (condiciones del Sprint 23).
+    if (quien === 'taller') {
+      this.pagos.devolverAlCancelar(turno.id, 'cancelacion_taller');
+    } else if (evaluacion.gratis) {
+      this.pagos.devolverAlCancelar(turno.id, 'cancelacion_en_ventana');
+    }
     return {
       turno: guardado,
       strike,
@@ -1012,6 +1051,9 @@ export class AppointmentsService {
 
     original.reprogramadoA = nuevo.id;
     await this.turnos.save(original);
+    // Sprint 24: lo pagado sigue al turno nuevo (tambien si fue tarde: el
+    // strike ya es la consecuencia).
+    this.pagos.transferirAlReprogramar(original.id, nuevo.id);
     return {
       turno: nuevo,
       strike,
@@ -1120,6 +1162,14 @@ export class AppointmentsService {
               t.tarifa_iva         AS "tarifaIva",
               t.anticipo_centavos  AS "anticipoCentavos",
               t.anticipo_por_strikes AS "anticipoPorStrikes",
+              t.anticipo_estado    AS "anticipoEstado",
+              t.anticipo_vence_en  AS "anticipoVenceEn",
+              (SELECT coalesce(sum(pg.monto_centavos), 0)::bigint FROM pagos pg
+                WHERE pg.turno_id = t.id AND pg.estado IN ('aprobado', 'en_disputa')
+                  AND NOT pg.duplicado
+                  AND NOT EXISTS (SELECT 1 FROM reembolsos re WHERE re.pago_id = pg.id)
+              ) AS "pagadoCentavos",
+              taller_cobra_en_linea(t.taller_id) AS "cobraEnLinea",
               t.cancelado_por      AS "canceladoPor",
               p.ventana_horas      AS "ventanaHoras",
               v.id                 AS "vehiculoId",
@@ -1172,7 +1222,20 @@ export class AppointmentsService {
           : {
               centavos: Number(f.anticipoCentavos),
               porStrikes: f.anticipoPorStrikes,
+              // Sprint 24.
+              estado: f.anticipoEstado,
+              venceEn: f.anticipoVenceEn
+                ? new Date(f.anticipoVenceEn).toISOString()
+                : null,
             },
+      pagos: {
+        pagadoCentavos: Number(f.pagadoCentavos),
+        saldoCentavos:
+          f.totalCentavos === null
+            ? null
+            : Math.max(0, Number(f.totalCentavos) - Number(f.pagadoCentavos)),
+        cobraEnLinea: f.cobraEnLinea,
+      },
       vehiculo: f.vehiculoId
         ? {
             id: f.vehiculoId,

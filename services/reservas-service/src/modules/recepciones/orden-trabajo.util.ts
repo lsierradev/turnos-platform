@@ -39,7 +39,7 @@ export interface OrdenTrabajo {
       tarifaIva: number | null;
     } | null;
     anticipo: { centavos: number; porStrikes: boolean } | null;
-    canceladoPor: 'cliente' | 'taller' | null;
+    canceladoPor: 'cliente' | 'taller' | 'sistema' | null;
     motivoCancelacion: string | null;
   };
   vehiculo: {

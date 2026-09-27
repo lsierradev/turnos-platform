@@ -22,7 +22,10 @@ export enum EstadoTurno {
   CANCELADO = 'cancelado',
 }
 
-export type CanceladoPor = 'cliente' | 'taller';
+// 'sistema' (Sprint 24): se libero porque el anticipo no se pago a tiempo.
+export type CanceladoPor = 'cliente' | 'taller' | 'sistema';
+
+export type AnticipoEstado = 'no_requiere' | 'pendiente' | 'pagado';
 
 // Postgres representa un tstzrange como "[2024-01-01 10:00:00+00,2024-01-01 11:00:00+00)".
 // TypeORM no tiene un ColumnType nativo para range types, asi que se mapea
@@ -150,6 +153,14 @@ export class Turno {
   // el 100% por adelantado (el cobro llega en el Sprint 24).
   @Column({ name: 'anticipo_por_strikes', default: false })
   anticipoPorStrikes: boolean;
+
+  // Sprint 24 (migracion 019). pendiente: reservado a la espera del pago;
+  // con anticipoVenceEn, se libera si no se paga antes.
+  @Column({ name: 'anticipo_estado', type: 'text', default: 'no_requiere' })
+  anticipoEstado: AnticipoEstado;
+
+  @Column({ name: 'anticipo_vence_en', type: 'timestamptz', nullable: true })
+  anticipoVenceEn?: Date | null;
 
   // Sprint 22 (migracion 017). Vehiculo del cliente que trae al turno.
   @Column({ name: 'vehiculo_id', type: 'uuid', nullable: true })

@@ -9,6 +9,7 @@ import {
   getConfiguracionFiscal,
   guardarDatosFiscales,
   guardarFacturacion,
+  getUrlEventosWompi,
   guardarWompi,
   type ConfiguracionFiscal,
 } from '@/lib/api-client';
@@ -389,7 +390,33 @@ function Wompi({ actual }: { actual: ConfiguracionFiscal }) {
             </Button>
           </div>
         </form>
+        {actual.wompi && <UrlEventos />}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Sprint 24: la URL a la que Wompi manda los eventos de ESTE taller. Sin
+ * configurarla en el panel de Wompi, los pagos se confirman igual pero
+ * tarde (la conciliacion pregunta cada 10 minutos).
+ */
+function UrlEventos() {
+  const url = useQuery({ queryKey: ['wompi-url-eventos'], queryFn: getUrlEventosWompi });
+  return (
+    <div className="mt-4 space-y-1.5 rounded-lg border bg-muted/30 p-3 text-sm">
+      <p className="font-medium">URL de eventos para Wompi</p>
+      <p className="text-xs text-muted-foreground">
+        Pegala en el panel de Wompi, en Desarrolladores → URL de eventos, en el mismo ambiente
+        ({'pruebas o produccion'}) de las llaves de arriba. Asi cada pago se confirma al instante.
+      </p>
+      {url.data ? (
+        <code className="block break-all rounded bg-card px-2 py-1 text-xs" data-testid="url-eventos-wompi">
+          {url.data.url}
+        </code>
+      ) : url.isError ? (
+        <p className="text-xs text-destructive">No se pudo obtener la URL.</p>
+      ) : null}
+    </div>
   );
 }

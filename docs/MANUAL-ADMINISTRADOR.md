@@ -230,6 +230,39 @@ trabajo, pero a nombre de "Titular suprimido".
 
 ---
 
+## Pagos
+
+Los pagos en línea se cobran con **la cuenta de Wompi del taller**: el dinero
+va directo a esa cuenta. Se configuran en **Mi taller → Datos fiscales y
+pagos**; debajo aparece la **URL de eventos**, que hay que pegar en el panel
+de Wompi para que cada pago se confirme al instante.
+
+- **Anticipo.** Si el servicio pide anticipo (o el cliente tiene 3 strikes:
+  100 %), el turno queda **reservado a la espera del pago**. Si el cliente no
+  paga en el plazo (30 minutos por defecto, se cambia en **Cancelaciones**),
+  el horario se libera solo. Si el taller no tiene Wompi configurado, el
+  anticipo no vence: se cobra en el mostrador.
+- **Saldo.** El cliente lo paga en línea desde Mis turnos o desde la orden,
+  o lo cobrás en el mostrador.
+- **En el mostrador.** En la orden de trabajo, **Pagos → Cobrar en el
+  mostrador**: efectivo, datáfono o transferencia (estos dos piden el número
+  del comprobante).
+- **Devoluciones.** Si el taller cancela, o el cliente cancela a tiempo, el
+  anticipo se devuelve completo. Con tarjeta, se devuelve solo. PSE, Nequi,
+  Bancolombia y lo cobrado en el mostrador hay que devolverlo a mano y
+  registrarlo en **Mi taller → Pagos y caja → Devoluciones pendientes**.
+- **Reversiones y contracargos.** Cuando el banco o Wompi te avise, registralo
+  en la orden (**Reversión o contracargo**) y después marcá cómo terminó.
+- **Alertas.** En **Mi taller → Pagos y caja** aparece lo que hay que mirar:
+  devoluciones a mano, pagos que llegaron tarde o de más, reversiones.
+- **Cuadre de caja.** En la misma sección, cada día: lo cobrado por medio, el
+  efectivo que debería haber, y el cierre con lo que contaste.
+
+TurnoPro nunca ve ni guarda datos de tarjetas: el cliente paga en la página
+de Wompi.
+
+---
+
 ## Los recordatorios automáticos
 
 El sistema le avisa solo al cliente **24 horas antes** de su turno:

@@ -44,6 +44,7 @@ const OlvideView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'Ol
 const RestablecerView = perezoso(() => import('@/features/auth/ContrasenaViews'), 'RestablecerView');
 const DocumentoLegalView = perezoso(() => import('@/features/legal/DocumentoLegalView'), 'DocumentoLegalView');
 const MisDatosView = perezoso(() => import('@/features/legal/MisDatosView'), 'MisDatosView');
+const ResultadoPagoView = perezoso(() => import('@/features/pagos/ResultadoPagoView'), 'ResultadoPagoView');
 import { TemaProvider } from '@/lib/tema';
 
 const queryClient = new QueryClient({
@@ -96,6 +97,8 @@ export function App() {
                   <Route path="/mis-turnos" element={<MisTurnosView />} />
                   <Route path="/perfil" element={<PerfilView />} />
                   <Route path="/mis-datos" element={<MisDatosView />} />
+                  {/* Sprint 24: vuelta del checkout de Wompi. */}
+                  <Route path="/pagos/resultado" element={<ResultadoPagoView />} />
                   <Route path="/turnos/:turnoId" element={<OrdenTrabajoView />} />
                   <Route path="/talleres" element={<TalleresView />} />
                   <Route path="/taller" element={<MiTallerView />} />

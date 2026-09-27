@@ -16,6 +16,7 @@ import {
 } from '../servicios/entities/servicio.entity';
 import { HorarioService } from '../configuracion/horario.service';
 import { PoliticaService } from '../politica/politica.service';
+import { PagosService } from '../pagos/pagos.service';
 import { VehiculosService } from '../vehiculos/vehiculos.service';
 import { ServiciosService } from '../servicios/servicios.service';
 import { AppointmentsService } from './appointments.service';
@@ -128,6 +129,7 @@ describe('AppointmentsService', () => {
               ventanaHoras: 4,
               vigenciaStrikesMeses: 12,
               strikesParaPrepago: 3,
+              plazoAnticipoMinutos: 30,
             }),
             strikesVigentes: jest.fn().mockResolvedValue(0),
             registrarStrike: jest.fn().mockResolvedValue('strike-1'),
@@ -137,6 +139,14 @@ describe('AppointmentsService', () => {
         {
           provide: VehiculosService,
           useValue: { obtener: jest.fn() },
+        },
+        {
+          // Sprint 24: los efectos sobre pagos corren despues del commit.
+          provide: PagosService,
+          useValue: {
+            devolverAlCancelar: jest.fn(),
+            transferirAlReprogramar: jest.fn(),
+          },
         },
       ],
     }).compile();
@@ -184,6 +194,9 @@ describe('AppointmentsService', () => {
       vehiculoId: null,
       // Sin taller (modo sistema) no se miran strikes.
       anticipoPorStrikes: false,
+      // Sprint 24: sin anticipo, nada que pagar ni que venza.
+      anticipoEstado: 'no_requiere',
+      anticipoVenceEn: null,
     });
   });
 
@@ -764,6 +777,7 @@ describe('AppointmentsService', () => {
         ventanaHoras: 24,
         vigenciaStrikesMeses: 12,
         strikesParaPrepago: 3,
+        plazoAnticipoMinutos: 30,
       });
       turnosRepository.findOne.mockResolvedValue(turnoQueEmpiezaEn(10 * 60));
 

@@ -1,6 +1,6 @@
 TURNOS-PLATFORM — ENDPOINTS POR MODULO
 ========================================
-Actualizado: Sprint 23 (documentos legales, aceptaciones y derechos del titular)
+Actualizado: Sprint 24 (pagos con Wompi, devoluciones y caja)
 Uso: referencia rapida para armar la coleccion de Postman.
 
 ----------------------------------------
@@ -930,6 +930,104 @@ sus datos. Queda como aceptacion presencial de politica y autorizacion.
   Response 200: { conservado: [ ...lo que se conservo y por que ] }
 
 ----------------------------------------
+MODULO: pagos (reservas-service, Sprint 24)
+----------------------------------------
+Migracion 019. Se cobra con las llaves de Wompi DE CADA TALLER (Mi taller >
+Datos fiscales y pagos): el dinero va a la cuenta del taller, TurnoPro no lo
+recibe. No hay datos de tarjeta en ningun lado: se paga en el checkout de
+Wompi y solo vuelven id de transaccion, estado y tipo de medio.
+
+Turno (cambios):
+  POST /appointments: si el servicio pide anticipo (o el cliente tiene 3
+  strikes: 100%), el turno nace con anticipoEstado = "pendiente". Si el
+  taller cobra en linea, anticipoVenceEn = ahora + plazoAnticipoMinutos
+  (politica, 30 por defecto) o el inicio del turno si es antes; al pasar sin
+  pago se cancela solo (canceladoPor = "sistema", sin strike). Sin Wompi no
+  vence: se cobra en el mostrador. Con el pago, anticipoEstado = "pagado".
+  PUT /politica acepta "plazoAnticipoMinutos" (10..1440).
+  GET /appointments/mios suma anticipo.estado, anticipo.venceEn y
+  pagos: { pagadoCentavos, saldoCentavos, cobraEnLinea }.
+  Cancelar: se devuelve todo lo pagado si cancela el taller o el cliente
+  dentro de la ventana; fuera de ella el anticipo son arras y queda. Cerrar
+  como cancelado (PATCH /estado) = cancela el taller. Reprogramar: lo pagado
+  pasa al turno nuevo.
+
+[POST] /pagos/checkout                                    (cliente)
+  Body: { turnoId, concepto: "anticipo" | "saldo" }. X-Taller = taller del
+  turno. El monto NO se acepta del navegador: sale del turno.
+  anticipo: exige la version vigente de las condiciones del taller (409
+  CONDICIONES_PENDIENTES con "version"); 409 si ya esta pagado, no
+  requiere o vencio. saldo: total - pagado (409 si no hay saldo o el
+  anticipo sigue pendiente). 409 si el taller no tiene Wompi.
+  Response 201: { url, referencia, montoCentavos, venceEn }
+    url = Web Checkout de Wompi con amount-in-cents, reference,
+    signature:integrity = SHA-256(referencia + monto + "COP" + expiracion +
+    secreto de integridad), expiration-time y redirect-url
+    (WEB_URL/pagos/resultado?referencia=...).
+
+[GET] /pagos/referencia/:referencia                       (cliente, propio)
+  Estado segun el servidor. Si no es final, le pregunta a Wompi
+  (GET /transactions?reference=, llave privada) antes de responder. Lo que
+  trae la redireccion no se usa.
+  Response 200: { referencia, estado, concepto, montoCentavos, metodo, turnoId, tallerId }
+
+[POST] /pagos/wompi/eventos/:tallerId                     (publico: Wompi)
+  URL que el taller pega en Wompi (GET /pagos/wompi/url-eventos la arma).
+  Verifica signature.checksum = SHA-256(valores de signature.properties +
+  timestamp + secreto de eventos DEL TALLER), y X-Event-Checksum si viene.
+  401 si no cierra; 200 a todo evento autentico (Wompi reintenta si no).
+  Idempotente: (transaccion, estado, timestamp) se procesa una vez
+  (eventos_wompi) -> { resultado: "duplicado" }. Fuera de orden: un estado
+  nunca retrocede (un PENDING atrasado no deshace un APPROVED).
+  Otro monto o moneda -> no se da por pagado, alerta monto_inconsistente.
+  Segunda transaccion aprobada del mismo checkout, o pago de algo ya pagado
+  -> se devuelve (pago_duplicado). Pago aprobado de un turno liberado: si el
+  horario sigue libre se reactiva; si no, se devuelve (pago_tardio).
+
+[GET] /pagos/turno?turnoId=                               (titular o personal)
+  { resumen: { totalCentavos, anticipoCentavos, anticipoEstado,
+    anticipoVenceEn, pagadoCentavos, saldoCentavos, cobraEnLinea },
+    pagos: [ { id, concepto, canal, montoCentavos, estado, metodo, ...,
+               reembolsoEstado, disputaTipo, ... } ] }
+
+[POST] /pagos/presencial                                  (admin)
+  Body: { turnoId, concepto, medio: efectivo|datafono|transferencia,
+          montoCentavos?, comprobante? }. Sin monto: todo lo pendiente del
+  concepto; mas que lo pendiente -> 400. Datafono y transferencia exigen
+  comprobante.
+
+[GET] /pagos/reembolsos[?estado=todos]                    (admin)
+[POST] /pagos/reembolsos/:id/completar  { nota }          (admin, 204)
+  Devoluciones: tarjeta -> anulacion por la API de Wompi
+  (POST /transactions/:id/void) despues del commit (por_anular ->
+  solicitado -> completado con el evento VOIDED). PSE, Nequi, Bancolombia y
+  mostrador -> pendiente_manual + alerta; el taller registra como devolvio.
+
+[POST] /pagos/:id/disputa  { tipo: reversion|contracargo, detalle }   (admin, 204)
+[POST] /pagos/:id/disputa/resolver  { resultado: revertido|a_favor }  (admin, 204)
+  Reversion del pago (Ley 1480, art. 51) o contracargo: estado en_disputa y
+  alerta; revertido deja de contar como pagado.
+
+[GET] /pagos/alertas[?estado=todos]                       (admin)
+[POST] /pagos/alertas/:id/atender                         (admin, 204)
+
+[GET] /pagos/caja?fecha=YYYY-MM-DD                        (admin)
+  Cuadre del dia (hora del taller): cobros por medio, devoluciones hechas,
+  efectivo esperado (efectivo cobrado - devuelto en efectivo), movimientos
+  y cierre si existe.
+[POST] /pagos/caja/cierre  { fecha, contadoCentavos, nota? }  (admin)
+  Una vez por dia (409 si ya se cerro); guarda esperado, contado y diferencia.
+
+[GET] /pagos/wompi/url-eventos                            (admin)
+  { url } = RESERVAS_URL_PUBLICA (o el host del request) +
+  /pagos/wompi/eventos/<taller>.
+
+Tareas periodicas (PagosScheduler): cada minuto libera turnos con anticipo
+vencido (antes concilia sus pagos y respeta 30 min de gracia a una
+transaccion en proceso); cada 10 minutos concilia checkouts y transacciones
+sin estado final, expira checkouts de mas de 24 h y reintenta anulaciones.
+
+----------------------------------------
 Convenciones generales
 ----------------------------------------
 - Sin prefijo global todavia (ej. /api/v1) — pendiente de definir.
@@ -999,6 +1097,11 @@ Convenciones generales
     autenticado (Sprint 23)-> GET /legal/pendientes, POST /legal/aceptaciones,
                               GET /legal/aceptaciones/mias, /mis-datos
                               (suprimir: solo cliente)
+    admin (Sprint 24)      -> /pagos/presencial, /pagos/reembolsos*, /pagos/:id/disputa*,
+                              /pagos/alertas*, /pagos/caja*, /pagos/wompi/url-eventos
+    cliente (Sprint 24)    -> POST /pagos/checkout, GET /pagos/referencia/:ref
+    autenticado (Sprint 24)-> GET /pagos/turno (RLS: propio o del taller)
+    publico (Sprint 24)    -> POST /pagos/wompi/eventos/:tallerId (firma de Wompi)
     publico                -> POST /auth/login, /auth/olvide, /auth/restablecer,
                               GET /legal/documentos*, GET
                               /legal/talleres/:id/condiciones (Sprint 23)

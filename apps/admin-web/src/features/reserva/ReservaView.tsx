@@ -57,6 +57,7 @@ import {
 import { CLIENTE_NUEVO_VACIO, validarClienteNuevo } from './cliente-nuevo';
 import { SelectorCliente, type ModoCliente } from './SelectorCliente';
 import { CondicionesReserva, useCondicionesPorAceptar } from './CondicionesReserva';
+import { BotonPagar } from '@/features/pagos/BotonPagar';
 
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 type Campo = 'bahia' | 'servicio' | 'tecnico';
@@ -1096,9 +1097,27 @@ function Confirmacion({
         {(turno.anticipoPorStrikes || (prepago && !reservado.reprogramado)) && turno.totalCentavos !== null && (
           <Aviso tipo="advertencia">
             Este turno se paga completo por adelantado ({formatearPesos(turno.totalCentavos)}) por los
-            strikes vigentes en el taller. El pago en linea llega pronto; mientras tanto, coordinalo
-            con el taller.
+            strikes vigentes en el taller.
           </Aviso>
+        )}
+        {/* Sprint 24: el anticipo confirma el turno. */}
+        {turno.anticipoEstado === 'pendiente' && turno.anticipoCentavos !== null && (
+          <div className="space-y-2 rounded-lg border border-advertencia/40 bg-advertencia-suave p-4">
+            <p className="text-sm">
+              {turno.anticipoVenceEn
+                ? `Reservado hasta las ${formatearHora(turno.anticipoVenceEn)}. ${
+                    esAdmin
+                      ? 'Si el cliente no paga el anticipo en linea antes, o no lo cobras en la orden de trabajo, el horario se libera.'
+                      : 'Paga el anticipo para confirmarlo; si no, el horario se libera.'
+                  }`
+                : esAdmin
+                  ? 'Cobra el anticipo desde la orden de trabajo para confirmar el turno.'
+                  : 'Falta pagar el anticipo en el taller para confirmar el turno.'}
+            </p>
+            {!esAdmin && turno.anticipoVenceEn && (
+              <BotonPagar turnoId={turno.id} concepto="anticipo" montoCentavos={turno.anticipoCentavos} />
+            )}
+          </div>
         )}
         {cliente && clienteNuevo && (
           <div

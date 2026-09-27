@@ -233,9 +233,27 @@ revisión del abogado no se sale. Detalle en
       publicadas.
 - [ ] IP real registrada en las aceptaciones (`TRUST_PROXY`).
 
+## Pagos (Sprint 24)
+
+El cobro con Wompi está implementado (ver
+[PAGOS-PENDIENTES.md](PAGOS-PENDIENTES.md)).
+
+- [x] Anticipo, 100 % por strikes y saldo, con las llaves de cada taller.
+- [x] Firma de integridad en el backend; el monto nunca viene del navegador.
+- [x] Webhook firmado, idempotente y tolerante a eventos fuera de orden;
+      conciliación periódica.
+- [x] Devoluciones (automáticas con tarjeta; a mano el resto), reversiones y
+      contracargos con alerta, pagos en el mostrador y cuadre de caja.
+- [ ] **Prueba de punta a punta en el sandbox** con un comercio real de Wompi.
+- [ ] Confirmar con Wompi plazos de anulación y el procedimiento de
+      devolución de PSE, Nequi y Bancolombia.
+- [ ] Llaves de producción y URL de eventos cargadas por cada taller.
+- [ ] Monitoreo sobre `Alerta de pago (` y `Tarea de pagos fallo`.
+
 ## Alcance
 
-- [ ] **Confirmar que el beta sale sin pagos.** Sprint 7 no está
+- [x] ~~Confirmar que el beta sale sin pagos.~~ Resuelto en el Sprint 24
+      (pagos con Wompi). Nota histórica: Sprint 7 no estaba
       implementado: 4 issues abiertas y ningún código de pagos en el repo.
       Si el CDA espera cobrar por la plataforma, eso no existe.
 - [ ] Confirmar que sale sin flujo de reserva para el cliente final: hoy

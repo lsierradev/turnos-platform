@@ -4,6 +4,7 @@ import { JwtAuthModule } from '@turnos-platform/auth';
 import { Bahia } from '../../entities/bahia.entity';
 import { Turno } from '../../entities/turno.entity';
 import { ConfiguracionModule } from '../configuracion/configuracion.module';
+import { PagosModule } from '../pagos/pagos.module';
 import { PoliticaModule } from '../politica/politica.module';
 import { ServiciosModule } from '../servicios/servicios.module';
 import { VehiculosModule } from '../vehiculos/vehiculos.module';
@@ -17,6 +18,7 @@ import { AppointmentsService } from './appointments.service';
     ConfiguracionModule,
     PoliticaModule,
     VehiculosModule,
+    PagosModule,
     JwtAuthModule,
   ],
   controllers: [AppointmentsController],

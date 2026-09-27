@@ -24,6 +24,7 @@ import {
 import { formatearFechaHora, formatearHora, ZONA_NEGOCIO } from '@/lib/dates';
 import { formatearPesos, textoPrecioFinal } from '@/lib/dinero';
 import { actuaComoAdmin } from '@/lib/sesion';
+import { PagosOrden } from '@/features/pagos/PagosOrden';
 import { esUuid } from '@/lib/uuid';
 import {
   AceptarRecepcion,
@@ -249,6 +250,9 @@ function Orden({
       <Atencion orden={orden} personal={personal} esAdmin={esAdmin} onCambio={onCambio} />
 
       {personal && <Cierre orden={orden} esAdmin={esAdmin} onCambio={onCambio} />}
+
+      {/* Sprint 24: anticipo, saldo, cobros en el mostrador y devoluciones. */}
+      <PagosOrden turnoId={turno.id} taller={taller} esAdmin={esAdmin} esTitular={!personal} />
 
       <Card className="print:shadow-none">
         <CardHeader>

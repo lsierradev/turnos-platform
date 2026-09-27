@@ -449,3 +449,13 @@ export async function borrarAceptaciones(usuarioId: string): Promise<void> {
     db.query('DELETE FROM aceptaciones_legales WHERE usuario_id = $1', [usuarioId]),
   );
 }
+
+/** Sprint 24: el servicio sembrado pide anticipo (porcentaje del total). */
+export async function exigirAnticipo(servicioId: string, porcentaje: number): Promise<void> {
+  await conConexion((db) =>
+    db.query(
+      'UPDATE servicios SET requiere_anticipo = true, porcentaje_anticipo = $2 WHERE id = $1',
+      [servicioId, porcentaje],
+    ),
+  );
+}

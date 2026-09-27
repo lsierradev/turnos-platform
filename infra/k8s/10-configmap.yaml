@@ -29,6 +29,11 @@ data:
   # la del balanceador. Un numero y no 'true': con 'true' Express toma la
   # IP que escribe el cliente en X-Forwarded-For (packages/http/src/proxy.util.ts).
   TRUST_PROXY: '1'
+  # Pagos (Sprint 24). WEB_URL: a donde vuelve el cliente desde el checkout
+  # de Wompi (/pagos/resultado). RESERVAS_URL_PUBLICA: con la que Wompi
+  # llega al webhook; el panel la muestra para pegarla en Wompi. HTTPS.
+  WEB_URL: 'https://turnos.REEMPLAZAR.com'
+  RESERVAS_URL_PUBLICA: 'https://api.REEMPLAZAR.com'
   JWT_EXPIRES_IN: '15m'
   JWT_REFRESH_EXPIRES_IN: '7d'
   NOTIFICACIONES_INTENTOS: '3'

@@ -23,6 +23,16 @@ export class PoliticaDto {
   @Min(1)
   @Max(36)
   vigenciaStrikesMeses: number;
+
+  /**
+   * Sprint 24: minutos que un turno con anticipo queda reservado sin pagar
+   * (solo si el taller cobra en linea). Sin el campo, no cambia.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(10)
+  @Max(1440)
+  plazoAnticipoMinutos?: number;
 }
 
 export class PoliticaQueryDto {

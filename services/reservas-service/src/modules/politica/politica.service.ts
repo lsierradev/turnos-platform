@@ -21,6 +21,8 @@ export interface Politica {
   ventanaHoras: number;
   vigenciaStrikesMeses: number;
   strikesParaPrepago: number;
+  /** Sprint 24: minutos para pagar el anticipo antes de que se libere. */
+  plazoAnticipoMinutos: number;
 }
 
 /** Politica + como esta un cliente en este taller. */
@@ -123,10 +125,15 @@ export class PoliticaService {
 
   async obtener(tallerId: string = this.db.exigirTaller()): Promise<Politica> {
     const [fila] = await this.consultar<
-      { ventanaHoras: number; vigenciaStrikesMeses: number }[]
+      {
+        ventanaHoras: number;
+        vigenciaStrikesMeses: number;
+        plazoAnticipoMinutos: number;
+      }[]
     >(
       `SELECT ventana_horas AS "ventanaHoras",
-              vigencia_strikes_meses AS "vigenciaStrikesMeses"
+              vigencia_strikes_meses AS "vigenciaStrikesMeses",
+              plazo_anticipo_minutos AS "plazoAnticipoMinutos"
          FROM politica_cancelacion WHERE taller_id = $1`,
       [tallerId],
     );
@@ -135,6 +142,7 @@ export class PoliticaService {
       ventanaHoras: fila?.ventanaHoras ?? 4,
       vigenciaStrikesMeses: fila?.vigenciaStrikesMeses ?? 12,
       strikesParaPrepago: STRIKES_PARA_PREPAGO,
+      plazoAnticipoMinutos: fila?.plazoAnticipoMinutos ?? 30,
     };
   }
 
@@ -143,9 +151,15 @@ export class PoliticaService {
     await this.consultar(
       `UPDATE politica_cancelacion
           SET ventana_horas = $2, vigencia_strikes_meses = $3,
+              plazo_anticipo_minutos = coalesce($4, plazo_anticipo_minutos),
               actualizado_en = now()
         WHERE taller_id = $1`,
-      [taller, dto.ventanaHoras, dto.vigenciaStrikesMeses],
+      [
+        taller,
+        dto.ventanaHoras,
+        dto.vigenciaStrikesMeses,
+        dto.plazoAnticipoMinutos ?? null,
+      ],
     );
     return this.obtener(taller);
   }
